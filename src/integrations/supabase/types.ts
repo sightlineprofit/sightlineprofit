@@ -492,6 +492,44 @@ export type Database = {
           },
         ]
       }
+      project_steps: {
+        Row: {
+          actual_hrs: number
+          created_at: string
+          description: string
+          estimated_hrs: number
+          id: string
+          project_phase_id: string
+          sort_order: number
+        }
+        Insert: {
+          actual_hrs?: number
+          created_at?: string
+          description: string
+          estimated_hrs?: number
+          id?: string
+          project_phase_id: string
+          sort_order?: number
+        }
+        Update: {
+          actual_hrs?: number
+          created_at?: string
+          description?: string
+          estimated_hrs?: number
+          id?: string
+          project_phase_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_steps_project_phase_id_fkey"
+            columns: ["project_phase_id"]
+            isOneToOne: false
+            referencedRelation: "project_phases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           client_name: string | null
@@ -633,18 +671,21 @@ export type Database = {
       sop_steps: {
         Row: {
           description: string
+          estimated_hrs: number
           id: string
           phase_id: string
           sort_order: number
         }
         Insert: {
           description: string
+          estimated_hrs?: number
           id?: string
           phase_id: string
           sort_order?: number
         }
         Update: {
           description?: string
+          estimated_hrs?: number
           id?: string
           phase_id?: string
           sort_order?: number
