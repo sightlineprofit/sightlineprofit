@@ -618,7 +618,9 @@ function PhaseRow({
   costPerHour: number;
 }) {
   const [open, setOpen] = useState(false);
-  const hrs = Number(phase.expected_hrs) || 0;
+  const stepSum = phase.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
+  const computed = stepSum > 0;
+  const hrs = computed ? stepSum : Number(phase.expected_hrs) || 0;
   const revenue = phase.billable ? hrs * billedRate : 0;
   const cost = hrs * costPerHour;
   const margin = revenue - cost;
@@ -642,11 +644,13 @@ function PhaseRow({
         <div className="flex items-center gap-1.5">
           <Input
             type="number" min={0} step={0.5}
-            value={phase.expected_hrs}
+            value={computed ? hrs : phase.expected_hrs}
             onChange={(e) => onChange({ ...phase, expected_hrs: parseFloat(e.target.value) || 0 })}
-            className="w-20 text-right"
+            readOnly={computed}
+            title={computed ? "Total from steps" : "Manual phase hours"}
+            className={cn("w-20 text-right", computed && "bg-creamd/40 text-ch/70")}
           />
-          <span className="text-xs text-ch/50">hrs</span>
+          <span className="text-xs text-ch/50">{computed ? "from steps" : "hrs"}</span>
         </div>
         <div className="flex items-center gap-2 px-2">
           <Switch checked={phase.billable} onCheckedChange={(v) => onChange({ ...phase, billable: v })} />
@@ -711,6 +715,17 @@ function PhaseRow({
                     placeholder="Describe a step in this phase"
                     maxLength={500}
                   />
+                  <Input
+                    type="number" min={0} step={0.25}
+                    value={step.estimated_hrs}
+                    onChange={(e) => onChange({
+                      ...phase,
+                      steps: phase.steps.map((s, idx) => idx === j ? { ...s, estimated_hrs: parseFloat(e.target.value) || 0 } : s),
+                    })}
+                    className="w-20 text-right"
+                    placeholder="hrs"
+                  />
+                  <span className="text-xs text-ch/50">hrs</span>
                   <Button
                     variant="ghost" size="sm"
                     onClick={() => onChange({ ...phase, steps: phase.steps.filter((_, idx) => idx !== j) })}
