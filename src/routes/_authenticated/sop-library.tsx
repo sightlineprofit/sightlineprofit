@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle, Lock } from "lucide-react";
+import { toast } from "sonner";
+import { useNavigate } from "@tanstack/react-router";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
 import { getMyContext } from "@/lib/firm.functions";
@@ -12,7 +14,7 @@ import {
   deleteSopTemplate,
   attachTemplateToProject,
 } from "@/lib/sop.functions";
-import { fmtUsd } from "@/lib/finance";
+import { fmtUsd, formatHours } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type Risk = "low" | "medium" | "high";
-type Step = { id?: string; description: string; sort_order: number };
+type Step = { id?: string; description: string; estimated_hrs: number; sort_order: number };
 type Phase = {
   id?: string;
   name: string;
