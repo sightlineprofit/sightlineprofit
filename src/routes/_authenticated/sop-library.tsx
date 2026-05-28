@@ -153,11 +153,17 @@ function Library() {
   });
 
   const attachMut = useMutation({
-    mutationFn: (v: { template_id: string; project_name: string; client_name: string }) =>
-      attachFn({ data: { ...v, client_name: v.client_name || null } }),
-    onSuccess: () => {
+    mutationFn: (v: { template_id: string; project_id: string }) =>
+      attachFn({ data: v }),
+    onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+      qc.invalidateQueries({ queryKey: ["sightline-detail", vars.project_id] });
       setAttachFor(null);
+      toast.success("Template attached to project");
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Failed to attach");
     },
   });
 
