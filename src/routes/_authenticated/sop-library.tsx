@@ -286,7 +286,12 @@ function Library() {
                           steps: data!.steps
                             .filter((s) => s.phase_id === p.id)
                             .sort((a, b) => a.sort_order - b.sort_order)
-                            .map((s) => ({ id: s.id, description: s.description, sort_order: s.sort_order })),
+                            .map((s) => ({
+                              id: s.id,
+                              description: s.description,
+                              estimated_hrs: Number((s as { estimated_hrs?: number }).estimated_hrs) || 0,
+                              sort_order: s.sort_order,
+                            })),
                         }));
                       setEditing({
                         id: tpl.id, name: tpl.name, category: tpl.category ?? "",
@@ -603,7 +608,7 @@ function PhaseRow({
                 variant="outline" size="sm" className="border-border"
                 onClick={() => onChange({
                   ...phase,
-                  steps: [...phase.steps, { description: "", sort_order: phase.steps.length }],
+                  steps: [...phase.steps, { description: "", estimated_hrs: 0, sort_order: phase.steps.length }],
                 })}
               >
                 <Plus className="mr-1 h-3.5 w-3.5" /> Add step
