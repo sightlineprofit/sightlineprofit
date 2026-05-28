@@ -25,8 +25,8 @@ export function useRealtimeInvalidate(
     const keys: ReadonlyArray<ReadonlyArray<unknown>> = JSON.parse(keysKey);
     const channel = supabase.channel(channelName);
     for (const s of subs) {
-      channel.on(
-        // @ts-expect-error - supabase types are loose here
+      // supabase-js realtime types are intentionally loose for postgres_changes
+      (channel as unknown as { on: (e: string, cfg: unknown, cb: () => void) => unknown }).on(
         "postgres_changes",
         { event: s.event ?? "*", schema: "public", table: s.table, filter: s.filter },
         () => {
