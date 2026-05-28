@@ -84,7 +84,16 @@ const entrySchema = z.object({
 async function recomputePhaseActual(supabase: any, phaseId: string): Promise<void> {
   const { data } = await supabase.from("time_entries").select("hrs").eq("project_phase_id", phaseId);
   const total = (data ?? []).reduce((s: number, r: { hrs: number | null }) => s + Number(r.hrs || 0), 0);
-  await supabase.from("project_phases").update({ actual_hrs: total }).eq("id", phaseId);
+  const { data: phase } = await supabase
+    .from("project_phases")
+    .select("expected_hrs")
+    .eq("id", phaseId)
+    .maybeSingle();
+  const expected = Number(phase?.expected_hrs ?? 0);
+  await supabase
+    .from("project_phases")
+    .update({ actual_hrs: total, phase_over_scope: total > expected })
+    .eq("id", phaseId);
 }
 
 export const saveTimeEntry = createServerFn({ method: "POST" })
