@@ -69,11 +69,11 @@ export const setFirmOverrides = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuper(context.supabase, context.userId);
-    const patch: Record<string, unknown> = {};
+    const patch: Record<string, any> = {};
     if (data.subscription_tier) patch.subscription_tier = data.subscription_tier;
     if (data.subscription_status) patch.subscription_status = data.subscription_status;
     if (data.trial_ends_at !== undefined) patch.trial_ends_at = data.trial_ends_at;
-    const { error } = await supabaseAdmin.from("firms").update(patch).eq("id", data.firm_id);
+    const { error } = await supabaseAdmin.from("firms").update(patch as any).eq("id", data.firm_id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -233,7 +233,7 @@ export const upsertKbItem = createServerFn({ method: "POST" })
   .inputValidator((d) => kbItemSchema.parse(d))
   .handler(async ({ data, context }) => {
     await assertSuper(context.supabase, context.userId);
-    const payload: Record<string, unknown> = {
+    const payload: any = {
       type: data.type,
       title: data.title,
       slug: data.slug,
@@ -254,7 +254,7 @@ export const upsertKbItem = createServerFn({ method: "POST" })
     if (data.id) {
       const { data: row, error } = await supabaseAdmin
         .from("knowledge_base_items")
-        .update(payload)
+        .update(payload as any)
         .eq("id", data.id)
         .select("*")
         .single();
@@ -263,7 +263,7 @@ export const upsertKbItem = createServerFn({ method: "POST" })
     }
     const { data: row, error } = await supabaseAdmin
       .from("knowledge_base_items")
-      .insert(payload)
+      .insert(payload as any)
       .select("*")
       .single();
     if (error) throw new Error(error.message);
