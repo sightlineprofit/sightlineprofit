@@ -415,11 +415,33 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                 <th className="px-3 py-3 text-right">Δ $</th>
                 <th className="px-3 py-3 text-right">% used</th>
                 <th className="px-4 py-3 text-right">Status</th>
+                <th className="px-3 py-3 text-right w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
               {phaseRows.map((p) => {
                 const h = healthColor(p.pct);
+                const isEditing = editingPhase === p.id;
+                if (isEditing) {
+                  return (
+                    <tr key={p.id} className="border-t border-border bg-creamd/40">
+                      <td className="px-4 py-2"><Input value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} /></td>
+                      <td className="px-3 py-2"><Input type="number" min={0} step="any" value={editDraft.expected_hrs} onChange={(e) => setEditDraft({ ...editDraft, expected_hrs: e.target.value })} className="text-right" /></td>
+                      <td colSpan={4} className="px-3 py-2 text-right text-xs text-ch/50">
+                        <label className="inline-flex items-center gap-1.5">
+                          <input type="checkbox" checked={editDraft.billable} onChange={(e) => setEditDraft({ ...editDraft, billable: e.target.checked })} className="accent-gold" />
+                          Billable
+                        </label>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex gap-1">
+                          <button onClick={() => { phaseMut.mutate({ id: p.id, name: editDraft.name, expected_hrs: Number(editDraft.expected_hrs) || 0, billable: editDraft.billable }); setEditingPhase(null); }} className="text-success hover:opacity-70"><Check className="h-4 w-4" /></button>
+                          <button onClick={() => setEditingPhase(null)} className="text-ch/40 hover:text-ch"><X className="h-4 w-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
                 return (
                   <tr key={p.id} className="border-t border-border">
                     <td className="px-4 py-3 font-medium text-ch">{p.name}</td>
@@ -437,15 +459,44 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                         {h.label}
                       </span>
                     </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="inline-flex gap-1.5">
+                        <button onClick={() => { setEditingPhase(p.id); setEditDraft({ name: p.name, expected_hrs: String(p.sc), billable: p.billable }); }} className="text-ch/40 hover:text-ch"><Pencil className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => { if (confirm(`Delete phase "${p.name}"?`)) deletePhaseMut.mutate(p.id); }} className="text-ch/40 hover:text-danger"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
               {phaseRows.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-ch/50">No phases on this project.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-ch/50">No phases on this project.</td></tr>
+              )}
+              {addingPhase && (
+                <tr className="border-t border-border bg-creamd/40">
+                  <td className="px-4 py-2"><Input placeholder="Phase name" value={addDraft.name} onChange={(e) => setAddDraft({ ...addDraft, name: e.target.value })} autoFocus /></td>
+                  <td className="px-3 py-2"><Input type="number" min={0} step="any" placeholder="hrs" value={addDraft.expected_hrs} onChange={(e) => setAddDraft({ ...addDraft, expected_hrs: e.target.value })} className="text-right" /></td>
+                  <td colSpan={4} className="px-3 py-2 text-right text-xs text-ch/50">
+                    <label className="inline-flex items-center gap-1.5">
+                      <input type="checkbox" checked={addDraft.billable} onChange={(e) => setAddDraft({ ...addDraft, billable: e.target.checked })} className="accent-gold" />
+                      Billable
+                    </label>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="inline-flex gap-1">
+                      <button onClick={() => { if (!addDraft.name.trim()) return; phaseMut.mutate({ name: addDraft.name.trim(), expected_hrs: Number(addDraft.expected_hrs) || 0, billable: addDraft.billable }); setAddDraft({ name: "", expected_hrs: "", billable: true }); setAddingPhase(false); }} className="text-success hover:opacity-70"><Check className="h-4 w-4" /></button>
+                      <button onClick={() => setAddingPhase(false)} className="text-ch/40 hover:text-ch"><X className="h-4 w-4" /></button>
+                    </div>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
+        {!addingPhase && (
+          <button onClick={() => setAddingPhase(true)} className="mt-3 inline-flex items-center gap-1.5 text-sm text-gold hover:text-goldl">
+            <Plus className="h-4 w-4" /> Add phase
+          </button>
+        )}
       </section>
 
       <section className="mt-10 grid gap-6 md:grid-cols-2">
