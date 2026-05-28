@@ -46,6 +46,27 @@ export type Database = {
           },
         ]
       }
+      app_settings: {
+        Row: {
+          default_activity_groups: Json
+          id: number
+          maintenance_mode: boolean
+          updated_at: string
+        }
+        Insert: {
+          default_activity_groups?: Json
+          id?: number
+          maintenance_mode?: boolean
+          updated_at?: string
+        }
+        Update: {
+          default_activity_groups?: Json
+          id?: number
+          maintenance_mode?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amort_months: number | null
@@ -221,6 +242,69 @@ export type Database = {
         }
         Relationships: []
       }
+      knowledge_base_items: {
+        Row: {
+          body: Json | null
+          category: string
+          created_at: string
+          created_by: string | null
+          featured: boolean
+          id: string
+          published_at: string | null
+          slug: string
+          status: Database["public"]["Enums"]["kb_status"]
+          summary: string | null
+          tags: string[]
+          thumbnail_path: string | null
+          tier_visibility: string[]
+          title: string
+          type: Database["public"]["Enums"]["kb_item_type"]
+          updated_at: string
+          video_file_path: string | null
+          video_url: string | null
+        }
+        Insert: {
+          body?: Json | null
+          category: string
+          created_at?: string
+          created_by?: string | null
+          featured?: boolean
+          id?: string
+          published_at?: string | null
+          slug: string
+          status?: Database["public"]["Enums"]["kb_status"]
+          summary?: string | null
+          tags?: string[]
+          thumbnail_path?: string | null
+          tier_visibility?: string[]
+          title: string
+          type: Database["public"]["Enums"]["kb_item_type"]
+          updated_at?: string
+          video_file_path?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          body?: Json | null
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          featured?: boolean
+          id?: string
+          published_at?: string | null
+          slug?: string
+          status?: Database["public"]["Enums"]["kb_status"]
+          summary?: string | null
+          tags?: string[]
+          thumbnail_path?: string | null
+          tier_visibility?: string[]
+          title?: string
+          type?: Database["public"]["Enums"]["kb_item_type"]
+          updated_at?: string
+          video_file_path?: string | null
+          video_url?: string | null
+        }
+        Relationships: []
+      }
       pipeline_projects: {
         Row: {
           assigned_user_ids: string[] | null
@@ -274,7 +358,9 @@ export type Database = {
           expected_hrs_per_week: number | null
           firm_id: string | null
           id: string
+          impersonated_firm_id: string | null
           invited_at: string | null
+          is_super_admin: boolean
           name: string
           role: Database["public"]["Enums"]["user_role"]
           weeks_per_year: number | null
@@ -290,7 +376,9 @@ export type Database = {
           expected_hrs_per_week?: number | null
           firm_id?: string | null
           id: string
+          impersonated_firm_id?: string | null
           invited_at?: string | null
+          is_super_admin?: boolean
           name?: string
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
@@ -306,7 +394,9 @@ export type Database = {
           expected_hrs_per_week?: number | null
           firm_id?: string | null
           id?: string
+          impersonated_firm_id?: string | null
           invited_at?: string | null
+          is_super_admin?: boolean
           name?: string
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
@@ -780,6 +870,42 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_log: {
+        Row: {
+          created_at: string
+          delivered_at: string | null
+          error: string | null
+          event_tag: string
+          firm_id: string | null
+          id: string
+          payload: Json
+          recipient_email: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          delivered_at?: string | null
+          error?: string | null
+          event_tag: string
+          firm_id?: string | null
+          id?: string
+          payload?: Json
+          recipient_email?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          delivered_at?: string | null
+          error?: string | null
+          event_tag?: string
+          firm_id?: string | null
+          id?: string
+          payload?: Json
+          recipient_email?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -792,6 +918,7 @@ export type Database = {
       }
       is_firm_admin: { Args: never; Returns: boolean }
       is_firm_principal: { Args: never; Returns: boolean }
+      is_super_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       expense_frequency: "annual" | "monthly" | "quarterly" | "onetime"
@@ -800,7 +927,9 @@ export type Database = {
         | "cash_management"
         | "team_growth"
         | "using_sightline"
+      kb_item_type: "article" | "video"
       kb_kind: "article" | "video"
+      kb_status: "draft" | "published"
       project_status: "active" | "pipeline" | "completed" | "on_hold"
       scope_risk: "low" | "medium" | "high"
       subscription_status:
@@ -945,7 +1074,9 @@ export const Constants = {
         "team_growth",
         "using_sightline",
       ],
+      kb_item_type: ["article", "video"],
       kb_kind: ["article", "video"],
+      kb_status: ["draft", "published"],
       project_status: ["active", "pipeline", "completed", "on_hold"],
       scope_risk: ["low", "medium", "high"],
       subscription_status: [
