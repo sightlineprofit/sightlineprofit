@@ -7,9 +7,17 @@ import { calc, fmtUsd, fmtPct, healthScore, type RateOverrides } from "@/lib/fin
 import { Tile } from "@/components/dashboard/Tile";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sliders, BookOpen, FlaskConical, Play } from "lucide-react";
+import { Sliders, BookOpen, FlaskConical, Play, Pencil, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
+import {
+  listManualHourLogs,
+  upsertManualHourLog,
+  deleteManualHourLog,
+  getActualsForSpan,
+} from "@/lib/manual-hours.functions";
+import { UpgradeModal } from "@/components/shell/UpgradeModal";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -36,6 +44,7 @@ function Dashboard() {
       { table: "firm_config", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "expenses", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "manual_hour_logs", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
     ],
     [["dashboard"]],
     !!firmId,
@@ -85,7 +94,15 @@ function Dashboard() {
 
       {/* Full views */}
       <FullViewDialog open={open === "rate"} onClose={() => setOpen(null)} title="Rate Allocation"><RateFull c={c} /></FullViewDialog>
-      <FullViewDialog open={open === "bva"} onClose={() => setOpen(null)} title="Budget vs Actual" wide><BvAFull c={c} weekHours={data?.weekHours ?? 0} prefs={data?.prefs.hidden_metrics ?? []} /></FullViewDialog>
+      <FullViewDialog open={open === "bva"} onClose={() => setOpen(null)} title="Budget vs Actual" wide>
+        <BvAFull
+          c={c}
+          weekHours={data?.weekHours ?? 0}
+          prefs={data?.prefs.hidden_metrics ?? []}
+          tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
+          firmId={firmId}
+        />
+      </FullViewDialog>
       <FullViewDialog open={open === "health"} onClose={() => setOpen(null)} title="Cost Architecture Health"><HealthFull c={c} /></FullViewDialog>
       <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
       <FullViewDialog open={open === "growth"} onClose={() => setOpen(null)} title="Growth Roadmap"><GrowthFull c={c} /></FullViewDialog>
