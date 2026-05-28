@@ -1,0 +1,206 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+const tierEnum = z.enum(["foundation", "studio", "practice"]);
+
+export const createFirmForCurrentUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        firmName: z.string().trim().min(1).max(120),
+        ownerName: z.string().trim().min(1).max(120),
+        tier: tierEnum,
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // If user already has a firm, return it (idempotent).
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, name")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profile?.firm_id) {
+      return { firmId: profile.firm_id, alreadyExists: true };
+    }
+
+    const { data: firm, error: firmErr } = await supabase
+      .from("firms")
+      .insert({
+        name: data.firmName,
+        owner_id: userId,
+        subscription_tier: data.tier,
+        subscription_status: "trialing",
+      })
+      .select("id")
+      .single();
+    if (firmErr || !firm) throw new Error(firmErr?.message ?? "Failed to create firm");
+
+    const { error: profErr } = await supabase
+      .from("profiles")
+      .update({
+        firm_id: firm.id,
+        role: "principal",
+        name: data.ownerName,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+    if (profErr) throw new Error(profErr.message);
+
+    await supabase.from("firm_config").insert({ firm_id: firm.id });
+
+    return { firmId: firm.id, alreadyExists: false };
+  });
+
+export const getMyContext = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, firm_id, role, name, email")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!profile?.firm_id) return { profile, firm: null, config: null };
+    const [{ data: firm }, { data: config }] = await Promise.all([
+      supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
+      supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+    ]);
+    return { profile, firm, config };
+  });
+
+const configSchema = z.object({
+  comp_draw_annual: z.number().min(0).max(1e9).nullable().optional(),
+  comp_ptax_pct: z.number().min(0).max(100).nullable().optional(),
+  comp_health_annual: z.number().min(0).max(1e9).nullable().optional(),
+  comp_retire_annual: z.number().min(0).max(1e9).nullable().optional(),
+  available_hrs_per_week: z.number().min(0).max(168).nullable().optional(),
+  target_billable_hrs_per_week: z.number().min(0).max(168).nullable().optional(),
+  target_gross_margin_pct: z.number().min(0).max(100).nullable().optional(),
+  rate_billed: z.number().min(0).max(100000).nullable().optional(),
+  actual_billed_rate: z.number().min(0).max(100000).nullable().optional(),
+});
+
+export const upsertFirmConfig = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => configSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { error } = await supabase
+      .from("firm_config")
+      .upsert(
+        { firm_id: profile.firm_id, ...data, updated_at: new Date().toISOString() },
+        { onConflict: "firm_id" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const expenseSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  amount: z.number().min(0).max(1e9),
+  frequency: z.enum(["annual", "monthly", "quarterly", "onetime"]),
+  category: z.string().trim().max(80).optional().nullable(),
+  recurring: z.boolean(),
+  amort_months: z.number().int().min(1).max(360).optional().nullable(),
+});
+
+export const addExpense = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => expenseSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { data: row, error } = await supabase
+      .from("expenses")
+      .insert({ firm_id: profile.firm_id, ...data })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const deleteExpense = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("expenses").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const listExpenses = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return [];
+    const { data } = await supabase
+      .from("expenses")
+      .select("*")
+      .eq("firm_id", profile.firm_id)
+      .order("created_at", { ascending: false });
+    return data ?? [];
+  });
+
+const inviteSchema = z.object({
+  email: z.string().trim().email().max(255),
+  role: z.enum(["principal", "admin", "team", "view_only"]),
+});
+
+export const inviteTeamMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => inviteSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role)) throw new Error("Not allowed");
+    const { data: row, error } = await supabase
+      .from("team_invitations")
+      .upsert(
+        {
+          firm_id: profile.firm_id,
+          email: data.email,
+          role: data.role,
+          invited_by: userId,
+        },
+        { onConflict: "firm_id,email" },
+      )
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const completeOnboarding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    // Reserved for future flag; the dashboard is reachable once a firm exists.
+    return { ok: true, userId: context.userId };
+  });
