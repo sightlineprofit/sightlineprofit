@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600;700&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -59,42 +60,68 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-gold: var(--gold);
+  --color-goldl: var(--goldl);
+  --color-goldp: var(--goldp);
+  --color-cream: var(--cream);
+  --color-creamd: var(--creamd);
+  --color-ch: var(--ch);
+  --color-success: var(--success);
+  --color-terra: var(--terra);
+  --color-danger: var(--danger);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
+  /* Sightline brand tokens */
+  --radius: 0.5rem;
+  --ch: #2C2C2C;
+  --gold: #B8860B;
+  --goldl: #D4A017;
+  --goldp: #F5EDD6;
+  --cream: #FAF7F2;
+  --creamd: #EDE8DF;
+  --white: #FFFFFF;
+  --success: #5C8A6E;
+  --terra: #C4714A;
+  --danger: #B85C5C;
+
+  --background: #FAF7F2;
+  --foreground: #2C2C2C;
+  --card: #FFFFFF;
+  --card-foreground: #2C2C2C;
+  --popover: #FFFFFF;
+  --popover-foreground: #2C2C2C;
+  --primary: #B8860B;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EDE8DF;
+  --secondary-foreground: #2C2C2C;
+  --muted: #EDE8DF;
+  --muted-foreground: rgba(44,44,44,0.62);
+  --accent: #F5EDD6;
+  --accent-foreground: #2C2C2C;
+  --destructive: #B85C5C;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(44,44,44,0.10);
+  --input: rgba(44,44,44,0.18);
+  --ring: #D4A017;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #2C2C2C;
+  --sidebar-primary: #B8860B;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F5EDD6;
+  --sidebar-accent-foreground: #2C2C2C;
+  --sidebar-border: rgba(44,44,44,0.10);
+  --sidebar-ring: #D4A017;
+
+  --font-display: "Cormorant Garamond", serif;
+  --font-sans: "Jost", sans-serif;
 }
 
 .dark {
@@ -140,5 +167,23 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "ss02";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-display {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  .num, .tabular {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+  }
+
+  input, textarea, select, button {
+    font-family: var(--font-sans);
   }
 }
