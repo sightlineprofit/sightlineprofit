@@ -19,7 +19,6 @@ import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
-import { Route as AuthenticatedRateArchitectureRouteImport } from './routes/_authenticated/rate-architecture'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedKnowledgeBaseRouteImport } from './routes/_authenticated/knowledge-base'
@@ -88,12 +87,6 @@ const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedRateArchitectureRoute =
-  AuthenticatedRateArchitectureRouteImport.update({
-    id: '/rate-architecture',
-    path: '/rate-architecture',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
@@ -203,7 +196,6 @@ export interface FileRoutesByFullPath {
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
-  '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
@@ -232,7 +224,6 @@ export interface FileRoutesByTo {
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
-  '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
@@ -263,7 +254,6 @@ export interface FileRoutesById {
   '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
-  '/_authenticated/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
@@ -294,7 +284,6 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/onboarding'
     | '/projects'
-    | '/rate-architecture'
     | '/settings'
     | '/setup'
     | '/sightline'
@@ -323,7 +312,6 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/onboarding'
     | '/projects'
-    | '/rate-architecture'
     | '/settings'
     | '/setup'
     | '/sightline'
@@ -353,7 +341,6 @@ export interface FileRouteTypes {
     | '/_authenticated/knowledge-base'
     | '/_authenticated/onboarding'
     | '/_authenticated/projects'
-    | '/_authenticated/rate-architecture'
     | '/_authenticated/settings'
     | '/_authenticated/setup'
     | '/_authenticated/sightline'
@@ -448,13 +435,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/rate-architecture': {
-      id: '/_authenticated/rate-architecture'
-      path: '/rate-architecture'
-      fullPath: '/rate-architecture'
-      preLoaderRoute: typeof AuthenticatedRateArchitectureRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/projects': {
@@ -641,7 +621,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRouteWithChildren
-  AuthenticatedRateArchitectureRoute: typeof AuthenticatedRateArchitectureRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
@@ -658,7 +637,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRouteWithChildren,
-  AuthenticatedRateArchitectureRoute: AuthenticatedRateArchitectureRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
@@ -680,3 +658,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
