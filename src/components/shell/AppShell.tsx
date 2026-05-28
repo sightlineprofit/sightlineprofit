@@ -16,8 +16,12 @@ import {
   ChevronRight,
   LogOut,
   User,
+  Shield,
+  EyeOff,
+  Eye,
 } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
+import { setImpersonation } from "@/lib/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
@@ -58,6 +62,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [userMenu, setUserMenu] = useState(false);
   const nav = useNavigate();
   const getCtx = useServerFn(getMyContext);
+  const stopImpFn = useServerFn(setImpersonation);
   const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
 
   const currentTier: Tier = (data?.firm?.subscription_tier as Tier) ?? "foundation";
@@ -70,6 +75,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     nav({ to: "/" });
   }
+
+  async function stopImpersonating() {
+    await stopImpFn({ data: { firm_id: null } });
+    window.location.reload();
+  }
+
+  const isSuper = !!data?.profile?.is_super_admin;
+  const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
 
   return (
     <div className="flex min-h-screen w-full bg-cream text-ch">
@@ -145,6 +158,29 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             );
           })}
+          {isSuper && (
+            <div className="mt-4 border-t border-border pt-3">
+              {!collapsed && (
+                <div className="px-3 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-gold">
+                  Internal
+                </div>
+              )}
+              <Link
+                to={"/admin" as any}
+                className={cn(
+                  "group flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                  pathname.startsWith("/admin")
+                    ? "bg-goldp text-ch font-medium"
+                    : "text-ch/70 hover:bg-creamd hover:text-ch",
+                  collapsed && "justify-center px-2",
+                )}
+                title={collapsed ? "Admin" : undefined}
+              >
+                <Shield className="h-4 w-4 shrink-0" />
+                {!collapsed && <span className="flex-1 truncate">Admin</span>}
+              </Link>
+            </div>
+          )}
         </nav>
 
         {/* Collapse toggle */}
@@ -212,6 +248,23 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {impersonating && (
+          <div className="flex items-center justify-between gap-3 border-b border-gold/40 bg-gold px-6 py-2 text-sm text-white">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4" />
+              <span>
+                Viewing as <strong>{data?.firm?.name ?? "another firm"}</strong> · You are impersonating.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={stopImpersonating}
+              className="inline-flex items-center gap-1 rounded-md bg-white/15 px-3 py-1 text-xs hover:bg-white/25"
+            >
+              <EyeOff className="h-3 w-3" /> Stop
+            </button>
+          </div>
+        )}
         {data?.firm && (
           <TrialBanner trialEndsAt={data.firm.trial_ends_at} status={data.firm.subscription_status} />
         )}

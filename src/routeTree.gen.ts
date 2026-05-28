@@ -24,6 +24,7 @@ import { Route as AuthenticatedKnowledgeBaseRouteImport } from './routes/_authen
 import { Route as AuthenticatedGrowthRoadmapRouteImport } from './routes/_authenticated/growth-roadmap'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -103,12 +104,18 @@ const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
   path: '/billing',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/post-auth': typeof PostAuthRoute
   '/register': typeof RegisterRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/post-auth': typeof PostAuthRoute
   '/register': typeof RegisterRoute
+  '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/post-auth': typeof PostAuthRoute
   '/register': typeof RegisterRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/post-auth'
     | '/register'
+    | '/admin'
     | '/billing'
     | '/dashboard'
     | '/growth-roadmap'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/post-auth'
     | '/register'
+    | '/admin'
     | '/billing'
     | '/dashboard'
     | '/growth-roadmap'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/post-auth'
     | '/register'
+    | '/_authenticated/admin'
     | '/_authenticated/billing'
     | '/_authenticated/dashboard'
     | '/_authenticated/growth-roadmap'
@@ -321,10 +333,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBillingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedGrowthRoadmapRoute: typeof AuthenticatedGrowthRoadmapRoute
@@ -338,6 +358,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedGrowthRoadmapRoute: AuthenticatedGrowthRoadmapRoute,
