@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
 import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
 import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRateArchitectureRouteImport } from './routes/_authenticated/rate-architecture'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedKnowledgeBaseRouteImport } from './routes/_authenticated/knowledge-base'
@@ -64,6 +65,11 @@ const AuthenticatedSightlineRoute = AuthenticatedSightlineRouteImport.update({
   path: '/sightline',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedRateArchitectureRoute =
   AuthenticatedRateArchitectureRouteImport.update({
     id: '/rate-architecture',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRoute
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRoute
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/rate-architecture': typeof AuthenticatedRateArchitectureRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRoute
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/onboarding'
     | '/rate-architecture'
+    | '/settings'
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/knowledge-base'
     | '/onboarding'
     | '/rate-architecture'
+    | '/settings'
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/_authenticated/knowledge-base'
     | '/_authenticated/onboarding'
     | '/_authenticated/rate-architecture'
+    | '/_authenticated/settings'
     | '/_authenticated/sightline'
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
@@ -260,6 +272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSightlineRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/rate-architecture': {
       id: '/_authenticated/rate-architecture'
       path: '/rate-architecture'
@@ -312,6 +331,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedRateArchitectureRoute: typeof AuthenticatedRateArchitectureRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
   AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRoute
   AuthenticatedTimeCalendarRoute: typeof AuthenticatedTimeCalendarRoute
@@ -324,6 +344,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedRateArchitectureRoute: AuthenticatedRateArchitectureRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
   AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRoute,
   AuthenticatedTimeCalendarRoute: AuthenticatedTimeCalendarRoute,
@@ -343,3 +364,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
