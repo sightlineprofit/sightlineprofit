@@ -328,41 +328,114 @@ function Library() {
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">Attach “{attachFor?.name}”</DialogTitle>
           </DialogHeader>
-          <AttachForm
-            onSubmit={(v) => attachFor && attachMut.mutate({ ...v, template_id: attachFor.id })}
-            saving={attachMut.isPending}
-          />
+          {attachFor && (
+            <AttachProjectPicker
+              templateName={attachFor.name}
+              projects={(data?.projects ?? []) as ProjectOption[]}
+              onSubmit={(project_id) => attachMut.mutate({ template_id: attachFor.id, project_id })}
+              saving={attachMut.isPending}
+              onCancel={() => setAttachFor(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
       {delMut.isPending && <div className="sr-only">Deleting…</div>}
     </ModulePage>
   );
+}
 
-  function AttachForm({ onSubmit, saving }: { onSubmit: (v: { project_name: string; client_name: string }) => void; saving: boolean }) {
-    const [name, setName] = useState("");
-    const [client, setClient] = useState("");
+type ProjectOption = { id: string; name: string; client_name: string | null; status: string };
+
+function AttachProjectPicker({
+  templateName, projects, onSubmit, saving, onCancel,
+}: {
+  templateName: string;
+  projects: ProjectOption[];
+  onSubmit: (project_id: string) => void;
+  saving: boolean;
+  onCancel: () => void;
+}) {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<string>("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((p) =>
+      [p.name, p.client_name].filter(Boolean).some((v) => v!.toLowerCase().includes(q)),
+    );
+  }, [projects, search]);
+
+  const selectedProject = projects.find((p) => p.id === selected);
+
+  if (projects.length === 0) {
     return (
-      <form
-        onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSubmit({ project_name: name.trim(), client_name: client.trim() }); }}
-        className="space-y-4"
-      >
-        <div>
-          <Label>Project name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={160} className="mt-1" />
-        </div>
-        <div>
-          <Label>Client (optional)</Label>
-          <Input value={client} onChange={(e) => setClient(e.target.value)} maxLength={160} className="mt-1" />
-        </div>
+      <div className="space-y-4 py-2">
+        <p className="text-sm text-ch/70">You have no projects to attach this to yet.</p>
         <DialogFooter>
-          <Button type="submit" disabled={saving} className="bg-gold hover:bg-goldl">
-            {saving ? "Creating…" : "Create project"}
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button className="bg-gold hover:bg-goldl" onClick={() => { onCancel(); navigate({ to: "/sightline" }); }}>
+            Create a project first →
           </Button>
         </DialogFooter>
-      </form>
+      </div>
     );
   }
+
+  return (
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ch/40" />
+        <Input
+          autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search projects…" className="pl-9"
+        />
+      </div>
+      <div className="max-h-72 overflow-y-auto rounded-md border border-border">
+        {filtered.length === 0 ? (
+          <p className="p-4 text-sm text-ch/50">No projects match.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(p.id)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-creamd/50",
+                    selected === p.id && "bg-goldp/40",
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-ch">{p.name}</div>
+                    {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
+                  </div>
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
+                    {p.status}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button
+          disabled={!selected || saving}
+          onClick={() => selected && onSubmit(selected)}
+          className="bg-gold hover:bg-goldl"
+        >
+          {saving ? "Attaching…" : selectedProject ? `Attach to ${selectedProject.name}` : "Attach"}
+        </Button>
+      </DialogFooter>
+      <p className="text-[11px] text-ch/50">
+        Attaching “{templateName}” copies its phases as a snapshot. Editing the template later won't change this project.
+      </p>
+    </div>
+  );
 }
 
 function TemplateEditor({
