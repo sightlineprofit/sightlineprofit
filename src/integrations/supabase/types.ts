@@ -547,33 +547,51 @@ export type Database = {
       team_invitations: {
         Row: {
           accepted_at: string | null
+          billable_pct: number | null
+          billable_rate: number | null
+          cost_rate: number | null
           email: string
+          expected_hrs_per_week: number | null
           firm_id: string
           id: string
           invited_at: string
           invited_by: string
+          name: string | null
           role: Database["public"]["Enums"]["user_role"]
           token: string
+          weeks_per_year: number | null
         }
         Insert: {
           accepted_at?: string | null
+          billable_pct?: number | null
+          billable_rate?: number | null
+          cost_rate?: number | null
           email: string
+          expected_hrs_per_week?: number | null
           firm_id: string
           id?: string
           invited_at?: string
           invited_by: string
+          name?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           token?: string
+          weeks_per_year?: number | null
         }
         Update: {
           accepted_at?: string | null
+          billable_pct?: number | null
+          billable_rate?: number | null
+          cost_rate?: number | null
           email?: string
+          expected_hrs_per_week?: number | null
           firm_id?: string
           id?: string
           invited_at?: string
           invited_by?: string
+          name?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           token?: string
+          weeks_per_year?: number | null
         }
         Relationships: [
           {

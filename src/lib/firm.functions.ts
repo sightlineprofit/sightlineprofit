@@ -167,6 +167,12 @@ export const listExpenses = createServerFn({ method: "GET" })
 const inviteSchema = z.object({
   email: z.string().trim().email().max(255),
   role: z.enum(["principal", "admin", "team", "view_only"]),
+  name: z.string().trim().max(120).optional().nullable(),
+  billable_rate: z.number().min(0).max(100000).optional().nullable(),
+  cost_rate: z.number().min(0).max(100000).optional().nullable(),
+  expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
+  weeks_per_year: z.number().min(0).max(60).optional().nullable(),
+  billable_pct: z.number().min(0).max(100).optional().nullable(),
 });
 
 export const inviteTeamMember = createServerFn({ method: "POST" })
@@ -188,6 +194,12 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
           firm_id: profile.firm_id,
           email: data.email,
           role: data.role,
+          name: data.name ?? null,
+          billable_rate: data.billable_rate ?? null,
+          cost_rate: data.cost_rate ?? null,
+          expected_hrs_per_week: data.expected_hrs_per_week ?? null,
+          weeks_per_year: data.weeks_per_year ?? null,
+          billable_pct: data.billable_pct ?? null,
           invited_by: userId,
         },
         { onConflict: "firm_id,email" },
