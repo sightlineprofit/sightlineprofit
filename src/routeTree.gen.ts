@@ -14,7 +14,14 @@ import { Route as PostAuthRouteImport } from './routes/post-auth'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
+import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
+import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedRateArchitectureRouteImport } from './routes/_authenticated/rate-architecture'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as AuthenticatedKnowledgeBaseRouteImport } from './routes/_authenticated/knowledge-base'
+import { Route as AuthenticatedGrowthRoadmapRouteImport } from './routes/_authenticated/growth-roadmap'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 
@@ -42,11 +49,50 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedTimeCalendarRoute =
+  AuthenticatedTimeCalendarRouteImport.update({
+    id: '/time-calendar',
+    path: '/time-calendar',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSopLibraryRoute = AuthenticatedSopLibraryRouteImport.update({
+  id: '/sop-library',
+  path: '/sop-library',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSightlineRoute = AuthenticatedSightlineRouteImport.update({
+  id: '/sightline',
+  path: '/sightline',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedRateArchitectureRoute =
+  AuthenticatedRateArchitectureRouteImport.update({
+    id: '/rate-architecture',
+    path: '/rate-architecture',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedKnowledgeBaseRoute =
+  AuthenticatedKnowledgeBaseRouteImport.update({
+    id: '/knowledge-base',
+    path: '/knowledge-base',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedGrowthRoadmapRoute =
+  AuthenticatedGrowthRoadmapRouteImport.update({
+    id: '/growth-roadmap',
+    path: '/growth-roadmap',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -65,7 +111,14 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
+  '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/sightline': typeof AuthenticatedSightlineRoute
+  '/sop-library': typeof AuthenticatedSopLibraryRoute
+  '/time-calendar': typeof AuthenticatedTimeCalendarRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -74,7 +127,14 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
+  '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/sightline': typeof AuthenticatedSightlineRoute
+  '/sop-library': typeof AuthenticatedSopLibraryRoute
+  '/time-calendar': typeof AuthenticatedTimeCalendarRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -85,7 +145,14 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
+  '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
+  '/_authenticated/rate-architecture': typeof AuthenticatedRateArchitectureRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
+  '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRoute
+  '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -96,7 +163,14 @@ export interface FileRouteTypes {
     | '/register'
     | '/billing'
     | '/dashboard'
+    | '/growth-roadmap'
+    | '/knowledge-base'
     | '/onboarding'
+    | '/rate-architecture'
+    | '/settings'
+    | '/sightline'
+    | '/sop-library'
+    | '/time-calendar'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -105,7 +179,14 @@ export interface FileRouteTypes {
     | '/register'
     | '/billing'
     | '/dashboard'
+    | '/growth-roadmap'
+    | '/knowledge-base'
     | '/onboarding'
+    | '/rate-architecture'
+    | '/settings'
+    | '/sightline'
+    | '/sop-library'
+    | '/time-calendar'
   id:
     | '__root__'
     | '/'
@@ -115,7 +196,14 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/billing'
     | '/_authenticated/dashboard'
+    | '/_authenticated/growth-roadmap'
+    | '/_authenticated/knowledge-base'
     | '/_authenticated/onboarding'
+    | '/_authenticated/rate-architecture'
+    | '/_authenticated/settings'
+    | '/_authenticated/sightline'
+    | '/_authenticated/sop-library'
+    | '/_authenticated/time-calendar'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -163,11 +251,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/time-calendar': {
+      id: '/_authenticated/time-calendar'
+      path: '/time-calendar'
+      fullPath: '/time-calendar'
+      preLoaderRoute: typeof AuthenticatedTimeCalendarRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sop-library': {
+      id: '/_authenticated/sop-library'
+      path: '/sop-library'
+      fullPath: '/sop-library'
+      preLoaderRoute: typeof AuthenticatedSopLibraryRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sightline': {
+      id: '/_authenticated/sightline'
+      path: '/sightline'
+      fullPath: '/sightline'
+      preLoaderRoute: typeof AuthenticatedSightlineRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/rate-architecture': {
+      id: '/_authenticated/rate-architecture'
+      path: '/rate-architecture'
+      fullPath: '/rate-architecture'
+      preLoaderRoute: typeof AuthenticatedRateArchitectureRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/onboarding': {
       id: '/_authenticated/onboarding'
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/knowledge-base': {
+      id: '/_authenticated/knowledge-base'
+      path: '/knowledge-base'
+      fullPath: '/knowledge-base'
+      preLoaderRoute: typeof AuthenticatedKnowledgeBaseRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/growth-roadmap': {
+      id: '/_authenticated/growth-roadmap'
+      path: '/growth-roadmap'
+      fullPath: '/growth-roadmap'
+      preLoaderRoute: typeof AuthenticatedGrowthRoadmapRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/dashboard': {
@@ -190,13 +327,27 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedGrowthRoadmapRoute: typeof AuthenticatedGrowthRoadmapRoute
+  AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
+  AuthenticatedRateArchitectureRoute: typeof AuthenticatedRateArchitectureRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
+  AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRoute
+  AuthenticatedTimeCalendarRoute: typeof AuthenticatedTimeCalendarRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedGrowthRoadmapRoute: AuthenticatedGrowthRoadmapRoute,
+  AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
+  AuthenticatedRateArchitectureRoute: AuthenticatedRateArchitectureRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
+  AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRoute,
+  AuthenticatedTimeCalendarRoute: AuthenticatedTimeCalendarRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
