@@ -9,6 +9,7 @@ import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sliders, BookOpen, FlaskConical, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -28,6 +29,17 @@ function Dashboard() {
   const fetch = useServerFn(getDashboardData);
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetch() });
   const [open, setOpen] = useState<TileId>(null);
+  const firmId = data?.firm?.id as string | undefined;
+  useRealtimeInvalidate(
+    `dashboard-${firmId ?? "none"}`,
+    [
+      { table: "firm_config", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "expenses", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+    ],
+    [["dashboard"]],
+    !!firmId,
+  );
 
   const c = useMemo(() => calc(data?.config ?? null, data?.expenses ?? []), [data]);
   const firstName = (data?.profile?.name || data?.profile?.email || "").split(/[ @]/)[0] || "there";
