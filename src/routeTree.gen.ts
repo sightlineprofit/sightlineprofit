@@ -17,14 +17,26 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
 import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
 import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
+import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRateArchitectureRouteImport } from './routes/_authenticated/rate-architecture'
+import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedKnowledgeBaseRouteImport } from './routes/_authenticated/knowledge-base'
 import { Route as AuthenticatedGrowthRoadmapRouteImport } from './routes/_authenticated/growth-roadmap'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedSopLibraryNewRouteImport } from './routes/_authenticated/sop-library.new'
+import { Route as AuthenticatedSopLibraryIdRouteImport } from './routes/_authenticated/sop-library.$id'
+import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
+import { Route as AuthenticatedDashboardScenariosRouteImport } from './routes/_authenticated/dashboard.scenarios'
+import { Route as AuthenticatedDashboardRateRouteImport } from './routes/_authenticated/dashboard.rate'
+import { Route as AuthenticatedDashboardKnowledgeRouteImport } from './routes/_authenticated/dashboard.knowledge'
+import { Route as AuthenticatedDashboardHealthRouteImport } from './routes/_authenticated/dashboard.health'
+import { Route as AuthenticatedDashboardGrowthRouteImport } from './routes/_authenticated/dashboard.growth'
+import { Route as AuthenticatedDashboardBvaRouteImport } from './routes/_authenticated/dashboard.bva'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -66,6 +78,11 @@ const AuthenticatedSightlineRoute = AuthenticatedSightlineRouteImport.update({
   path: '/sightline',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSetupRoute = AuthenticatedSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -77,6 +94,11 @@ const AuthenticatedRateArchitectureRoute =
     path: '/rate-architecture',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
@@ -99,6 +121,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCalendarRoute = AuthenticatedCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -109,6 +136,59 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSopLibraryNewRoute =
+  AuthenticatedSopLibraryNewRouteImport.update({
+    id: '/new',
+    path: '/new',
+    getParentRoute: () => AuthenticatedSopLibraryRoute,
+  } as any)
+const AuthenticatedSopLibraryIdRoute =
+  AuthenticatedSopLibraryIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedSopLibraryRoute,
+  } as any)
+const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedProjectsRoute,
+} as any)
+const AuthenticatedDashboardScenariosRoute =
+  AuthenticatedDashboardScenariosRouteImport.update({
+    id: '/scenarios',
+    path: '/scenarios',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardRateRoute =
+  AuthenticatedDashboardRateRouteImport.update({
+    id: '/rate',
+    path: '/rate',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardKnowledgeRoute =
+  AuthenticatedDashboardKnowledgeRouteImport.update({
+    id: '/knowledge',
+    path: '/knowledge',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardHealthRoute =
+  AuthenticatedDashboardHealthRouteImport.update({
+    id: '/health',
+    path: '/health',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardGrowthRoute =
+  AuthenticatedDashboardGrowthRouteImport.update({
+    id: '/growth',
+    path: '/growth',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardBvaRoute =
+  AuthenticatedDashboardBvaRouteImport.update({
+    id: '/bva',
+    path: '/bva',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -117,15 +197,27 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/calendar': typeof AuthenticatedCalendarRoute
+  '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
-  '/sop-library': typeof AuthenticatedSopLibraryRoute
+  '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
+  '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
+  '/dashboard/health': typeof AuthenticatedDashboardHealthRoute
+  '/dashboard/knowledge': typeof AuthenticatedDashboardKnowledgeRoute
+  '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
+  '/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
+  '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
+  '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,15 +226,27 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/calendar': typeof AuthenticatedCalendarRoute
+  '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
-  '/sop-library': typeof AuthenticatedSopLibraryRoute
+  '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
+  '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
+  '/dashboard/health': typeof AuthenticatedDashboardHealthRoute
+  '/dashboard/knowledge': typeof AuthenticatedDashboardKnowledgeRoute
+  '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
+  '/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
+  '/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
+  '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -153,15 +257,27 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
-  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/_authenticated/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
+  '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
-  '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRoute
+  '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/_authenticated/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
+  '/_authenticated/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
+  '/_authenticated/dashboard/health': typeof AuthenticatedDashboardHealthRoute
+  '/_authenticated/dashboard/knowledge': typeof AuthenticatedDashboardKnowledgeRoute
+  '/_authenticated/dashboard/rate': typeof AuthenticatedDashboardRateRoute
+  '/_authenticated/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
+  '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
+  '/_authenticated/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
+  '/_authenticated/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -172,15 +288,27 @@ export interface FileRouteTypes {
     | '/register'
     | '/admin'
     | '/billing'
+    | '/calendar'
     | '/dashboard'
     | '/growth-roadmap'
     | '/knowledge-base'
     | '/onboarding'
+    | '/projects'
     | '/rate-architecture'
     | '/settings'
+    | '/setup'
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
+    | '/dashboard/bva'
+    | '/dashboard/growth'
+    | '/dashboard/health'
+    | '/dashboard/knowledge'
+    | '/dashboard/rate'
+    | '/dashboard/scenarios'
+    | '/projects/$id'
+    | '/sop-library/$id'
+    | '/sop-library/new'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -189,15 +317,27 @@ export interface FileRouteTypes {
     | '/register'
     | '/admin'
     | '/billing'
+    | '/calendar'
     | '/dashboard'
     | '/growth-roadmap'
     | '/knowledge-base'
     | '/onboarding'
+    | '/projects'
     | '/rate-architecture'
     | '/settings'
+    | '/setup'
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
+    | '/dashboard/bva'
+    | '/dashboard/growth'
+    | '/dashboard/health'
+    | '/dashboard/knowledge'
+    | '/dashboard/rate'
+    | '/dashboard/scenarios'
+    | '/projects/$id'
+    | '/sop-library/$id'
+    | '/sop-library/new'
   id:
     | '__root__'
     | '/'
@@ -207,15 +347,27 @@ export interface FileRouteTypes {
     | '/register'
     | '/_authenticated/admin'
     | '/_authenticated/billing'
+    | '/_authenticated/calendar'
     | '/_authenticated/dashboard'
     | '/_authenticated/growth-roadmap'
     | '/_authenticated/knowledge-base'
     | '/_authenticated/onboarding'
+    | '/_authenticated/projects'
     | '/_authenticated/rate-architecture'
     | '/_authenticated/settings'
+    | '/_authenticated/setup'
     | '/_authenticated/sightline'
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
+    | '/_authenticated/dashboard/bva'
+    | '/_authenticated/dashboard/growth'
+    | '/_authenticated/dashboard/health'
+    | '/_authenticated/dashboard/knowledge'
+    | '/_authenticated/dashboard/rate'
+    | '/_authenticated/dashboard/scenarios'
+    | '/_authenticated/projects/$id'
+    | '/_authenticated/sop-library/$id'
+    | '/_authenticated/sop-library/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -284,6 +436,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSightlineRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/setup': {
+      id: '/_authenticated/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof AuthenticatedSetupRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -296,6 +455,13 @@ declare module '@tanstack/react-router' {
       path: '/rate-architecture'
       fullPath: '/rate-architecture'
       preLoaderRoute: typeof AuthenticatedRateArchitectureRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/projects': {
+      id: '/_authenticated/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AuthenticatedProjectsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/onboarding': {
@@ -326,6 +492,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/calendar': {
+      id: '/_authenticated/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof AuthenticatedCalendarRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/billing': {
       id: '/_authenticated/billing'
       path: '/billing'
@@ -340,34 +513,156 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sop-library/new': {
+      id: '/_authenticated/sop-library/new'
+      path: '/new'
+      fullPath: '/sop-library/new'
+      preLoaderRoute: typeof AuthenticatedSopLibraryNewRouteImport
+      parentRoute: typeof AuthenticatedSopLibraryRoute
+    }
+    '/_authenticated/sop-library/$id': {
+      id: '/_authenticated/sop-library/$id'
+      path: '/$id'
+      fullPath: '/sop-library/$id'
+      preLoaderRoute: typeof AuthenticatedSopLibraryIdRouteImport
+      parentRoute: typeof AuthenticatedSopLibraryRoute
+    }
+    '/_authenticated/projects/$id': {
+      id: '/_authenticated/projects/$id'
+      path: '/$id'
+      fullPath: '/projects/$id'
+      preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
+      parentRoute: typeof AuthenticatedProjectsRoute
+    }
+    '/_authenticated/dashboard/scenarios': {
+      id: '/_authenticated/dashboard/scenarios'
+      path: '/scenarios'
+      fullPath: '/dashboard/scenarios'
+      preLoaderRoute: typeof AuthenticatedDashboardScenariosRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/rate': {
+      id: '/_authenticated/dashboard/rate'
+      path: '/rate'
+      fullPath: '/dashboard/rate'
+      preLoaderRoute: typeof AuthenticatedDashboardRateRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/knowledge': {
+      id: '/_authenticated/dashboard/knowledge'
+      path: '/knowledge'
+      fullPath: '/dashboard/knowledge'
+      preLoaderRoute: typeof AuthenticatedDashboardKnowledgeRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/health': {
+      id: '/_authenticated/dashboard/health'
+      path: '/health'
+      fullPath: '/dashboard/health'
+      preLoaderRoute: typeof AuthenticatedDashboardHealthRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/growth': {
+      id: '/_authenticated/dashboard/growth'
+      path: '/growth'
+      fullPath: '/dashboard/growth'
+      preLoaderRoute: typeof AuthenticatedDashboardGrowthRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/bva': {
+      id: '/_authenticated/dashboard/bva'
+      path: '/bva'
+      fullPath: '/dashboard/bva'
+      preLoaderRoute: typeof AuthenticatedDashboardBvaRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
   }
 }
+
+interface AuthenticatedDashboardRouteChildren {
+  AuthenticatedDashboardBvaRoute: typeof AuthenticatedDashboardBvaRoute
+  AuthenticatedDashboardGrowthRoute: typeof AuthenticatedDashboardGrowthRoute
+  AuthenticatedDashboardHealthRoute: typeof AuthenticatedDashboardHealthRoute
+  AuthenticatedDashboardKnowledgeRoute: typeof AuthenticatedDashboardKnowledgeRoute
+  AuthenticatedDashboardRateRoute: typeof AuthenticatedDashboardRateRoute
+  AuthenticatedDashboardScenariosRoute: typeof AuthenticatedDashboardScenariosRoute
+}
+
+const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
+  {
+    AuthenticatedDashboardBvaRoute: AuthenticatedDashboardBvaRoute,
+    AuthenticatedDashboardGrowthRoute: AuthenticatedDashboardGrowthRoute,
+    AuthenticatedDashboardHealthRoute: AuthenticatedDashboardHealthRoute,
+    AuthenticatedDashboardKnowledgeRoute: AuthenticatedDashboardKnowledgeRoute,
+    AuthenticatedDashboardRateRoute: AuthenticatedDashboardRateRoute,
+    AuthenticatedDashboardScenariosRoute: AuthenticatedDashboardScenariosRoute,
+  }
+
+const AuthenticatedDashboardRouteWithChildren =
+  AuthenticatedDashboardRoute._addFileChildren(
+    AuthenticatedDashboardRouteChildren,
+  )
+
+interface AuthenticatedProjectsRouteChildren {
+  AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRoute
+}
+
+const AuthenticatedProjectsRouteChildren: AuthenticatedProjectsRouteChildren = {
+  AuthenticatedProjectsIdRoute: AuthenticatedProjectsIdRoute,
+}
+
+const AuthenticatedProjectsRouteWithChildren =
+  AuthenticatedProjectsRoute._addFileChildren(
+    AuthenticatedProjectsRouteChildren,
+  )
+
+interface AuthenticatedSopLibraryRouteChildren {
+  AuthenticatedSopLibraryIdRoute: typeof AuthenticatedSopLibraryIdRoute
+  AuthenticatedSopLibraryNewRoute: typeof AuthenticatedSopLibraryNewRoute
+}
+
+const AuthenticatedSopLibraryRouteChildren: AuthenticatedSopLibraryRouteChildren =
+  {
+    AuthenticatedSopLibraryIdRoute: AuthenticatedSopLibraryIdRoute,
+    AuthenticatedSopLibraryNewRoute: AuthenticatedSopLibraryNewRoute,
+  }
+
+const AuthenticatedSopLibraryRouteWithChildren =
+  AuthenticatedSopLibraryRoute._addFileChildren(
+    AuthenticatedSopLibraryRouteChildren,
+  )
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRouteWithChildren
   AuthenticatedGrowthRoadmapRoute: typeof AuthenticatedGrowthRoadmapRoute
   AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
+  AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRouteWithChildren
   AuthenticatedRateArchitectureRoute: typeof AuthenticatedRateArchitectureRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
-  AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRoute
+  AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRouteWithChildren
   AuthenticatedTimeCalendarRoute: typeof AuthenticatedTimeCalendarRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
-  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRouteWithChildren,
   AuthenticatedGrowthRoadmapRoute: AuthenticatedGrowthRoadmapRoute,
   AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
+  AuthenticatedProjectsRoute: AuthenticatedProjectsRouteWithChildren,
   AuthenticatedRateArchitectureRoute: AuthenticatedRateArchitectureRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
-  AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRoute,
+  AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRouteWithChildren,
   AuthenticatedTimeCalendarRoute: AuthenticatedTimeCalendarRoute,
 }
 

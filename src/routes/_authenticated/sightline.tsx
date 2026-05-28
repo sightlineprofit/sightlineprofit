@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 
 type Status = "active" | "pipeline" | "completed" | "on_hold";
 
@@ -191,6 +192,15 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     queryKey: ["sightline-detail", id],
     queryFn: () => getDetail({ data: { id } }),
   });
+  // Live-refresh phase actuals (and the entries that drive them) when time is logged.
+  useRealtimeInvalidate(
+    `sightline-detail-${id}`,
+    [
+      { table: "project_phases", filter: `project_id=eq.${id}` },
+      { table: "time_entries", filter: `project_id=eq.${id}` },
+    ],
+    [["sightline-detail", id]],
+  );
   const statusMut = useMutation({
     mutationFn: (status: Status) => statusFn({ data: { id, status } }),
     onSuccess: () => {

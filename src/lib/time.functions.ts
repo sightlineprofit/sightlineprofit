@@ -84,7 +84,16 @@ const entrySchema = z.object({
 async function recomputePhaseActual(supabase: any, phaseId: string): Promise<void> {
   const { data } = await supabase.from("time_entries").select("hrs").eq("project_phase_id", phaseId);
   const total = (data ?? []).reduce((s: number, r: { hrs: number | null }) => s + Number(r.hrs || 0), 0);
-  await supabase.from("project_phases").update({ actual_hrs: total }).eq("id", phaseId);
+  const { data: phase } = await supabase
+    .from("project_phases")
+    .select("expected_hrs")
+    .eq("id", phaseId)
+    .maybeSingle();
+  const expected = Number(phase?.expected_hrs ?? 0);
+  await supabase
+    .from("project_phases")
+    .update({ actual_hrs: total, phase_over_scope: total > expected })
+    .eq("id", phaseId);
 }
 
 export const saveTimeEntry = createServerFn({ method: "POST" })
@@ -104,7 +113,6 @@ export const saveTimeEntry = createServerFn({ method: "POST" })
     if (hrs <= 0) throw new Error("End time must be after start time");
 
     const row = {
-      firm_id: profile.firm_id,
       user_id: targetUser,
       date: data.date,
       start_time: data.start_time,
@@ -117,24 +125,32 @@ export const saveTimeEntry = createServerFn({ method: "POST" })
       activity_group_id: data.activity_group_id ?? null,
     };
 
-    let previousPhase: string | null = null;
     if (data.id) {
-      const { data: prev } = await supabase.from("time_entries").select("project_phase_id").eq("id", data.id).single();
-      previousPhase = (prev?.project_phase_id as string | null) ?? null;
-      const { error } = await supabase.from("time_entries").update(row).eq("id", data.id);
+      // Updates still go through the regular table path (RLS allows self/admin),
+      // then we recompute both old + new phase actuals.
+      const { data: prev } = await supabase
+        .from("time_entries")
+        .select("project_phase_id")
+        .eq("id", data.id)
+        .single();
+      const previousPhase = (prev?.project_phase_id as string | null) ?? null;
+      const { error } = await supabase
+        .from("time_entries")
+        .update({ firm_id: profile.firm_id, ...row })
+        .eq("id", data.id);
       if (error) throw new Error(error.message);
-    } else {
-      const { error } = await supabase.from("time_entries").insert(row);
-      if (error) throw new Error(error.message);
+      const toRecount = new Set<string>();
+      if (row.project_phase_id) toRecount.add(row.project_phase_id);
+      if (previousPhase && previousPhase !== row.project_phase_id) toRecount.add(previousPhase);
+      for (const phaseId of toRecount) {
+        await recomputePhaseActual(supabase, phaseId);
+      }
+      return { ok: true };
     }
 
-    // Recompute phase actuals (current + previous if changed)
-    const toRecount = new Set<string>();
-    if (row.project_phase_id) toRecount.add(row.project_phase_id);
-    if (previousPhase && previousPhase !== row.project_phase_id) toRecount.add(previousPhase);
-    for (const phaseId of toRecount) {
-      await recomputePhaseActual(supabase, phaseId);
-    }
+    // New entries: atomic insert + phase recompute + over-scope flag via RPC.
+    const { error } = await supabase.rpc("save_time_entry", { p_entry: row });
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 

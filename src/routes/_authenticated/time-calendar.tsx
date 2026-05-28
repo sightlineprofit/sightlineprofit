@@ -19,6 +19,7 @@ import { getMyContext } from "@/lib/firm.functions";
 import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets } from "@/lib/time.functions";
 import { fmtUsd } from "@/lib/finance";
 import { cn } from "@/lib/utils";
+import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 
 export const Route = createFileRoute("/_authenticated/time-calendar")({
   head: () => ({ meta: [{ title: "Time Calendar — Sightline" }] }),
@@ -153,6 +154,24 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
   const team: Member[] = (data?.team ?? []) as Member[];
   const config = data?.config ?? null;
   const me = data?.profile ?? null;
+
+  const firmId = (me?.firm_id as string | null | undefined) ?? undefined;
+  const teamOnly = !isAdmin && me?.id ? `user_id=eq.${me.id}` : undefined;
+  useRealtimeInvalidate(
+    `calendar-${firmId ?? "none"}-${weekStart}`,
+    [
+      {
+        table: "time_entries",
+        filter: firmId
+          ? teamOnly
+            ? `${teamOnly}`
+            : `firm_id=eq.${firmId}`
+          : undefined,
+      },
+    ],
+    [["calendar", weekStart]],
+    !!firmId,
+  );
 
   const days = useMemo(() => [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(weekDate, i)), [weekDate]);
 

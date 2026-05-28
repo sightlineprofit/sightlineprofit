@@ -448,6 +448,7 @@ export type Database = {
           expected_hrs: number
           id: string
           name: string
+          phase_over_scope: boolean
           project_id: string
           sop_phase_id: string | null
           sort_order: number
@@ -458,6 +459,7 @@ export type Database = {
           expected_hrs?: number
           id?: string
           name: string
+          phase_over_scope?: boolean
           project_id: string
           sop_phase_id?: string | null
           sort_order?: number
@@ -468,6 +470,7 @@ export type Database = {
           expected_hrs?: number
           id?: string
           name?: string
+          phase_over_scope?: boolean
           project_id?: string
           sop_phase_id?: string | null
           sort_order?: number
@@ -912,13 +915,43 @@ export type Database = {
     }
     Functions: {
       current_firm_id: { Args: never; Returns: string }
+      current_firm_tier: { Args: never; Returns: string }
       current_user_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["user_role"]
+      }
+      get_user_firm_id: { Args: never; Returns: string }
+      get_user_role: {
         Args: never
         Returns: Database["public"]["Enums"]["user_role"]
       }
       is_firm_admin: { Args: never; Returns: boolean }
       is_firm_principal: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      save_time_entry: {
+        Args: { p_entry: Json }
+        Returns: {
+          activity_group_id: string | null
+          billable: boolean
+          created_at: string
+          date: string
+          end_time: string | null
+          firm_id: string
+          hrs: number
+          id: string
+          notes: string | null
+          project_id: string | null
+          project_phase_id: string | null
+          start_time: string | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "time_entries"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       expense_frequency: "annual" | "monthly" | "quarterly" | "onetime"
