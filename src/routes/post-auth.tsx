@@ -26,6 +26,18 @@ function PostAuth() {
       try {
         const ctx = await getCtx();
         if (cancelled) return;
+        const isSuper = !!ctx?.profile?.is_super_admin;
+        if (isSuper) {
+          // Super admins get a clean-slate firm and skip onboarding entirely.
+          if (!ctx?.profile?.firm_id) {
+            const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
+            const ownerName = meta.name || meta.full_name || data.user.email!.split("@")[0];
+            await createFirm({ data: { firmName: "Sightline Studio", ownerName, tier: "practice" } });
+            sessionStorage.removeItem("sightline_pending_firm");
+          }
+          nav({ to: "/admin" as any });
+          return;
+        }
         if (!ctx?.profile?.firm_id) {
           const pendingRaw = sessionStorage.getItem("sightline_pending_firm");
           const pending = pendingRaw ? JSON.parse(pendingRaw) : null;
