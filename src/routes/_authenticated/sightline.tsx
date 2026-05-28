@@ -2,11 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, AlertTriangle, TrendingDown, Filter } from "lucide-react";
+import { ArrowLeft, AlertTriangle, TrendingDown, Filter, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
 import { getMyContext } from "@/lib/firm.functions";
-import { getProjectList, getProjectDetail, updateProjectStatus } from "@/lib/sightline.functions";
+import {
+  getProjectList, getProjectDetail, updateProjectStatus,
+  createProject, upsertProjectPhase, deleteProjectPhase,
+} from "@/lib/sightline.functions";
+import { toast } from "sonner";
 import { fmtUsd, fmtPct } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,9 +63,35 @@ function SightlinePage() {
 
 function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const getList = useServerFn(getProjectList);
+  const qc = useQueryClient();
+  const createFn = useServerFn(createProject);
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "" });
+
+  async function submitCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft.name.trim()) return;
+    try {
+      const res = await createFn({
+        data: {
+          name: draft.name.trim(),
+          client_name: draft.client_name.trim() || null,
+          status: "active",
+          scoped_rate: draft.scoped_rate ? Number(draft.scoped_rate) : null,
+        },
+      });
+      toast.success("Project created");
+      setDraft({ name: "", client_name: "", scoped_rate: "" });
+      setCreating(false);
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+      onOpen(res.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    }
+  }
 
   const billedRate = Number(data?.config?.rate_billed) || 0;
 
@@ -80,7 +110,30 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       eyebrow="Practice"
       title="Sightline"
       description="Project profitability, finally answered."
+      actions={
+        <Button onClick={() => setCreating((v) => !v)} className="bg-gold text-white hover:bg-goldl">
+          {creating ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New project</>}
+        </Button>
+      }
     >
+      {creating && (
+        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-end gap-3 rounded-lg border border-border bg-white p-4">
+          <div className="col-span-5">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
+            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus required />
+          </div>
+          <div className="col-span-4">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
+            <Input value={draft.client_name} onChange={(e) => setDraft({ ...draft, client_name: e.target.value })} />
+          </div>
+          <div className="col-span-2">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Scoped rate $/hr</label>
+            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder={billedRate ? String(billedRate) : "—"} />
+          </div>
+          <Button type="submit" className="col-span-1 bg-ch text-cream hover:bg-ch/90">Create</Button>
+        </form>
+      )}
+
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Input
           value={search}
@@ -108,8 +161,13 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
         <div className="rounded-lg border border-dashed border-border bg-white/60 p-12 text-center">
           <p className="font-display text-2xl italic text-ch/60">No projects yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
-            Attach an SOP template to a project from the SOP Library to start tracking profitability.
+            Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library.
           </p>
+          {!creating && (
+            <Button onClick={() => setCreating(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
+              <Plus className="mr-1.5 h-4 w-4" /> Create project
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -208,6 +266,23 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
       qc.invalidateQueries({ queryKey: ["sightline-list"] });
     },
   });
+
+  const upsertPhaseFn = useServerFn(upsertProjectPhase);
+  const deletePhaseFn = useServerFn(deleteProjectPhase);
+  const phaseMut = useMutation({
+    mutationFn: (input: { id?: string; name: string; expected_hrs: number; billable: boolean }) =>
+      upsertPhaseFn({ data: { project_id: id, ...input } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+  const deletePhaseMut = useMutation({
+    mutationFn: (phaseId: string) => deletePhaseFn({ data: { id: phaseId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] }),
+  });
+  const [editingPhase, setEditingPhase] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ name: "", expected_hrs: "", billable: true });
+  const [addingPhase, setAddingPhase] = useState(false);
+  const [addDraft, setAddDraft] = useState({ name: "", expected_hrs: "", billable: true });
 
   const [memberFilter, setMemberFilter] = useState<string>("all");
   const [phaseFilter, setPhaseFilter] = useState<string>("all");
@@ -340,11 +415,33 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                 <th className="px-3 py-3 text-right">Δ $</th>
                 <th className="px-3 py-3 text-right">% used</th>
                 <th className="px-4 py-3 text-right">Status</th>
+                <th className="px-3 py-3 text-right w-20">Actions</th>
               </tr>
             </thead>
             <tbody>
               {phaseRows.map((p) => {
                 const h = healthColor(p.pct);
+                const isEditing = editingPhase === p.id;
+                if (isEditing) {
+                  return (
+                    <tr key={p.id} className="border-t border-border bg-creamd/40">
+                      <td className="px-4 py-2"><Input value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} /></td>
+                      <td className="px-3 py-2"><Input type="number" min={0} step="any" value={editDraft.expected_hrs} onChange={(e) => setEditDraft({ ...editDraft, expected_hrs: e.target.value })} className="text-right" /></td>
+                      <td colSpan={4} className="px-3 py-2 text-right text-xs text-ch/50">
+                        <label className="inline-flex items-center gap-1.5">
+                          <input type="checkbox" checked={editDraft.billable} onChange={(e) => setEditDraft({ ...editDraft, billable: e.target.checked })} className="accent-gold" />
+                          Billable
+                        </label>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex gap-1">
+                          <button onClick={() => { phaseMut.mutate({ id: p.id, name: editDraft.name, expected_hrs: Number(editDraft.expected_hrs) || 0, billable: editDraft.billable }); setEditingPhase(null); }} className="text-success hover:opacity-70"><Check className="h-4 w-4" /></button>
+                          <button onClick={() => setEditingPhase(null)} className="text-ch/40 hover:text-ch"><X className="h-4 w-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
                 return (
                   <tr key={p.id} className="border-t border-border">
                     <td className="px-4 py-3 font-medium text-ch">{p.name}</td>
@@ -362,15 +459,44 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                         {h.label}
                       </span>
                     </td>
+                    <td className="px-3 py-3 text-right">
+                      <div className="inline-flex gap-1.5">
+                        <button onClick={() => { setEditingPhase(p.id); setEditDraft({ name: p.name, expected_hrs: String(p.sc), billable: p.billable }); }} className="text-ch/40 hover:text-ch"><Pencil className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => { if (confirm(`Delete phase "${p.name}"?`)) deletePhaseMut.mutate(p.id); }} className="text-ch/40 hover:text-danger"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
               {phaseRows.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-ch/50">No phases on this project.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-ch/50">No phases on this project.</td></tr>
+              )}
+              {addingPhase && (
+                <tr className="border-t border-border bg-creamd/40">
+                  <td className="px-4 py-2"><Input placeholder="Phase name" value={addDraft.name} onChange={(e) => setAddDraft({ ...addDraft, name: e.target.value })} autoFocus /></td>
+                  <td className="px-3 py-2"><Input type="number" min={0} step="any" placeholder="hrs" value={addDraft.expected_hrs} onChange={(e) => setAddDraft({ ...addDraft, expected_hrs: e.target.value })} className="text-right" /></td>
+                  <td colSpan={4} className="px-3 py-2 text-right text-xs text-ch/50">
+                    <label className="inline-flex items-center gap-1.5">
+                      <input type="checkbox" checked={addDraft.billable} onChange={(e) => setAddDraft({ ...addDraft, billable: e.target.checked })} className="accent-gold" />
+                      Billable
+                    </label>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="inline-flex gap-1">
+                      <button onClick={() => { if (!addDraft.name.trim()) return; phaseMut.mutate({ name: addDraft.name.trim(), expected_hrs: Number(addDraft.expected_hrs) || 0, billable: addDraft.billable }); setAddDraft({ name: "", expected_hrs: "", billable: true }); setAddingPhase(false); }} className="text-success hover:opacity-70"><Check className="h-4 w-4" /></button>
+                      <button onClick={() => setAddingPhase(false)} className="text-ch/40 hover:text-ch"><X className="h-4 w-4" /></button>
+                    </div>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
+        {!addingPhase && (
+          <button onClick={() => setAddingPhase(true)} className="mt-3 inline-flex items-center gap-1.5 text-sm text-gold hover:text-goldl">
+            <Plus className="h-4 w-4" /> Add phase
+          </button>
+        )}
       </section>
 
       <section className="mt-10 grid gap-6 md:grid-cols-2">
