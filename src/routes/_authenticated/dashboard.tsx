@@ -7,7 +7,7 @@ import { calc, fmtUsd, fmtPct, healthScore, type RateOverrides } from "@/lib/fin
 import { Tile } from "@/components/dashboard/Tile";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sliders, BookOpen, Compass, FlaskConical, Activity, BarChart3, Layers, Play, ChevronRight } from "lucide-react";
+import { Sliders, BookOpen, FlaskConical, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
