@@ -40,7 +40,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "foundation", group: "foundation" },
-  { to: "/rate-architecture", label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation" },
+  { to: "/setup", label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation" },
   { to: "/time-calendar", label: "Time Calendar", icon: Calendar, tier: "studio", group: "studio" },
   { to: "/sightline", label: "Sightline", icon: LineChart, tier: "practice", group: "practice" },
   { to: "/sop-library", label: "SOP Library", icon: BookOpen, tier: "practice", group: "practice" },
