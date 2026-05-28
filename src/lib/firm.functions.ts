@@ -63,13 +63,14 @@ export const getMyContext = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id, firm_id, role, name, email")
+      .select("id, firm_id, role, name, email, is_super_admin, impersonated_firm_id")
       .eq("id", userId)
       .maybeSingle();
-    if (!profile?.firm_id) return { profile, firm: null, config: null };
+    const effectiveFirmId = profile?.impersonated_firm_id ?? profile?.firm_id ?? null;
+    if (!effectiveFirmId) return { profile, firm: null, config: null };
     const [{ data: firm }, { data: config }] = await Promise.all([
-      supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
-      supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+      supabase.from("firms").select("*").eq("id", effectiveFirmId).single(),
+      supabase.from("firm_config").select("*").eq("firm_id", effectiveFirmId).maybeSingle(),
     ]);
     return { profile, firm, config };
   });
