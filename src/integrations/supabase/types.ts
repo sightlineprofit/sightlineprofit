@@ -176,6 +176,51 @@ export type Database = {
         }
         Relationships: []
       }
+      knowledge_articles: {
+        Row: {
+          body: string | null
+          category: Database["public"]["Enums"]["kb_category"]
+          created_at: string
+          excerpt: string | null
+          id: string
+          kind: Database["public"]["Enums"]["kb_kind"]
+          published_at: string | null
+          read_minutes: number | null
+          slug: string
+          thumbnail_url: string | null
+          title: string
+          video_url: string | null
+        }
+        Insert: {
+          body?: string | null
+          category: Database["public"]["Enums"]["kb_category"]
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["kb_kind"]
+          published_at?: string | null
+          read_minutes?: number | null
+          slug: string
+          thumbnail_url?: string | null
+          title: string
+          video_url?: string | null
+        }
+        Update: {
+          body?: string | null
+          category?: Database["public"]["Enums"]["kb_category"]
+          created_at?: string
+          excerpt?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["kb_kind"]
+          published_at?: string | null
+          read_minutes?: number | null
+          slug?: string
+          thumbnail_url?: string | null
+          title?: string
+          video_url?: string | null
+        }
+        Relationships: []
+      }
       pipeline_projects: {
         Row: {
           assigned_user_ids: string[] | null
@@ -410,6 +455,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      scenarios: {
+        Row: {
+          created_at: string
+          created_by: string
+          firm_id: string
+          id: string
+          name: string
+          payload: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          firm_id: string
+          id?: string
+          name: string
+          payload?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          firm_id?: string
+          id?: string
+          name?: string
+          payload?: Json
+          updated_at?: string
+        }
+        Relationships: []
       }
       sop_phases: {
         Row: {
@@ -687,6 +762,24 @@ export type Database = {
           },
         ]
       }
+      user_metric_prefs: {
+        Row: {
+          hidden_metrics: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          hidden_metrics?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          hidden_metrics?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -702,6 +795,12 @@ export type Database = {
     }
     Enums: {
       expense_frequency: "annual" | "monthly" | "quarterly" | "onetime"
+      kb_category:
+        | "rate_architecture"
+        | "cash_management"
+        | "team_growth"
+        | "using_sightline"
+      kb_kind: "article" | "video"
       project_status: "active" | "pipeline" | "completed" | "on_hold"
       scope_risk: "low" | "medium" | "high"
       subscription_status:
@@ -840,6 +939,13 @@ export const Constants = {
   public: {
     Enums: {
       expense_frequency: ["annual", "monthly", "quarterly", "onetime"],
+      kb_category: [
+        "rate_architecture",
+        "cash_management",
+        "team_growth",
+        "using_sightline",
+      ],
+      kb_kind: ["article", "video"],
       project_status: ["active", "pipeline", "completed", "on_hold"],
       scope_risk: ["low", "medium", "high"],
       subscription_status: [
