@@ -253,7 +253,10 @@ function GrowthRoadmap() {
   }, [proj, config, expenses, team]);
 
   // Scenarios
-  const growthScenarios = (data?.scenarios ?? []).filter((s: { payload: { kind?: string } }) => s.payload?.kind === "growth");
+  type ScenarioRow = { id: string; name: string; payload: ProjectionInputs & { kind?: string } };
+  const growthScenarios = ((data?.scenarios ?? []) as unknown as ScenarioRow[]).filter(
+    (s) => s.payload && s.payload.kind === "growth",
+  );
   const [scenarioName, setScenarioName] = useState("");
 
   const saveMut = useMutation({
@@ -460,7 +463,7 @@ function GrowthRoadmap() {
           <p className="text-ch/55 italic">No scenarios saved yet. Configure the inputs above, then save up to three to compare side-by-side.</p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {growthScenarios.slice(0, 3).map((s: { id: string; name: string; payload: ProjectionInputs }) => {
+            {growthScenarios.slice(0, 3).map((s) => {
               const rows = [0, 1, 2, 3].map((y) => ({
                 year: y,
                 ...projectYear(y, s.payload, config, expenses, team),
