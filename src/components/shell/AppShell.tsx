@@ -86,7 +86,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   async function stopImpersonating() {
     await stopImpFn({ data: { firm_id: null } });
-    window.location.reload();
+    window.location.assign("/admin");
   }
 
   return (
