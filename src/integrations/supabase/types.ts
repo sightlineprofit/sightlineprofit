@@ -14,16 +14,686 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activity_groups: {
+        Row: {
+          color: string
+          created_at: string
+          firm_id: string
+          id: string
+          name: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          firm_id: string
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          firm_id?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_groups_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expenses: {
+        Row: {
+          amort_months: number | null
+          amount: number
+          category: string | null
+          created_at: string
+          firm_id: string
+          frequency: Database["public"]["Enums"]["expense_frequency"]
+          id: string
+          name: string
+          recurring: boolean
+        }
+        Insert: {
+          amort_months?: number | null
+          amount: number
+          category?: string | null
+          created_at?: string
+          firm_id: string
+          frequency: Database["public"]["Enums"]["expense_frequency"]
+          id?: string
+          name: string
+          recurring?: boolean
+        }
+        Update: {
+          amort_months?: number | null
+          amount?: number
+          category?: string | null
+          created_at?: string
+          firm_id?: string
+          frequency?: Database["public"]["Enums"]["expense_frequency"]
+          id?: string
+          name?: string
+          recurring?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      firm_config: {
+        Row: {
+          actual_billed_rate: number | null
+          available_hrs_per_week: number | null
+          comp_draw_annual: number | null
+          comp_health_annual: number | null
+          comp_ptax_pct: number | null
+          comp_retire_annual: number | null
+          firm_id: string
+          rate_billed: number | null
+          target_billable_hrs_per_week: number | null
+          target_gross_margin_pct: number | null
+          updated_at: string
+        }
+        Insert: {
+          actual_billed_rate?: number | null
+          available_hrs_per_week?: number | null
+          comp_draw_annual?: number | null
+          comp_health_annual?: number | null
+          comp_ptax_pct?: number | null
+          comp_retire_annual?: number | null
+          firm_id: string
+          rate_billed?: number | null
+          target_billable_hrs_per_week?: number | null
+          target_gross_margin_pct?: number | null
+          updated_at?: string
+        }
+        Update: {
+          actual_billed_rate?: number | null
+          available_hrs_per_week?: number | null
+          comp_draw_annual?: number | null
+          comp_health_annual?: number | null
+          comp_ptax_pct?: number | null
+          comp_retire_annual?: number | null
+          firm_id?: string
+          rate_billed?: number | null
+          target_billable_hrs_per_week?: number | null
+          target_gross_margin_pct?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_config_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      firms: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          subscription_status: Database["public"]["Enums"]["subscription_status"]
+          subscription_tier: Database["public"]["Enums"]["subscription_tier"]
+          trial_ends_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: Database["public"]["Enums"]["subscription_status"]
+          subscription_tier?: Database["public"]["Enums"]["subscription_tier"]
+          trial_ends_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          subscription_status?: Database["public"]["Enums"]["subscription_status"]
+          subscription_tier?: Database["public"]["Enums"]["subscription_tier"]
+          trial_ends_at?: string
+        }
+        Relationships: []
+      }
+      pipeline_projects: {
+        Row: {
+          assigned_user_ids: string[] | null
+          created_at: string
+          estimated_hrs: number | null
+          estimated_start: string | null
+          firm_id: string
+          id: string
+          name: string
+          probability_pct: number | null
+        }
+        Insert: {
+          assigned_user_ids?: string[] | null
+          created_at?: string
+          estimated_hrs?: number | null
+          estimated_start?: string | null
+          firm_id: string
+          id?: string
+          name: string
+          probability_pct?: number | null
+        }
+        Update: {
+          assigned_user_ids?: string[] | null
+          created_at?: string
+          estimated_hrs?: number | null
+          estimated_start?: string | null
+          firm_id?: string
+          id?: string
+          name?: string
+          probability_pct?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_projects_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          accepted_at: string | null
+          billable_pct: number | null
+          billable_rate: number | null
+          color: string
+          cost_rate: number | null
+          created_at: string
+          email: string
+          expected_hrs_per_week: number | null
+          firm_id: string | null
+          id: string
+          invited_at: string | null
+          name: string
+          role: Database["public"]["Enums"]["user_role"]
+          weeks_per_year: number | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          billable_pct?: number | null
+          billable_rate?: number | null
+          color?: string
+          cost_rate?: number | null
+          created_at?: string
+          email: string
+          expected_hrs_per_week?: number | null
+          firm_id?: string | null
+          id: string
+          invited_at?: string | null
+          name?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          weeks_per_year?: number | null
+        }
+        Update: {
+          accepted_at?: string | null
+          billable_pct?: number | null
+          billable_rate?: number | null
+          color?: string
+          cost_rate?: number | null
+          created_at?: string
+          email?: string
+          expected_hrs_per_week?: number | null
+          firm_id?: string | null
+          id?: string
+          invited_at?: string | null
+          name?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          weeks_per_year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_assignments: {
+        Row: {
+          project_id: string
+          user_id: string
+        }
+        Insert: {
+          project_id: string
+          user_id: string
+        }
+        Update: {
+          project_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_assignments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_phases: {
+        Row: {
+          actual_hrs: number
+          billable: boolean
+          expected_hrs: number
+          id: string
+          name: string
+          project_id: string
+          sop_phase_id: string | null
+          sort_order: number
+        }
+        Insert: {
+          actual_hrs?: number
+          billable?: boolean
+          expected_hrs?: number
+          id?: string
+          name: string
+          project_id: string
+          sop_phase_id?: string | null
+          sort_order?: number
+        }
+        Update: {
+          actual_hrs?: number
+          billable?: boolean
+          expected_hrs?: number
+          id?: string
+          name?: string
+          project_id?: string
+          sop_phase_id?: string | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_phases_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_phases_sop_phase_id_fkey"
+            columns: ["sop_phase_id"]
+            isOneToOne: false
+            referencedRelation: "sop_phases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          client_name: string | null
+          created_at: string
+          end_date: string | null
+          firm_id: string
+          id: string
+          name: string
+          scoped_hrs: number | null
+          scoped_rate: number | null
+          sop_template_id: string | null
+          start_date: string | null
+          status: Database["public"]["Enums"]["project_status"]
+        }
+        Insert: {
+          client_name?: string | null
+          created_at?: string
+          end_date?: string | null
+          firm_id: string
+          id?: string
+          name: string
+          scoped_hrs?: number | null
+          scoped_rate?: number | null
+          sop_template_id?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["project_status"]
+        }
+        Update: {
+          client_name?: string | null
+          created_at?: string
+          end_date?: string | null
+          firm_id?: string
+          id?: string
+          name?: string
+          scoped_hrs?: number | null
+          scoped_rate?: number | null
+          sop_template_id?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["project_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_sop_template_id_fkey"
+            columns: ["sop_template_id"]
+            isOneToOne: false
+            referencedRelation: "sop_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sop_phases: {
+        Row: {
+          billable: boolean
+          description: string | null
+          expected_hrs: number
+          firm_id: string
+          id: string
+          name: string
+          sort_order: number
+          template_id: string
+          time_benchmark_notes: string | null
+        }
+        Insert: {
+          billable?: boolean
+          description?: string | null
+          expected_hrs?: number
+          firm_id: string
+          id?: string
+          name: string
+          sort_order?: number
+          template_id: string
+          time_benchmark_notes?: string | null
+        }
+        Update: {
+          billable?: boolean
+          description?: string | null
+          expected_hrs?: number
+          firm_id?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          template_id?: string
+          time_benchmark_notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sop_phases_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sop_phases_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "sop_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sop_steps: {
+        Row: {
+          description: string
+          id: string
+          phase_id: string
+          sort_order: number
+        }
+        Insert: {
+          description: string
+          id?: string
+          phase_id: string
+          sort_order?: number
+        }
+        Update: {
+          description?: string
+          id?: string
+          phase_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sop_steps_phase_id_fkey"
+            columns: ["phase_id"]
+            isOneToOne: false
+            referencedRelation: "sop_phases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sop_templates: {
+        Row: {
+          category: string | null
+          common_failure_modes: string | null
+          created_at: string
+          department: string | null
+          description: string | null
+          done_when: string | null
+          firm_id: string
+          id: string
+          name: string
+          scope_risk_level: Database["public"]["Enums"]["scope_risk"] | null
+          tags: string[] | null
+          triggered_by: string | null
+        }
+        Insert: {
+          category?: string | null
+          common_failure_modes?: string | null
+          created_at?: string
+          department?: string | null
+          description?: string | null
+          done_when?: string | null
+          firm_id: string
+          id?: string
+          name: string
+          scope_risk_level?: Database["public"]["Enums"]["scope_risk"] | null
+          tags?: string[] | null
+          triggered_by?: string | null
+        }
+        Update: {
+          category?: string | null
+          common_failure_modes?: string | null
+          created_at?: string
+          department?: string | null
+          description?: string | null
+          done_when?: string | null
+          firm_id?: string
+          id?: string
+          name?: string
+          scope_risk_level?: Database["public"]["Enums"]["scope_risk"] | null
+          tags?: string[] | null
+          triggered_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sop_templates_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_invitations: {
+        Row: {
+          accepted_at: string | null
+          email: string
+          firm_id: string
+          id: string
+          invited_at: string
+          invited_by: string
+          role: Database["public"]["Enums"]["user_role"]
+          token: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          email: string
+          firm_id: string
+          id?: string
+          invited_at?: string
+          invited_by: string
+          role?: Database["public"]["Enums"]["user_role"]
+          token?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          email?: string
+          firm_id?: string
+          id?: string
+          invited_at?: string
+          invited_by?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_invitations_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_entries: {
+        Row: {
+          activity_group_id: string | null
+          billable: boolean
+          created_at: string
+          date: string
+          end_time: string | null
+          firm_id: string
+          hrs: number
+          id: string
+          notes: string | null
+          project_id: string | null
+          project_phase_id: string | null
+          start_time: string | null
+          user_id: string
+        }
+        Insert: {
+          activity_group_id?: string | null
+          billable?: boolean
+          created_at?: string
+          date: string
+          end_time?: string | null
+          firm_id: string
+          hrs?: number
+          id?: string
+          notes?: string | null
+          project_id?: string | null
+          project_phase_id?: string | null
+          start_time?: string | null
+          user_id: string
+        }
+        Update: {
+          activity_group_id?: string | null
+          billable?: boolean
+          created_at?: string
+          date?: string
+          end_time?: string | null
+          firm_id?: string
+          hrs?: number
+          id?: string
+          notes?: string | null
+          project_id?: string | null
+          project_phase_id?: string | null
+          start_time?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_entries_activity_group_id_fkey"
+            columns: ["activity_group_id"]
+            isOneToOne: false
+            referencedRelation: "activity_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_project_phase_id_fkey"
+            columns: ["project_phase_id"]
+            isOneToOne: false
+            referencedRelation: "project_phases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_firm_id: { Args: never; Returns: string }
+      current_user_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["user_role"]
+      }
+      is_firm_admin: { Args: never; Returns: boolean }
+      is_firm_principal: { Args: never; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      expense_frequency: "annual" | "monthly" | "quarterly" | "onetime"
+      project_status: "active" | "pipeline" | "completed" | "on_hold"
+      scope_risk: "low" | "medium" | "high"
+      subscription_status:
+        | "trialing"
+        | "active"
+        | "past_due"
+        | "canceled"
+        | "incomplete"
+      subscription_tier: "foundation" | "studio" | "practice"
+      user_role: "principal" | "admin" | "team" | "view_only"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +820,19 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      expense_frequency: ["annual", "monthly", "quarterly", "onetime"],
+      project_status: ["active", "pipeline", "completed", "on_hold"],
+      scope_risk: ["low", "medium", "high"],
+      subscription_status: [
+        "trialing",
+        "active",
+        "past_due",
+        "canceled",
+        "incomplete",
+      ],
+      subscription_tier: ["foundation", "studio", "practice"],
+      user_role: ["principal", "admin", "team", "view_only"],
+    },
   },
 } as const
