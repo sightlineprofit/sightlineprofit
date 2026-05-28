@@ -30,7 +30,13 @@ function Page() {
   return (
     <div className="mx-auto max-w-7xl px-8 py-10">
       <h1 className="font-display text-4xl tracking-tight text-ch mb-8">Budget vs Actual</h1>
-      <BvAFull c={c} weekHours={data?.weekHours ?? 0} prefs={data?.prefs.hidden_metrics ?? []} />
+      <BvAFull
+        c={c}
+        weekHours={data?.weekHours ?? 0}
+        prefs={data?.prefs.hidden_metrics ?? []}
+        tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
+        firmId={firmId}
+      />
     </div>
   );
 }

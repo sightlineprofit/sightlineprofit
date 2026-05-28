@@ -7,9 +7,21 @@ import { calc, fmtUsd, fmtPct, healthScore, type RateOverrides } from "@/lib/fin
 import { Tile } from "@/components/dashboard/Tile";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sliders, BookOpen, FlaskConical, Play } from "lucide-react";
+import { Sliders, BookOpen, FlaskConical, Play, Pencil, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
+import {
+  listManualHourLogs,
+  upsertManualHourLog,
+  deleteManualHourLog,
+  getActualsForSpan,
+} from "@/lib/manual-hours.functions";
+import { UpgradeModal } from "@/components/shell/UpgradeModal";
+import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon } from "lucide-react";
+import { format, parseISO } from "date-fns";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -36,6 +48,7 @@ function Dashboard() {
       { table: "firm_config", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "expenses", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "manual_hour_logs", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
     ],
     [["dashboard"]],
     !!firmId,
@@ -85,7 +98,15 @@ function Dashboard() {
 
       {/* Full views */}
       <FullViewDialog open={open === "rate"} onClose={() => setOpen(null)} title="Rate Allocation"><RateFull c={c} /></FullViewDialog>
-      <FullViewDialog open={open === "bva"} onClose={() => setOpen(null)} title="Budget vs Actual" wide><BvAFull c={c} weekHours={data?.weekHours ?? 0} prefs={data?.prefs.hidden_metrics ?? []} /></FullViewDialog>
+      <FullViewDialog open={open === "bva"} onClose={() => setOpen(null)} title="Budget vs Actual" wide>
+        <BvAFull
+          c={c}
+          weekHours={data?.weekHours ?? 0}
+          prefs={data?.prefs.hidden_metrics ?? []}
+          tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
+          firmId={firmId}
+        />
+      </FullViewDialog>
       <FullViewDialog open={open === "health"} onClose={() => setOpen(null)} title="Cost Architecture Health"><HealthFull c={c} /></FullViewDialog>
       <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
       <FullViewDialog open={open === "growth"} onClose={() => setOpen(null)} title="Growth Roadmap"><GrowthFull c={c} /></FullViewDialog>
@@ -212,21 +233,53 @@ const ALL_METRICS = [
   { id: "avg_rate", label: "Avg realized rate" },
 ] as const;
 
-export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; weekHours: number; prefs: string[] }) {
+export function BvAFull({
+  c,
+  weekHours,
+  prefs,
+  tier = "foundation",
+  firmId,
+}: {
+  c: ReturnType<typeof calc>;
+  weekHours: number;
+  prefs: string[];
+  tier?: "foundation" | "studio" | "practice";
+  firmId?: string;
+}) {
   const [span, setSpan] = useState<"day" | "week" | "month" | "quarter" | "year">("week");
   const [customize, setCustomize] = useState(false);
   const [hidden, setHidden] = useState<string[]>(prefs);
   const qc = useQueryClient();
   const upd = useServerFn(updateMetricPrefs);
 
+  // Combined actuals (manual_hour_logs + time_entries) for the current span window.
+  const actualsFn = useServerFn(getActualsForSpan);
+  const { data: actuals } = useQuery({
+    queryKey: ["bva-actuals", span],
+    queryFn: () => actualsFn({ data: { span } }),
+  });
+  useRealtimeInvalidate(
+    `bva-${firmId ?? "none"}`,
+    [
+      { table: "manual_hour_logs", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+    ],
+    [["bva-actuals", span], ["manual-hours"], ["dashboard"]],
+    !!firmId,
+  );
+
   const multipliers = { day: 1 / 5, week: 1, month: 4.33, quarter: 13, year: 48 };
   const m = multipliers[span];
   const targetH = c.targetBillableHrsWeek * m;
-  // For preview: scale the week's actuals proportionally (real implementation queries time_entries by span)
-  const actualH = span === "week" ? weekHours : weekHours * m;
+  const actualH =
+    actuals?.billableHrs !== undefined
+      ? actuals.billableHrs
+      : span === "week"
+      ? weekHours
+      : weekHours * m;
   const targetR = targetH * c.billedRate;
   const actualR = actualH * c.billedRate;
-  const util = c.targetBillableHrsWeek > 0 ? (actualH / targetH) * 100 : 0;
+  const util = targetH > 0 ? (actualH / targetH) * 100 : 0;
 
   const rows: { id: string; label: string; target: string; actual: string; variance: number; varFmt: string; tip?: { term: string; definition: string; why?: string } }[] = [
     { id: "billable_hrs", label: "Billable hours", target: targetH.toFixed(1), actual: actualH.toFixed(1), variance: actualH - targetH, varFmt: `${(actualH - targetH).toFixed(1)} hrs` },
@@ -245,6 +298,8 @@ export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; w
 
   return (
     <div className="space-y-5">
+      <ManualHoursPanel />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-md border border-border bg-white p-0.5">
           {(["day", "week", "month", "quarter", "year"] as const).map((s) => (
@@ -296,7 +351,455 @@ export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; w
           </tbody>
         </table>
       </div>
+
+      <ManualHoursHistory />
+
+      {tier === "foundation" && <UpgradeBridge />}
     </div>
+  );
+}
+
+/* ───────── Manual hours: shared helpers + components ───────── */
+type ManualPeriod = "week" | "month";
+type ManualLog = {
+  id: string;
+  period_type: ManualPeriod;
+  period_start: string;
+  total_hrs_worked: number;
+  billable_hrs: number;
+  non_billable_hrs: number;
+  notes: string | null;
+  updated_at: string;
+};
+
+function isoDate(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+function startOfWeekMonday(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+function startOfMonthDate(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function formatPeriodLabel(periodType: ManualPeriod, periodStart: string) {
+  const d = parseISO(periodStart);
+  return periodType === "week" ? `Week of ${format(d, "EEE MMM d")}` : format(d, "MMM yyyy");
+}
+
+// Module-level event bus so the history list can populate the entry panel
+// without prop-threading. Trivial for a single dialog instance.
+let editEmitter: ((log: ManualLog) => void) | null = null;
+
+function ManualHoursPanel() {
+  const qc = useQueryClient();
+  const upsert = useServerFn(upsertManualHourLog);
+  const listFn = useServerFn(listManualHourLogs);
+  const [periodType, setPeriodType] = useState<ManualPeriod>("week");
+  const [periodDate, setPeriodDate] = useState<Date>(() => startOfWeekMonday(new Date()));
+  const [total, setTotal] = useState<string>("");
+  const [billable, setBillable] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Register edit emitter once
+  useMemo(() => {
+    editEmitter = (log) => {
+      setPeriodType(log.period_type);
+      setPeriodDate(parseISO(log.period_start));
+      setTotal(String(log.total_hrs_worked));
+      setBillable(String(log.billable_hrs));
+      setNotes(log.notes ?? "");
+      if (log.notes) setNotesOpen(true);
+    };
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const normalizedDate =
+    periodType === "week" ? startOfWeekMonday(periodDate) : startOfMonthDate(periodDate);
+  const periodStartIso = isoDate(normalizedDate);
+
+  const { data: weekLogs } = useQuery({
+    queryKey: ["manual-hours", "week"],
+    queryFn: () => listFn({ data: { period_type: "week" as const, limit: 24 } }),
+  });
+  const { data: monthLogs } = useQuery({
+    queryKey: ["manual-hours", "month"],
+    queryFn: () => listFn({ data: { period_type: "month" as const, limit: 12 } }),
+  });
+  const existing = ((periodType === "week" ? weekLogs : monthLogs) ?? []).find(
+    (l) => l.period_start === periodStartIso,
+  ) as ManualLog | undefined;
+
+  // Pre-fill when the active period changes
+  useMemo(() => {
+    if (existing) {
+      setTotal(String(existing.total_hrs_worked));
+      setBillable(String(existing.billable_hrs));
+      setNotes(existing.notes ?? "");
+    } else {
+      setTotal("");
+      setBillable("");
+      setNotes("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodStartIso, periodType]);
+
+  const totalNum = Number(total) || 0;
+  const billableNum = Number(billable) || 0;
+  const nonBillable = Math.max(0, totalNum - billableNum);
+  const billableExceeds = billable !== "" && billableNum > totalNum;
+
+  async function submit() {
+    if (billableExceeds || totalNum <= 0) return;
+    setSubmitting(true);
+    try {
+      await upsert({
+        data: {
+          period_type: periodType,
+          period_start: periodStartIso,
+          total_hrs_worked: totalNum,
+          billable_hrs: billableNum,
+          notes: notes.trim() ? notes.trim() : null,
+        },
+      });
+      toast.success(existing ? "Hours updated." : "Hours logged.");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["manual-hours"] }),
+        qc.invalidateQueries({ queryKey: ["bva-actuals"] }),
+        qc.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save hours");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-white p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-display text-lg text-ch">Log Hours</h3>
+        {existing && (
+          <span className="text-[11px] text-ch/50">
+            Logged {format(parseISO(existing.updated_at), "MMM d, yyyy")}
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="inline-flex rounded-md border border-border bg-cream p-0.5">
+          {(["week", "month"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriodType(p)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium capitalize rounded-sm transition-colors",
+                periodType === p ? "bg-white text-ch shadow-sm" : "text-ch/60 hover:text-ch",
+              )}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-3 py-1.5 text-sm text-ch hover:bg-creamd"
+            >
+              <CalendarIcon className="h-3.5 w-3.5 text-ch/50" />
+              {periodType === "week"
+                ? `Week of ${format(normalizedDate, "EEE MMM d")}`
+                : format(normalizedDate, "MMM yyyy")}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={normalizedDate}
+              onSelect={(d) => {
+                if (d) {
+                  setPeriodDate(periodType === "week" ? startOfWeekMonday(d) : startOfMonthDate(d));
+                  setPickerOpen(false);
+                }
+              }}
+              initialFocus
+              className="p-3 pointer-events-auto"
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-ch/50 mb-1">
+            Total hours worked
+          </label>
+          <input
+            type="number"
+            min={0}
+            step="0.25"
+            value={total}
+            onChange={(e) => setTotal(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-ch/50 mb-1">
+            Billable hours
+          </label>
+          <input
+            type="number"
+            min={0}
+            step="0.25"
+            value={billable}
+            onChange={(e) => setBillable(e.target.value)}
+            className={cn(
+              inputCls,
+              billableExceeds && "border-danger focus:border-danger focus:ring-danger/20",
+            )}
+          />
+          {billableExceeds && (
+            <p className="mt-1 text-xs text-danger">
+              Billable hours cannot exceed total hours worked
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-ch/50 mb-1">
+            Non-billable (auto)
+          </label>
+          <div className="num h-9 rounded-md border border-input bg-cream px-3 py-1.5 text-sm text-ch/50 flex items-center">
+            {nonBillable.toFixed(2)}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        {!notesOpen ? (
+          <button
+            type="button"
+            onClick={() => setNotesOpen(true)}
+            className="text-xs text-ch/50 hover:text-ch"
+          >
+            + Add note
+          </button>
+        ) : (
+          <input
+            type="text"
+            placeholder="Notes (optional)"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            maxLength={2000}
+            className={inputCls}
+          />
+        )}
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting || billableExceeds || totalNum <= 0}
+          className="inline-flex items-center justify-center rounded-md bg-gold px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-goldl disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? "Saving…" : existing ? "Update Hours" : "Log Hours"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ManualHoursHistory() {
+  const qc = useQueryClient();
+  const del = useServerFn(deleteManualHourLog);
+  const listFn = useServerFn(listManualHourLogs);
+  const [view, setView] = useState<ManualPeriod>("week");
+  const limit = view === "week" ? 12 : 6;
+  const { data, isLoading } = useQuery({
+    queryKey: ["manual-hours", view],
+    queryFn: () => listFn({ data: { period_type: view, limit } }),
+  });
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  const rows = ((data ?? []) as ManualLog[]).slice(0, limit);
+
+  async function onDelete(id: string) {
+    try {
+      await del({ data: { id } });
+      toast.success("Record removed.");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["manual-hours"] }),
+        qc.invalidateQueries({ queryKey: ["bva-actuals"] }),
+        qc.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete");
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-white p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-display text-lg text-ch">Historical Records</h3>
+        <div className="inline-flex rounded-full border border-border bg-cream p-0.5">
+          {(["week", "month"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={cn(
+                "px-3 py-1 text-xs font-medium capitalize rounded-full transition-colors",
+                view === v ? "bg-white text-ch shadow-sm" : "text-ch/60 hover:text-ch",
+              )}
+            >
+              By {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-ch/50">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-ch/60">
+          No hours logged yet. Enter your hours above to start tracking actuals against your plan.
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-cream text-[11px] uppercase tracking-wider text-ch/50">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Period</th>
+                <th className="text-right px-3 py-2 font-medium">Total</th>
+                <th className="text-right px-3 py-2 font-medium">Billable</th>
+                <th className="text-right px-3 py-2 font-medium">Non-bill.</th>
+                <th className="text-right px-3 py-2 font-medium">Util.</th>
+                <th className="text-left px-3 py-2 font-medium">Notes</th>
+                <th className="px-3 py-2 font-medium w-24"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => {
+                const util =
+                  Number(r.total_hrs_worked) > 0
+                    ? (Number(r.billable_hrs) / Number(r.total_hrs_worked)) * 100
+                    : 0;
+                const confirming = confirmingId === r.id;
+                return (
+                  <tr key={r.id} className="bg-white">
+                    <td className="px-3 py-2.5 text-ch">
+                      {formatPeriodLabel(r.period_type, r.period_start)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right num text-ch">
+                      {Number(r.total_hrs_worked).toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right num text-success">
+                      {Number(r.billable_hrs).toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right num text-danger/80">
+                      {Number(r.non_billable_hrs).toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right num text-ch/70">
+                      {util.toFixed(0)}%
+                    </td>
+                    <td
+                      className="px-3 py-2.5 text-ch/60 text-xs max-w-[200px] truncate"
+                      title={r.notes ?? ""}
+                    >
+                      {r.notes ?? ""}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {confirming ? (
+                        <div className="flex items-center gap-1 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => onDelete(r.id)}
+                            className="rounded bg-danger px-2 py-1 text-[11px] text-white hover:opacity-90"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingId(null)}
+                            className="rounded border border-border px-2 py-1 text-[11px] text-ch/70 hover:bg-creamd"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 justify-end">
+                          <button
+                            type="button"
+                            onClick={() => editEmitter?.(r)}
+                            className="rounded p-1.5 text-ch/50 hover:text-ch hover:bg-creamd"
+                            title="Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingId(r.id)}
+                            className="rounded p-1.5 text-ch/50 hover:text-danger hover:bg-creamd"
+                            title="Delete"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {confirmingId && (
+        <p className="mt-2 text-xs text-ch/60">
+          Remove this record? This will update your actuals.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function UpgradeBridge() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <div className="rounded-xl border border-goldp bg-goldp/30 p-4">
+        <div className="flex items-start gap-3">
+          <Sparkles className="h-4 w-4 text-gold mt-0.5" />
+          <div className="flex-1 text-sm text-ch/80">
+            You're entering hours manually. Upgrade to Studio to have your calendar log these
+            automatically — no manual entry required.{" "}
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="font-medium text-gold hover:underline"
+            >
+              See what Studio includes →
+            </button>
+          </div>
+        </div>
+      </div>
+      <UpgradeModal
+        targetTier={open ? "studio" : null}
+        currentTier="foundation"
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 }
 

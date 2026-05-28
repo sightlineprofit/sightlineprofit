@@ -305,6 +305,48 @@ export type Database = {
         }
         Relationships: []
       }
+      manual_hour_logs: {
+        Row: {
+          billable_hrs: number
+          created_at: string
+          firm_id: string
+          id: string
+          non_billable_hrs: number
+          notes: string | null
+          period_start: string
+          period_type: Database["public"]["Enums"]["manual_hour_period"]
+          total_hrs_worked: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billable_hrs?: number
+          created_at?: string
+          firm_id: string
+          id?: string
+          non_billable_hrs?: number
+          notes?: string | null
+          period_start: string
+          period_type: Database["public"]["Enums"]["manual_hour_period"]
+          total_hrs_worked?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billable_hrs?: number
+          created_at?: string
+          firm_id?: string
+          id?: string
+          non_billable_hrs?: number
+          notes?: string | null
+          period_start?: string
+          period_type?: Database["public"]["Enums"]["manual_hour_period"]
+          total_hrs_worked?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       pipeline_projects: {
         Row: {
           assigned_user_ids: string[] | null
@@ -1004,6 +1046,7 @@ export type Database = {
       kb_item_type: "article" | "video"
       kb_kind: "article" | "video"
       kb_status: "draft" | "published"
+      manual_hour_period: "week" | "month"
       project_status: "active" | "pipeline" | "completed" | "on_hold"
       scope_risk: "low" | "medium" | "high"
       subscription_status:
@@ -1151,6 +1194,7 @@ export const Constants = {
       kb_item_type: ["article", "video"],
       kb_kind: ["article", "video"],
       kb_status: ["draft", "published"],
+      manual_hour_period: ["week", "month"],
       project_status: ["active", "pipeline", "completed", "on_hold"],
       scope_risk: ["low", "medium", "high"],
       subscription_status: [
