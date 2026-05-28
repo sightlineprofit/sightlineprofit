@@ -94,7 +94,10 @@ type View = "week" | "day" | "team";
 function TimeCalendarPage() {
   const getCtx = useServerFn(getMyContext);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
-  const tier = (ctx?.firm?.subscription_tier as string) ?? "foundation";
+  const isSuperAdmin = !!ctx?.profile?.is_super_admin;
+  const isImpersonating = !!ctx?.profile?.impersonated_firm_id;
+  const rawTier = (ctx?.firm?.subscription_tier as string) ?? "foundation";
+  const tier = isSuperAdmin && !isImpersonating ? "practice" : rawTier;
   const locked = tier === "foundation";
 
   if (locked) {

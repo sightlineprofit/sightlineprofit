@@ -25,7 +25,10 @@ export const Route = createFileRoute("/_authenticated/sightline")({
 function SightlinePage() {
   const ctxFn = useServerFn(getMyContext);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => ctxFn() });
-  const tier = (ctx?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation";
+  const isSuperAdmin = !!ctx?.profile?.is_super_admin;
+  const isImpersonating = !!ctx?.profile?.impersonated_firm_id;
+  const rawTier = (ctx?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation";
+  const tier = isSuperAdmin && !isImpersonating ? "practice" : rawTier;
 
   const [openProject, setOpenProject] = useState<string | null>(null);
 
