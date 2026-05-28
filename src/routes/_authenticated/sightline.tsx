@@ -63,9 +63,35 @@ function SightlinePage() {
 
 function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const getList = useServerFn(getProjectList);
+  const qc = useQueryClient();
+  const createFn = useServerFn(createProject);
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "" });
+
+  async function submitCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft.name.trim()) return;
+    try {
+      const res = await createFn({
+        data: {
+          name: draft.name.trim(),
+          client_name: draft.client_name.trim() || null,
+          status: "active",
+          scoped_rate: draft.scoped_rate ? Number(draft.scoped_rate) : null,
+        },
+      });
+      toast.success("Project created");
+      setDraft({ name: "", client_name: "", scoped_rate: "" });
+      setCreating(false);
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+      onOpen(res.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed");
+    }
+  }
 
   const billedRate = Number(data?.config?.rate_billed) || 0;
 
@@ -84,7 +110,30 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       eyebrow="Practice"
       title="Sightline"
       description="Project profitability, finally answered."
+      actions={
+        <Button onClick={() => setCreating((v) => !v)} className="bg-gold text-white hover:bg-goldl">
+          {creating ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New project</>}
+        </Button>
+      }
     >
+      {creating && (
+        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-end gap-3 rounded-lg border border-border bg-white p-4">
+          <div className="col-span-5">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
+            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus required />
+          </div>
+          <div className="col-span-4">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
+            <Input value={draft.client_name} onChange={(e) => setDraft({ ...draft, client_name: e.target.value })} />
+          </div>
+          <div className="col-span-2">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Scoped rate $/hr</label>
+            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder={billedRate ? String(billedRate) : "—"} />
+          </div>
+          <Button type="submit" className="col-span-1 bg-ch text-cream hover:bg-ch/90">Create</Button>
+        </form>
+      )}
+
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Input
           value={search}
@@ -112,8 +161,13 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
         <div className="rounded-lg border border-dashed border-border bg-white/60 p-12 text-center">
           <p className="font-display text-2xl italic text-ch/60">No projects yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
-            Attach an SOP template to a project from the SOP Library to start tracking profitability.
+            Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library.
           </p>
+          {!creating && (
+            <Button onClick={() => setCreating(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
+              <Plus className="mr-1.5 h-4 w-4" /> Create project
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
