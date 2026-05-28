@@ -137,17 +137,40 @@ export const createProject = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     if (tplPhases.length) {
-      await supabase.from("project_phases").insert(
-        tplPhases.map((p) => ({
-          project_id: project.id,
-          sop_phase_id: p.id,
-          name: p.name,
-          expected_hrs: p.expected_hrs,
-          billable: p.billable,
-          sort_order: p.sort_order,
-          actual_hrs: 0,
-        })),
-      );
+      const phaseIds = tplPhases.map((p) => p.id);
+      const { data: allSteps } = await supabase
+        .from("sop_steps")
+        .select("phase_id, description, estimated_hrs, sort_order")
+        .in("phase_id", phaseIds)
+        .order("sort_order");
+      for (const p of tplPhases) {
+        const { data: ins, error: phErr } = await supabase
+          .from("project_phases")
+          .insert({
+            project_id: project.id,
+            sop_phase_id: p.id,
+            name: p.name,
+            expected_hrs: p.expected_hrs,
+            billable: p.billable,
+            sort_order: p.sort_order,
+            actual_hrs: 0,
+          })
+          .select("id")
+          .single();
+        if (phErr) throw new Error(phErr.message);
+        const steps = (allSteps ?? []).filter((s) => s.phase_id === p.id);
+        if (steps.length) {
+          await supabase.from("project_steps").insert(
+            steps.map((s) => ({
+              project_phase_id: ins.id,
+              description: s.description,
+              estimated_hrs: Number(s.estimated_hrs) || 0,
+              sort_order: s.sort_order,
+              actual_hrs: 0,
+            })),
+          );
+        }
+      }
     }
     return { id: project.id };
   });
