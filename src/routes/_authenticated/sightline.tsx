@@ -267,6 +267,23 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     },
   });
 
+  const upsertPhaseFn = useServerFn(upsertProjectPhase);
+  const deletePhaseFn = useServerFn(deleteProjectPhase);
+  const phaseMut = useMutation({
+    mutationFn: (input: { id?: string; name: string; expected_hrs: number; billable: boolean }) =>
+      upsertPhaseFn({ data: { project_id: id, ...input } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+  const deletePhaseMut = useMutation({
+    mutationFn: (phaseId: string) => deletePhaseFn({ data: { id: phaseId } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] }),
+  });
+  const [editingPhase, setEditingPhase] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ name: "", expected_hrs: "", billable: true });
+  const [addingPhase, setAddingPhase] = useState(false);
+  const [addDraft, setAddDraft] = useState({ name: "", expected_hrs: "", billable: true });
+
   const [memberFilter, setMemberFilter] = useState<string>("all");
   const [phaseFilter, setPhaseFilter] = useState<string>("all");
 
