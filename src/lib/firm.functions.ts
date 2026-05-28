@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const tierEnum = z.enum(["foundation", "studio", "practice"]);
 
@@ -29,7 +30,10 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       return { firmId: profile.firm_id, alreadyExists: true };
     }
 
-    const { data: firm, error: firmErr } = await supabase
+    // Bootstrap uses admin client: the firms_select policy requires
+    // current_firm_id() to match, but the user's profile.firm_id is still
+    // null at this point — so RETURNING via the user-scoped client fails.
+    const { data: firm, error: firmErr } = await supabaseAdmin
       .from("firms")
       .insert({
         name: data.firmName,
@@ -41,7 +45,7 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       .single();
     if (firmErr || !firm) throw new Error(firmErr?.message ?? "Failed to create firm");
 
-    const { error: profErr } = await supabase
+    const { error: profErr } = await supabaseAdmin
       .from("profiles")
       .update({
         firm_id: firm.id,
@@ -52,7 +56,7 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       .eq("id", userId);
     if (profErr) throw new Error(profErr.message);
 
-    await supabase.from("firm_config").insert({ firm_id: firm.id });
+    await supabaseAdmin.from("firm_config").insert({ firm_id: firm.id });
 
     return { firmId: firm.id, alreadyExists: false };
   });
