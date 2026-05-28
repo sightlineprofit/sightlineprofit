@@ -80,15 +80,11 @@ const entrySchema = z.object({
   user_id: z.string().uuid().optional(), // admin can set, else defaults to self
 });
 
-async function recomputePhaseActual(
-  supabase: ReturnType<typeof Object>,
-  phaseId: string,
-): Promise<void> {
-  // sum hrs across entries for this phase
-  const sb = supabase as ReturnType<typeof import("@supabase/supabase-js").createClient>;
-  const { data } = await sb.from("time_entries").select("hrs").eq("project_phase_id", phaseId);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function recomputePhaseActual(supabase: any, phaseId: string): Promise<void> {
+  const { data } = await supabase.from("time_entries").select("hrs").eq("project_phase_id", phaseId);
   const total = (data ?? []).reduce((s: number, r: { hrs: number | null }) => s + Number(r.hrs || 0), 0);
-  await sb.from("project_phases").update({ actual_hrs: total }).eq("id", phaseId);
+  await supabase.from("project_phases").update({ actual_hrs: total }).eq("id", phaseId);
 }
 
 export const saveTimeEntry = createServerFn({ method: "POST" })
