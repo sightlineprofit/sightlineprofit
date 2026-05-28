@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
 import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
 import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
+import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRateArchitectureRouteImport } from './routes/_authenticated/rate-architecture'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
@@ -75,6 +76,11 @@ const AuthenticatedSopLibraryRoute = AuthenticatedSopLibraryRouteImport.update({
 const AuthenticatedSightlineRoute = AuthenticatedSightlineRouteImport.update({
   id: '/sightline',
   path: '/sightline',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSetupRoute = AuthenticatedSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -199,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
@@ -287,6 +296,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/rate-architecture'
     | '/settings'
+    | '/setup'
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
@@ -315,6 +325,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/rate-architecture'
     | '/settings'
+    | '/setup'
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
@@ -344,6 +355,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects'
     | '/_authenticated/rate-architecture'
     | '/_authenticated/settings'
+    | '/_authenticated/setup'
     | '/_authenticated/sightline'
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
@@ -422,6 +434,13 @@ declare module '@tanstack/react-router' {
       path: '/sightline'
       fullPath: '/sightline'
       preLoaderRoute: typeof AuthenticatedSightlineRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/setup': {
+      id: '/_authenticated/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof AuthenticatedSetupRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
@@ -624,6 +643,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRouteWithChildren
   AuthenticatedRateArchitectureRoute: typeof AuthenticatedRateArchitectureRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
   AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRouteWithChildren
   AuthenticatedTimeCalendarRoute: typeof AuthenticatedTimeCalendarRoute
@@ -640,6 +660,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProjectsRoute: AuthenticatedProjectsRouteWithChildren,
   AuthenticatedRateArchitectureRoute: AuthenticatedRateArchitectureRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
   AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRouteWithChildren,
   AuthenticatedTimeCalendarRoute: AuthenticatedTimeCalendarRoute,
