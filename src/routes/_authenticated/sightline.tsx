@@ -11,7 +11,7 @@ import {
   createProject, upsertProjectPhase, deleteProjectPhase,
 } from "@/lib/sightline.functions";
 import { toast } from "sonner";
-import { fmtUsd, fmtPct } from "@/lib/finance";
+import { fmtUsd, fmtPct, formatHours } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -193,11 +193,11 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
                   </span>
                 </div>
                 <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4">
-                  <Cell label="Scoped" value={`${scoped.toFixed(0)}h`} />
-                  <Cell label="Actual" value={`${actual.toFixed(0)}h`} />
+                  <Cell label="Scoped" value={formatHours(scoped)} />
+                  <Cell label="Actual" value={formatHours(actual)} />
                   <Cell
                     label="Variance"
-                    value={`${variance >= 0 ? "+" : ""}${variance.toFixed(0)}h`}
+                    value={`${variance >= 0 ? "+" : ""}${formatHours(Math.abs(variance))}`}
                     accent={variance > 0 ? "danger" : variance < 0 ? "success" : undefined}
                   />
                 </div>
@@ -387,7 +387,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <h3 className="font-display text-lg text-ch">Scope creep</h3>
           </div>
           <p className="mt-2 text-ch/80">
-            You've spent <span className="font-display text-xl text-ch">{unscopedTotal.toFixed(1)} unscoped hours</span>
+            You've spent <span className="font-display text-xl text-ch">{formatHours(unscopedTotal)} unscoped</span>
             {" "}across {overPhases.length} phase{overPhases.length !== 1 && "s"} — that's{" "}
             <span className="font-display text-xl text-terra">{fmtUsd(unscopedTotal * billedRate)}</span>
             {" "}at your billed rate.
@@ -395,7 +395,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
           {overPhases.length > 0 && (
             <ul className="mt-3 space-y-1 text-sm text-ch/70">
               {overPhases.map((p) => (
-                <li key={p.id}>· {p.name}: +{p.variance.toFixed(1)}h ({fmtUsd(p.variance * billedRate)})</li>
+                <li key={p.id}>· {p.name}: +{formatHours(p.variance)} ({fmtUsd(p.variance * billedRate)})</li>
               ))}
             </ul>
           )}
@@ -445,10 +445,10 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                 return (
                   <tr key={p.id} className="border-t border-border">
                     <td className="px-4 py-3 font-medium text-ch">{p.name}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{p.sc.toFixed(1)}h</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{p.ac.toFixed(1)}h</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatHours(p.sc)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatHours(p.ac)}</td>
                     <td className={cn("px-3 py-3 text-right tabular-nums", p.variance > 0 ? "text-terra" : p.variance < 0 ? "text-success" : "")}>
-                      {p.variance >= 0 ? "+" : ""}{p.variance.toFixed(1)}h
+                      {p.variance >= 0 ? "+" : ""}{formatHours(Math.abs(p.variance))}
                     </td>
                     <td className={cn("px-3 py-3 text-right tabular-nums", p.dollars > 0 ? "text-terra" : "text-ch/60")}>
                       {billedRate > 0 ? fmtUsd(p.dollars) : "—"}
@@ -527,10 +527,10 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
           <h3 className="font-display text-xl tracking-tight text-ch">Hours summary</h3>
           <table className="mt-4 w-full text-sm">
             <tbody className="[&_td]:py-1.5">
-              <SummaryRow label="Scoped hours" value={`${scopedHrs.toFixed(1)}h`} />
-              <SummaryRow label="Actual hours" value={`${actualHrs.toFixed(1)}h`} />
-              <SummaryRow label="Billable logged" value={`${billableHrs.toFixed(1)}h`} />
-              <SummaryRow label="Non-billable logged" value={`${nonBillableHrs.toFixed(1)}h`} />
+              <SummaryRow label="Scoped hours" value={formatHours(scopedHrs)} />
+              <SummaryRow label="Actual hours" value={formatHours(actualHrs)} />
+              <SummaryRow label="Billable logged" value={formatHours(billableHrs)} />
+              <SummaryRow label="Non-billable logged" value={formatHours(nonBillableHrs)} />
               <SummaryRow
                 label="% consumed"
                 value={scopedHrs > 0 ? `${((actualHrs / scopedHrs) * 100).toFixed(0)}%` : "—"}
@@ -586,7 +586,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                     <td className="px-4 py-2 text-ch/80">{e.date}</td>
                     <td className="px-3 py-2 text-ch/80">{member?.name || member?.email || "—"}</td>
                     <td className="px-3 py-2 text-ch/80">{phase?.name || "—"}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{Number(e.hrs).toFixed(1)}h</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatHours(Number(e.hrs))}</td>
                     <td className="px-4 py-2">
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.15em]",
                         e.billable ? "bg-success/10 text-success" : "bg-terra/10 text-terra")}>

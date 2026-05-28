@@ -14,6 +14,7 @@ const phaseSchema = z.object({
     z.object({
       id: z.string().uuid().optional(),
       description: z.string().min(1).max(500),
+      estimated_hrs: z.number().min(0).max(10000).default(0),
       sort_order: z.number().int(),
     }),
   ),
@@ -43,21 +44,25 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) {
-      return { templates: [], phases: [], steps: [], config: null, lastUsed: {} };
+      return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {} };
     }
-    const [{ data: templates }, { data: phases }, { data: config }, { data: projects }] = await Promise.all([
+    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }] = await Promise.all([
       supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }),
       supabase.from("sop_phases").select("*").eq("firm_id", profile.firm_id).order("sort_order"),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
-      supabase.from("projects").select("id, sop_template_id, created_at").eq("firm_id", profile.firm_id),
+      supabase.from("projects")
+        .select("id, name, client_name, status, sop_template_id, created_at")
+        .eq("firm_id", profile.firm_id)
+        .order("created_at", { ascending: false }),
     ]);
+    const projects = projectsRaw ?? [];
     const phaseIds = (phases ?? []).map((p) => p.id);
     const { data: steps } = phaseIds.length
       ? await supabase.from("sop_steps").select("*").in("phase_id", phaseIds).order("sort_order")
       : { data: [] as never[] };
 
     const lastUsed: Record<string, string> = {};
-    for (const p of projects ?? []) {
+    for (const p of projects) {
       if (p.sop_template_id && (!lastUsed[p.sop_template_id] || p.created_at > lastUsed[p.sop_template_id])) {
         lastUsed[p.sop_template_id] = p.created_at;
       }
@@ -66,6 +71,7 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       templates: templates ?? [],
       phases: phases ?? [],
       steps: steps ?? [],
+      projects: projects.map((p) => ({ id: p.id, name: p.name, client_name: p.client_name, status: p.status })),
       config,
       lastUsed,
     };
@@ -111,11 +117,14 @@ export const saveSopTemplate = createServerFn({ method: "POST" })
       await supabase.from("sop_phases").delete().in("id", toDelete);
     }
     for (const ph of data.phases) {
+      // If any step has an estimated_hrs > 0, the phase total is computed from steps.
+      const stepSum = ph.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
+      const computedHrs = stepSum > 0 ? stepSum : Number(ph.expected_hrs) || 0;
       const phBody = {
         firm_id: profile.firm_id,
         template_id: templateId,
         name: ph.name,
-        expected_hrs: ph.expected_hrs,
+        expected_hrs: computedHrs,
         billable: ph.billable,
         description: ph.description ?? null,
         time_benchmark_notes: ph.time_benchmark_notes ?? null,
@@ -136,6 +145,7 @@ export const saveSopTemplate = createServerFn({ method: "POST" })
           ph.steps.map((s) => ({
             phase_id: phaseId!,
             description: s.description,
+            estimated_hrs: Number(s.estimated_hrs) || 0,
             sort_order: s.sort_order,
           })),
         );
@@ -162,8 +172,8 @@ export const deleteSopTemplate = createServerFn({ method: "POST" })
 
 const attachSchema = z.object({
   template_id: z.string().uuid(),
-  project_name: z.string().min(1).max(160),
-  client_name: z.string().max(160).optional().nullable(),
+  project_id: z.string().uuid(),
+  phase_ids: z.array(z.string().uuid()).max(200).optional(),
 });
 
 export const attachTemplateToProject = createServerFn({ method: "POST" })
@@ -175,39 +185,92 @@ export const attachTemplateToProject = createServerFn({ method: "POST" })
     if (!profile?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
 
-    const [{ data: tpl }, { data: phases }] = await Promise.all([
-      supabase.from("sop_templates").select("*").eq("id", data.template_id).single(),
-      supabase.from("sop_phases").select("*").eq("template_id", data.template_id).order("sort_order"),
-    ]);
-    if (!tpl) throw new Error("Template not found");
-    const scopedHrs = (phases ?? []).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-
-    const { data: project, error } = await supabase
+    // Verify project belongs to firm
+    const { data: project } = await supabase
       .from("projects")
-      .insert({
-        firm_id: profile.firm_id,
-        name: data.project_name,
-        client_name: data.client_name ?? null,
-        sop_template_id: data.template_id,
-        scoped_hrs: scopedHrs,
-        status: "active",
-      })
-      .select("id")
+      .select("id, firm_id, name")
+      .eq("id", data.project_id)
+      .eq("firm_id", profile.firm_id)
       .single();
-    if (error) throw new Error(error.message);
+    if (!project) throw new Error("Project not found");
 
-    if (phases?.length) {
-      await supabase.from("project_phases").insert(
-        phases.map((p) => ({
+    // Load template phases (filtered if phase_ids provided)
+    let phasesQ = supabase
+      .from("sop_phases")
+      .select("id, name, expected_hrs, billable, sort_order")
+      .eq("template_id", data.template_id)
+      .order("sort_order");
+    if (data.phase_ids?.length) phasesQ = phasesQ.in("id", data.phase_ids);
+    const { data: phases } = await phasesQ;
+    if (!phases?.length) throw new Error("No phases to attach");
+
+    // Get current max sort_order on project to append
+    const { data: existing } = await supabase
+      .from("project_phases")
+      .select("sort_order")
+      .eq("project_id", project.id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    let nextOrder = (existing?.[0]?.sort_order ?? -1) + 1;
+
+    // Load steps for all phases at once
+    const phaseIds = phases.map((p) => p.id);
+    const { data: allSteps } = await supabase
+      .from("sop_steps")
+      .select("phase_id, description, estimated_hrs, sort_order")
+      .in("phase_id", phaseIds)
+      .order("sort_order");
+
+    // Insert project_phases one-by-one to capture new ids for step snapshot
+    for (const p of phases) {
+      const { data: ins, error } = await supabase
+        .from("project_phases")
+        .insert({
           project_id: project.id,
           sop_phase_id: p.id,
           name: p.name,
-          expected_hrs: p.expected_hrs,
+          expected_hrs: Number(p.expected_hrs) || 0,
           billable: p.billable,
-          sort_order: p.sort_order,
+          sort_order: nextOrder++,
           actual_hrs: 0,
-        })),
-      );
+        })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message);
+
+      const steps = (allSteps ?? []).filter((s) => s.phase_id === p.id);
+      if (steps.length) {
+        await supabase.from("project_steps").insert(
+          steps.map((s) => ({
+            project_phase_id: ins.id,
+            description: s.description,
+            estimated_hrs: Number(s.estimated_hrs) || 0,
+            sort_order: s.sort_order,
+            actual_hrs: 0,
+          })),
+        );
+      }
     }
-    return { id: project.id };
+    return { project_id: project.id, attached: phases.length };
+  });
+
+export const reorderProjectPhases = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      project_id: z.string().uuid(),
+      ordered_ids: z.array(z.string().uuid()).min(1).max(200),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    for (let i = 0; i < data.ordered_ids.length; i++) {
+      const { error } = await supabase
+        .from("project_phases")
+        .update({ sort_order: i })
+        .eq("id", data.ordered_ids[i])
+        .eq("project_id", data.project_id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
   });

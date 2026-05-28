@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle, Lock } from "lucide-react";
+import { toast } from "sonner";
+import { useNavigate } from "@tanstack/react-router";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
 import { getMyContext } from "@/lib/firm.functions";
@@ -12,7 +14,7 @@ import {
   deleteSopTemplate,
   attachTemplateToProject,
 } from "@/lib/sop.functions";
-import { fmtUsd } from "@/lib/finance";
+import { fmtUsd, formatHours } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type Risk = "low" | "medium" | "high";
-type Step = { id?: string; description: string; sort_order: number };
+type Step = { id?: string; description: string; estimated_hrs: number; sort_order: number };
 type Phase = {
   id?: string;
   name: string;
@@ -151,11 +153,17 @@ function Library() {
   });
 
   const attachMut = useMutation({
-    mutationFn: (v: { template_id: string; project_name: string; client_name: string }) =>
-      attachFn({ data: { ...v, client_name: v.client_name || null } }),
-    onSuccess: () => {
+    mutationFn: (v: { template_id: string; project_id: string }) =>
+      attachFn({ data: v }),
+    onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+      qc.invalidateQueries({ queryKey: ["sightline-detail", vars.project_id] });
       setAttachFor(null);
+      toast.success("Template attached to project");
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Failed to attach");
     },
   });
 
@@ -231,6 +239,7 @@ function Library() {
           {filtered.map((tpl) => {
             const phases = data!.phases.filter((p) => p.template_id === tpl.id);
             const scoped = phases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
+            const scopedLabel = formatHours(scoped).replace(" hrs", "");
             const lastUsed = data!.lastUsed[tpl.id];
             return (
               <div
@@ -262,7 +271,7 @@ function Library() {
                     <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Phases</div>
                   </div>
                   <div>
-                    <div className="font-display text-2xl text-ch">{scoped.toFixed(0)}</div>
+                    <div className="font-display text-2xl text-ch">{scopedLabel}</div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Scoped hrs</div>
                   </div>
                   <div className="ml-auto text-right text-[11px] text-ch/50">
@@ -284,7 +293,12 @@ function Library() {
                           steps: data!.steps
                             .filter((s) => s.phase_id === p.id)
                             .sort((a, b) => a.sort_order - b.sort_order)
-                            .map((s) => ({ id: s.id, description: s.description, sort_order: s.sort_order })),
+                            .map((s) => ({
+                              id: s.id,
+                              description: s.description,
+                              estimated_hrs: Number((s as { estimated_hrs?: number }).estimated_hrs) || 0,
+                              sort_order: s.sort_order,
+                            })),
                         }));
                       setEditing({
                         id: tpl.id, name: tpl.name, category: tpl.category ?? "",
@@ -315,41 +329,114 @@ function Library() {
           <DialogHeader>
             <DialogTitle className="font-display text-2xl">Attach “{attachFor?.name}”</DialogTitle>
           </DialogHeader>
-          <AttachForm
-            onSubmit={(v) => attachFor && attachMut.mutate({ ...v, template_id: attachFor.id })}
-            saving={attachMut.isPending}
-          />
+          {attachFor && (
+            <AttachProjectPicker
+              templateName={attachFor.name}
+              projects={(data?.projects ?? []) as ProjectOption[]}
+              onSubmit={(project_id) => attachMut.mutate({ template_id: attachFor.id, project_id })}
+              saving={attachMut.isPending}
+              onCancel={() => setAttachFor(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
       {delMut.isPending && <div className="sr-only">Deleting…</div>}
     </ModulePage>
   );
+}
 
-  function AttachForm({ onSubmit, saving }: { onSubmit: (v: { project_name: string; client_name: string }) => void; saving: boolean }) {
-    const [name, setName] = useState("");
-    const [client, setClient] = useState("");
+type ProjectOption = { id: string; name: string; client_name: string | null; status: string };
+
+function AttachProjectPicker({
+  templateName, projects, onSubmit, saving, onCancel,
+}: {
+  templateName: string;
+  projects: ProjectOption[];
+  onSubmit: (project_id: string) => void;
+  saving: boolean;
+  onCancel: () => void;
+}) {
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<string>("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter((p) =>
+      [p.name, p.client_name].filter(Boolean).some((v) => v!.toLowerCase().includes(q)),
+    );
+  }, [projects, search]);
+
+  const selectedProject = projects.find((p) => p.id === selected);
+
+  if (projects.length === 0) {
     return (
-      <form
-        onSubmit={(e) => { e.preventDefault(); if (name.trim()) onSubmit({ project_name: name.trim(), client_name: client.trim() }); }}
-        className="space-y-4"
-      >
-        <div>
-          <Label>Project name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={160} className="mt-1" />
-        </div>
-        <div>
-          <Label>Client (optional)</Label>
-          <Input value={client} onChange={(e) => setClient(e.target.value)} maxLength={160} className="mt-1" />
-        </div>
+      <div className="space-y-4 py-2">
+        <p className="text-sm text-ch/70">You have no projects to attach this to yet.</p>
         <DialogFooter>
-          <Button type="submit" disabled={saving} className="bg-gold hover:bg-goldl">
-            {saving ? "Creating…" : "Create project"}
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button className="bg-gold hover:bg-goldl" onClick={() => { onCancel(); navigate({ to: "/sightline" }); }}>
+            Create a project first →
           </Button>
         </DialogFooter>
-      </form>
+      </div>
     );
   }
+
+  return (
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ch/40" />
+        <Input
+          autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search projects…" className="pl-9"
+        />
+      </div>
+      <div className="max-h-72 overflow-y-auto rounded-md border border-border">
+        {filtered.length === 0 ? (
+          <p className="p-4 text-sm text-ch/50">No projects match.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(p.id)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-creamd/50",
+                    selected === p.id && "bg-goldp/40",
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-ch">{p.name}</div>
+                    {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
+                  </div>
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
+                    {p.status}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button
+          disabled={!selected || saving}
+          onClick={() => selected && onSubmit(selected)}
+          className="bg-gold hover:bg-goldl"
+        >
+          {saving ? "Attaching…" : selectedProject ? `Attach to ${selectedProject.name}` : "Attach"}
+        </Button>
+      </DialogFooter>
+      <p className="text-[11px] text-ch/50">
+        Attaching “{templateName}” copies its phases as a snapshot. Editing the template later won't change this project.
+      </p>
+    </div>
+  );
 }
 
 function TemplateEditor({
@@ -389,7 +476,11 @@ function TemplateEditor({
     });
   }
 
-  const totalScoped = draft.phases.reduce((s, p) => s + (Number(p.expected_hrs) || 0), 0);
+  const phaseHours = (p: Phase) => {
+    const stepSum = p.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
+    return stepSum > 0 ? stepSum : Number(p.expected_hrs) || 0;
+  };
+  const totalScoped = draft.phases.reduce((s, p) => s + phaseHours(p), 0);
 
   return (
     <div className="mx-auto max-w-5xl px-8 py-10">
@@ -467,7 +558,7 @@ function TemplateEditor({
         <div>
           <h2 className="font-display text-2xl tracking-tight text-ch">Phases</h2>
           <p className="text-sm text-ch/60">
-            {draft.phases.length} {draft.phases.length === 1 ? "phase" : "phases"} · {totalScoped.toFixed(1)} scoped hrs
+            {draft.phases.length} {draft.phases.length === 1 ? "phase" : "phases"} · {formatHours(totalScoped)} scoped
             {billedRate > 0 && ` · ${fmtUsd(totalScoped * billedRate)} potential revenue`}
           </p>
         </div>
@@ -527,7 +618,9 @@ function PhaseRow({
   costPerHour: number;
 }) {
   const [open, setOpen] = useState(false);
-  const hrs = Number(phase.expected_hrs) || 0;
+  const stepSum = phase.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
+  const computed = stepSum > 0;
+  const hrs = computed ? stepSum : Number(phase.expected_hrs) || 0;
   const revenue = phase.billable ? hrs * billedRate : 0;
   const cost = hrs * costPerHour;
   const margin = revenue - cost;
@@ -551,11 +644,13 @@ function PhaseRow({
         <div className="flex items-center gap-1.5">
           <Input
             type="number" min={0} step={0.5}
-            value={phase.expected_hrs}
+            value={computed ? hrs : phase.expected_hrs}
             onChange={(e) => onChange({ ...phase, expected_hrs: parseFloat(e.target.value) || 0 })}
-            className="w-20 text-right"
+            readOnly={computed}
+            title={computed ? "Total from steps" : "Manual phase hours"}
+            className={cn("w-20 text-right", computed && "bg-creamd/40 text-ch/70")}
           />
-          <span className="text-xs text-ch/50">hrs</span>
+          <span className="text-xs text-ch/50">{computed ? "from steps" : "hrs"}</span>
         </div>
         <div className="flex items-center gap-2 px-2">
           <Switch checked={phase.billable} onCheckedChange={(v) => onChange({ ...phase, billable: v })} />
@@ -601,7 +696,7 @@ function PhaseRow({
                 variant="outline" size="sm" className="border-border"
                 onClick={() => onChange({
                   ...phase,
-                  steps: [...phase.steps, { description: "", sort_order: phase.steps.length }],
+                  steps: [...phase.steps, { description: "", estimated_hrs: 0, sort_order: phase.steps.length }],
                 })}
               >
                 <Plus className="mr-1 h-3.5 w-3.5" /> Add step
@@ -620,6 +715,17 @@ function PhaseRow({
                     placeholder="Describe a step in this phase"
                     maxLength={500}
                   />
+                  <Input
+                    type="number" min={0} step={0.25}
+                    value={step.estimated_hrs}
+                    onChange={(e) => onChange({
+                      ...phase,
+                      steps: phase.steps.map((s, idx) => idx === j ? { ...s, estimated_hrs: parseFloat(e.target.value) || 0 } : s),
+                    })}
+                    className="w-20 text-right"
+                    placeholder="hrs"
+                  />
+                  <span className="text-xs text-ch/50">hrs</span>
                   <Button
                     variant="ghost" size="sm"
                     onClick={() => onChange({ ...phase, steps: phase.steps.filter((_, idx) => idx !== j) })}
