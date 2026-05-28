@@ -65,7 +65,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const stopImpFn = useServerFn(setImpersonation);
   const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
 
-  const currentTier: Tier = (data?.firm?.subscription_tier as Tier) ?? "foundation";
+  const isSuper = !!data?.profile?.is_super_admin;
+  const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
+  // Super admins always operate at the highest tier — every module unlocked,
+  // no upgrade prompts, no trial nag. When impersonating, the impersonated
+  // firm's data drives content, but tier gating stays off so the admin can
+  // exercise every screen.
+  const currentTier: Tier = isSuper
+    ? "practice"
+    : ((data?.firm?.subscription_tier as Tier) ?? "foundation");
   const currentTierRank = TIER_RANK[currentTier];
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -78,11 +86,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   async function stopImpersonating() {
     await stopImpFn({ data: { firm_id: null } });
-    window.location.reload();
+    window.location.assign("/admin");
   }
-
-  const isSuper = !!data?.profile?.is_super_admin;
-  const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
 
   return (
     <div className="flex min-h-screen w-full bg-cream text-ch">
@@ -249,7 +254,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {impersonating && (
-          <div className="flex items-center justify-between gap-3 border-b border-gold/40 bg-gold px-6 py-2 text-sm text-white">
+          <div className="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-gold/40 bg-gold px-6 py-2 text-sm text-white shadow-md">
             <div className="flex items-center gap-2">
               <Eye className="h-4 w-4" />
               <span>
@@ -261,11 +266,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               onClick={stopImpersonating}
               className="inline-flex items-center gap-1 rounded-md bg-white/15 px-3 py-1 text-xs hover:bg-white/25"
             >
-              <EyeOff className="h-3 w-3" /> Stop
+              <EyeOff className="h-3 w-3" /> Exit Firm View
             </button>
           </div>
         )}
-        {data?.firm && (
+        {data?.firm && !isSuper && (
           <TrialBanner trialEndsAt={data.firm.trial_ends_at} status={data.firm.subscription_status} />
         )}
         <main className="flex-1">{children}</main>
