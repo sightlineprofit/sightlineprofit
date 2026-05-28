@@ -25,6 +25,8 @@ import { Route as AuthenticatedGrowthRoadmapRouteImport } from './routes/_authen
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedDashboardRateRouteImport } from './routes/_authenticated/dashboard.rate'
+import { Route as AuthenticatedDashboardBvaRouteImport } from './routes/_authenticated/dashboard.bva'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -109,6 +111,18 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedDashboardRateRoute =
+  AuthenticatedDashboardRateRouteImport.update({
+    id: '/rate',
+    path: '/rate',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardBvaRoute =
+  AuthenticatedDashboardBvaRouteImport.update({
+    id: '/bva',
+    path: '/bva',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -117,7 +131,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -126,6 +140,8 @@ export interface FileRoutesByFullPath {
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRoute
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
+  '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,7 +150,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
@@ -143,6 +159,8 @@ export interface FileRoutesByTo {
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRoute
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
+  '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -153,7 +171,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
-  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/_authenticated/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
@@ -162,6 +180,8 @@ export interface FileRoutesById {
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRoute
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/_authenticated/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
+  '/_authenticated/dashboard/rate': typeof AuthenticatedDashboardRateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +201,8 @@ export interface FileRouteTypes {
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
+    | '/dashboard/bva'
+    | '/dashboard/rate'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -198,6 +220,8 @@ export interface FileRouteTypes {
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
+    | '/dashboard/bva'
+    | '/dashboard/rate'
   id:
     | '__root__'
     | '/'
@@ -216,6 +240,8 @@ export interface FileRouteTypes {
     | '/_authenticated/sightline'
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
+    | '/_authenticated/dashboard/bva'
+    | '/_authenticated/dashboard/rate'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -340,13 +366,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/dashboard/rate': {
+      id: '/_authenticated/dashboard/rate'
+      path: '/rate'
+      fullPath: '/dashboard/rate'
+      preLoaderRoute: typeof AuthenticatedDashboardRateRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/bva': {
+      id: '/_authenticated/dashboard/bva'
+      path: '/bva'
+      fullPath: '/dashboard/bva'
+      preLoaderRoute: typeof AuthenticatedDashboardBvaRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
   }
 }
+
+interface AuthenticatedDashboardRouteChildren {
+  AuthenticatedDashboardBvaRoute: typeof AuthenticatedDashboardBvaRoute
+  AuthenticatedDashboardRateRoute: typeof AuthenticatedDashboardRateRoute
+}
+
+const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
+  {
+    AuthenticatedDashboardBvaRoute: AuthenticatedDashboardBvaRoute,
+    AuthenticatedDashboardRateRoute: AuthenticatedDashboardRateRoute,
+  }
+
+const AuthenticatedDashboardRouteWithChildren =
+  AuthenticatedDashboardRoute._addFileChildren(
+    AuthenticatedDashboardRouteChildren,
+  )
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRouteWithChildren
   AuthenticatedGrowthRoadmapRoute: typeof AuthenticatedGrowthRoadmapRoute
   AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
@@ -360,7 +416,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
-  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRouteWithChildren,
   AuthenticatedGrowthRoadmapRoute: AuthenticatedGrowthRoadmapRoute,
   AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
@@ -385,3 +441,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
