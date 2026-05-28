@@ -216,3 +216,102 @@ export const completeOnboarding = createServerFn({ method: "POST" })
     // Reserved for future flag; the dashboard is reachable once a firm exists.
     return { ok: true, userId: context.userId };
   });
+
+export const listTeam = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return { members: [], invites: [] };
+    const [{ data: members }, { data: invites }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, name, email, role, billable_rate, cost_rate, accepted_at")
+        .eq("firm_id", profile.firm_id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("team_invitations")
+        .select("id, name, email, role, billable_rate, cost_rate, accepted_at, invited_at")
+        .eq("firm_id", profile.firm_id)
+        .is("accepted_at", null)
+        .order("invited_at", { ascending: false }),
+    ]);
+    return { members: members ?? [], invites: invites ?? [] };
+  });
+
+export const listActivityGroups = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return [];
+    const { data } = await supabase
+      .from("activity_groups")
+      .select("*")
+      .eq("firm_id", profile.firm_id)
+      .order("created_at", { ascending: true });
+    return data ?? [];
+  });
+
+const activityGroupSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  color: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/),
+});
+
+export const addActivityGroup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => activityGroupSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { data: row, error } = await supabase
+      .from("activity_groups")
+      .insert({ firm_id: profile.firm_id, ...data })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const deleteActivityGroup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("activity_groups").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const firmUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+
+export const updateFirm = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => firmUpdateSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { error } = await supabase.from("firms").update({ name: data.name }).eq("id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
