@@ -44,21 +44,25 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) {
-      return { templates: [], phases: [], steps: [], config: null, lastUsed: {} };
+      return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {} };
     }
-    const [{ data: templates }, { data: phases }, { data: config }, { data: projects }] = await Promise.all([
+    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }] = await Promise.all([
       supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }),
       supabase.from("sop_phases").select("*").eq("firm_id", profile.firm_id).order("sort_order"),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
-      supabase.from("projects").select("id, sop_template_id, created_at").eq("firm_id", profile.firm_id),
+      supabase.from("projects")
+        .select("id, name, client_name, status, sop_template_id, created_at")
+        .eq("firm_id", profile.firm_id)
+        .order("created_at", { ascending: false }),
     ]);
+    const projects = projectsRaw ?? [];
     const phaseIds = (phases ?? []).map((p) => p.id);
     const { data: steps } = phaseIds.length
       ? await supabase.from("sop_steps").select("*").in("phase_id", phaseIds).order("sort_order")
       : { data: [] as never[] };
 
     const lastUsed: Record<string, string> = {};
-    for (const p of projects ?? []) {
+    for (const p of projects) {
       if (p.sop_template_id && (!lastUsed[p.sop_template_id] || p.created_at > lastUsed[p.sop_template_id])) {
         lastUsed[p.sop_template_id] = p.created_at;
       }
@@ -67,6 +71,7 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       templates: templates ?? [],
       phases: phases ?? [],
       steps: steps ?? [],
+      projects: projects.map((p) => ({ id: p.id, name: p.name, client_name: p.client_name, status: p.status })),
       config,
       lastUsed,
     };
