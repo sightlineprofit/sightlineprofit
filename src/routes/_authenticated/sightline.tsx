@@ -2,11 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, AlertTriangle, TrendingDown, Filter } from "lucide-react";
+import { ArrowLeft, AlertTriangle, TrendingDown, Filter, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
 import { getMyContext } from "@/lib/firm.functions";
-import { getProjectList, getProjectDetail, updateProjectStatus } from "@/lib/sightline.functions";
+import {
+  getProjectList, getProjectDetail, updateProjectStatus,
+  createProject, upsertProjectPhase, deleteProjectPhase,
+} from "@/lib/sightline.functions";
+import { toast } from "sonner";
 import { fmtUsd, fmtPct } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
