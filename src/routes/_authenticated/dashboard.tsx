@@ -18,6 +18,10 @@ import {
 } from "@/lib/manual-hours.functions";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
 import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon } from "lucide-react";
+import { format, parseISO } from "date-fns";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
