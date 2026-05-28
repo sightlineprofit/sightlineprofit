@@ -239,6 +239,7 @@ function Library() {
           {filtered.map((tpl) => {
             const phases = data!.phases.filter((p) => p.template_id === tpl.id);
             const scoped = phases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
+            const scopedLabel = formatHours(scoped).replace(" hrs", "");
             const lastUsed = data!.lastUsed[tpl.id];
             return (
               <div
@@ -270,7 +271,7 @@ function Library() {
                     <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Phases</div>
                   </div>
                   <div>
-                    <div className="font-display text-2xl text-ch">{scoped.toFixed(0)}</div>
+                    <div className="font-display text-2xl text-ch">{scopedLabel}</div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Scoped hrs</div>
                   </div>
                   <div className="ml-auto text-right text-[11px] text-ch/50">
@@ -475,7 +476,11 @@ function TemplateEditor({
     });
   }
 
-  const totalScoped = draft.phases.reduce((s, p) => s + (Number(p.expected_hrs) || 0), 0);
+  const phaseHours = (p: Phase) => {
+    const stepSum = p.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
+    return stepSum > 0 ? stepSum : Number(p.expected_hrs) || 0;
+  };
+  const totalScoped = draft.phases.reduce((s, p) => s + phaseHours(p), 0);
 
   return (
     <div className="mx-auto max-w-5xl px-8 py-10">
@@ -553,7 +558,7 @@ function TemplateEditor({
         <div>
           <h2 className="font-display text-2xl tracking-tight text-ch">Phases</h2>
           <p className="text-sm text-ch/60">
-            {draft.phases.length} {draft.phases.length === 1 ? "phase" : "phases"} · {totalScoped.toFixed(1)} scoped hrs
+            {draft.phases.length} {draft.phases.length === 1 ? "phase" : "phases"} · {formatHours(totalScoped)} scoped
             {billedRate > 0 && ` · ${fmtUsd(totalScoped * billedRate)} potential revenue`}
           </p>
         </div>
