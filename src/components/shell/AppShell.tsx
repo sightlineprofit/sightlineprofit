@@ -18,6 +18,7 @@ import {
   User,
   Shield,
   EyeOff,
+  Eye,
 } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
 import { setImpersonation } from "@/lib/admin.functions";
