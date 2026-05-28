@@ -229,21 +229,53 @@ const ALL_METRICS = [
   { id: "avg_rate", label: "Avg realized rate" },
 ] as const;
 
-export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; weekHours: number; prefs: string[] }) {
+export function BvAFull({
+  c,
+  weekHours,
+  prefs,
+  tier = "foundation",
+  firmId,
+}: {
+  c: ReturnType<typeof calc>;
+  weekHours: number;
+  prefs: string[];
+  tier?: "foundation" | "studio" | "practice";
+  firmId?: string;
+}) {
   const [span, setSpan] = useState<"day" | "week" | "month" | "quarter" | "year">("week");
   const [customize, setCustomize] = useState(false);
   const [hidden, setHidden] = useState<string[]>(prefs);
   const qc = useQueryClient();
   const upd = useServerFn(updateMetricPrefs);
 
+  // Combined actuals (manual_hour_logs + time_entries) for the current span window.
+  const actualsFn = useServerFn(getActualsForSpan);
+  const { data: actuals } = useQuery({
+    queryKey: ["bva-actuals", span],
+    queryFn: () => actualsFn({ data: { span } }),
+  });
+  useRealtimeInvalidate(
+    `bva-${firmId ?? "none"}`,
+    [
+      { table: "manual_hour_logs", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+    ],
+    [["bva-actuals", span], ["manual-hours"], ["dashboard"]],
+    !!firmId,
+  );
+
   const multipliers = { day: 1 / 5, week: 1, month: 4.33, quarter: 13, year: 48 };
   const m = multipliers[span];
   const targetH = c.targetBillableHrsWeek * m;
-  // For preview: scale the week's actuals proportionally (real implementation queries time_entries by span)
-  const actualH = span === "week" ? weekHours : weekHours * m;
+  const actualH =
+    actuals?.billableHrs !== undefined
+      ? actuals.billableHrs
+      : span === "week"
+      ? weekHours
+      : weekHours * m;
   const targetR = targetH * c.billedRate;
   const actualR = actualH * c.billedRate;
-  const util = c.targetBillableHrsWeek > 0 ? (actualH / targetH) * 100 : 0;
+  const util = targetH > 0 ? (actualH / targetH) * 100 : 0;
 
   const rows: { id: string; label: string; target: string; actual: string; variance: number; varFmt: string; tip?: { term: string; definition: string; why?: string } }[] = [
     { id: "billable_hrs", label: "Billable hours", target: targetH.toFixed(1), actual: actualH.toFixed(1), variance: actualH - targetH, varFmt: `${(actualH - targetH).toFixed(1)} hrs` },
@@ -262,6 +294,8 @@ export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; w
 
   return (
     <div className="space-y-5">
+      <ManualHoursPanel />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-md border border-border bg-white p-0.5">
           {(["day", "week", "month", "quarter", "year"] as const).map((s) => (
@@ -313,6 +347,10 @@ export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; w
           </tbody>
         </table>
       </div>
+
+      <ManualHoursHistory />
+
+      {tier === "foundation" && <UpgradeBridge />}
     </div>
   );
 }
