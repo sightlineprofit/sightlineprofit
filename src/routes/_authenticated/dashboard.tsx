@@ -136,7 +136,7 @@ function RatePreview({ c }: { c: ReturnType<typeof calc> }) {
   );
 }
 
-function RateFull({ c }: { c: ReturnType<typeof calc> }) {
+export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
   const total = c.perHour.comp + c.perHour.opexRecurring + c.perHour.opexOneTime + c.perHour.marginAbove;
   const segs = [
     { label: "Compensation", val: c.perHour.comp, color: "#B8860B" },
@@ -212,7 +212,7 @@ const ALL_METRICS = [
   { id: "avg_rate", label: "Avg realized rate" },
 ] as const;
 
-function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; weekHours: number; prefs: string[] }) {
+export function BvAFull({ c, weekHours, prefs }: { c: ReturnType<typeof calc>; weekHours: number; prefs: string[] }) {
   const [span, setSpan] = useState<"day" | "week" | "month" | "quarter" | "year">("week");
   const [customize, setCustomize] = useState(false);
   const [hidden, setHidden] = useState<string[]>(prefs);
@@ -328,7 +328,7 @@ function HealthPreview({ c }: { c: ReturnType<typeof calc> }) {
   );
 }
 
-function HealthFull({ c }: { c: ReturnType<typeof calc> }) {
+export function HealthFull({ c }: { c: ReturnType<typeof calc> }) {
   const score = healthScore(c);
   const compPct = c.totalCost > 0 ? (c.compTotal / c.totalCost) * 100 : 0;
   const opexPct = c.totalCost > 0 ? ((c.opexRecurring + c.opexOneTime) / c.totalCost) * 100 : 0;
@@ -367,7 +367,7 @@ function ScenarioPreview({ lastName }: { lastName?: string }) {
   );
 }
 
-function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expenses: any[] }) {
+export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expenses: any[] }) {
   const [ov, setOv] = useState<{
     oneTime: number; oneTimeMonths: number; monthly: number; quarterly: number; annual: number;
     rateOverride: string; hrsOverride: string; payIncrease: number; name: string;
@@ -463,7 +463,7 @@ function GrowthPreview({ c }: { c: ReturnType<typeof calc> }) {
     </div>
   );
 }
-function GrowthFull({ c }: { c: ReturnType<typeof calc> }) {
+export function GrowthFull({ c }: { c: ReturnType<typeof calc> }) {
   const years = [0, 0.15, 0.32, 0.51];
   return (
     <div className="space-y-4">
@@ -502,7 +502,7 @@ function KnowledgePreview() {
     </div>
   );
 }
-function KnowledgeFull() {
+export function KnowledgeFull() {
   const fetchKb = useServerFn(listKnowledge);
   const { data } = useQuery({ queryKey: ["kb"], queryFn: () => fetchKb() });
   const [cat, setCat] = useState<string>("all");
