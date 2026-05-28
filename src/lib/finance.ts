@@ -116,6 +116,14 @@ export function fmtPct(n: number, decimals = 1) {
   return `${n.toFixed(decimals)}%`;
 }
 
+// Hours formatter: precise decimal up to 2 places; no trailing zeros; never rounds whole numbers.
+// Examples: 8 → "8 hrs", 1.5 → "1.5 hrs", 1.25 → "1.25 hrs", 47.25 → "47.25 hrs".
+export function formatHours(hrs: number): string {
+  const n = Number(hrs) || 0;
+  if (n === Math.floor(n)) return `${n} hrs`;
+  return `${parseFloat(n.toFixed(2))} hrs`;
+}
+
 // Health score (0-100): weighted blend of margin, safety buffer, comp ratio
 export function healthScore(c: ReturnType<typeof calc>) {
   const marginScore = Math.max(0, Math.min(100, (c.grossMarginPct / 50) * 100));
