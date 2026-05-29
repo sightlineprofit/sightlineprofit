@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, AlertTriangle, TrendingDown, Filter, Plus, Trash2, Pencil, Check, X } from "lucide-react";
+import { ArrowLeft, AlertTriangle, TrendingDown, Filter, Plus, Trash2, Pencil, Check, X, Info } from "lucide-react";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
 import { getMyContext } from "@/lib/firm.functions";
@@ -311,6 +312,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const actualCost = actualHrs * avgCostRate;
   const scopedMargin = scopedRevenue - scopedCost;
   const actualMargin = actualRevenue - actualCost;
+  const nonBillableCostAbsorbed = nonBillableHrs * avgCostRate;
 
   const phaseRows = data.phases.map((p) => {
     const sc = Number(p.expected_hrs || 0);
@@ -444,15 +446,29 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                 }
                 return (
                   <tr key={p.id} className="border-t border-border">
-                    <td className="px-4 py-3 font-medium text-ch">{p.name}</td>
+                    <td className="px-4 py-3 font-medium text-ch">
+                      <div className="flex items-center gap-2">
+                        <span>{p.name}</span>
+                        {!p.billable && (
+                          <span className="rounded-full bg-terra/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-terra">Non-bill</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatHours(p.sc)}</td>
                     <td className="px-3 py-3 text-right tabular-nums">{formatHours(p.ac)}</td>
                     <td className={cn("px-3 py-3 text-right tabular-nums", p.variance > 0 ? "text-terra" : p.variance < 0 ? "text-success" : "")}>
                       {p.variance >= 0 ? "+" : ""}{formatHours(Math.abs(p.variance))}
                     </td>
-                    <td className={cn("px-3 py-3 text-right tabular-nums", p.dollars > 0 ? "text-terra" : "text-ch/60")}>
-                      {billedRate > 0 ? fmtUsd(p.dollars) : "—"}
-                    </td>
+                    {!p.billable ? (
+                      <td className="px-3 py-3 text-right tabular-nums text-terra">
+                        <div>{fmtUsd(-(p.ac * avgCostRate))}</div>
+                        <div className="text-[10px] font-normal normal-case tracking-normal text-ch/50">Non-billable — absorbed cost</div>
+                      </td>
+                    ) : (
+                      <td className={cn("px-3 py-3 text-right tabular-nums", p.dollars > 0 ? "text-terra" : "text-ch/60")}>
+                        {billedRate > 0 ? fmtUsd(p.dollars) : "—"}
+                      </td>
+                    )}
                     <td className="px-3 py-3 text-right tabular-nums">{p.pct.toFixed(0)}%</td>
                     <td className="px-4 py-3 text-right">
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.15em]", h.text, "border border-current/20")}>
@@ -516,6 +532,24 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                 value={`${fmtUsd(actualMargin - scopedMargin)} (${fmtPct(scopedMargin !== 0 ? ((actualMargin - scopedMargin) / Math.abs(scopedMargin)) * 100 : 0)})`}
                 accent={actualMargin < scopedMargin ? "danger" : "success"}
               />
+              <tr>
+                <td className="text-ch/60">
+                  <span className="inline-flex items-center gap-1">
+                    Non-billable cost absorbed
+                    <HoverCard openDelay={120}>
+                      <HoverCardTrigger asChild>
+                        <button type="button" className="text-ch/40 hover:text-ch" aria-label="About non-billable cost absorbed">
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </HoverCardTrigger>
+                      <HoverCardContent className="w-80 text-xs leading-relaxed text-ch/80">
+                        This is the cost of time you logged as non-billable on this project. It is already reflected in your actual margin above. Surfaced here so you can see what you chose to absorb versus what you billed.
+                      </HoverCardContent>
+                    </HoverCard>
+                  </span>
+                </td>
+                <td className="text-right tabular-nums text-terra">{fmtUsd(nonBillableCostAbsorbed)}</td>
+              </tr>
             </tbody>
           </table>
           {billedRate === 0 && (

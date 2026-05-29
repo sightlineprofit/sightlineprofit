@@ -664,11 +664,22 @@ function PhaseRow({
         </Button>
       </div>
 
-      {billedRate > 0 && (
-        <div className="grid grid-cols-3 gap-px border-t border-border bg-creamd/40 text-center">
+      {billedRate > 0 && phase.billable && (
+        <div className="border-t border-border bg-creamd/40">
+          <div className="grid grid-cols-3 gap-px text-center">
+            <Stat label="Cost" value={fmtUsd(cost)} />
+            <Stat label="Revenue" value={fmtUsd(revenue)} />
+            <Stat label="Margin" value={`${fmtUsd(margin)} (${marginPct.toFixed(0)}%)`} accent={margin < 0 ? "danger" : "success"} />
+          </div>
+          <div className="bg-white px-3 pb-2 text-center text-[10px] uppercase tracking-[0.16em] text-ch/40">
+            Est. at {fmtUsd(billedRate)}/hr
+          </div>
+        </div>
+      )}
+      {billedRate > 0 && !phase.billable && (
+        <div className="grid grid-cols-2 gap-px border-t border-border bg-creamd/40 text-center">
           <Stat label="Cost" value={fmtUsd(cost)} />
-          <Stat label="Revenue" value={fmtUsd(revenue)} />
-          <Stat label="Margin" value={`${fmtUsd(margin)} (${marginPct.toFixed(0)}%)`} accent={margin < 0 ? "danger" : "success"} />
+          <Stat label="Type" value="Non-billable · cost only" />
         </div>
       )}
 
