@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft, AlertTriangle, Filter, Plus, Trash2, Info, ChevronDown, Lock, History,
-  TrendingDown, Check, X, Pencil,
 } from "lucide-react";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { ModulePage } from "@/components/shell/ModulePage";
