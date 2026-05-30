@@ -614,6 +614,7 @@ export type Database = {
           created_at: string
           end_date: string | null
           firm_id: string
+          fixed_fee: number | null
           id: string
           name: string
           scoped_hrs: number | null
@@ -627,6 +628,7 @@ export type Database = {
           created_at?: string
           end_date?: string | null
           firm_id: string
+          fixed_fee?: number | null
           id?: string
           name: string
           scoped_hrs?: number | null
@@ -640,6 +642,7 @@ export type Database = {
           created_at?: string
           end_date?: string | null
           firm_id?: string
+          fixed_fee?: number | null
           id?: string
           name?: string
           scoped_hrs?: number | null

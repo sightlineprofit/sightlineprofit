@@ -105,6 +105,7 @@ const createProjectSchema = z.object({
   client_name: z.string().trim().max(160).optional().nullable(),
   status: z.enum(["active", "pipeline", "completed", "on_hold"]).default("active"),
   scoped_rate: z.number().min(0).max(100000).optional().nullable(),
+  fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
   start_date: z.string().optional().nullable(),
   end_date: z.string().optional().nullable(),
   sop_template_id: z.string().uuid().optional().nullable(),
@@ -144,6 +145,7 @@ export const createProject = createServerFn({ method: "POST" })
         client_name: data.client_name ?? null,
         status: data.status,
         scoped_rate: data.scoped_rate ?? null,
+        fixed_fee: data.fixed_fee ?? null,
         scoped_hrs: scopedHrs || null,
         start_date: data.start_date || null,
         end_date: data.end_date || null,
@@ -260,6 +262,7 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
       name: z.string().trim().min(1).max(160).optional(),
       client_name: z.string().trim().max(160).optional().nullable(),
       scoped_rate: z.number().min(0).max(100000).optional().nullable(),
+      fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
       start_date: z.string().optional().nullable(),
       end_date: z.string().optional().nullable(),
     }).parse(d),
@@ -293,6 +296,7 @@ export const updateProjectFinancial = createServerFn({ method: "POST" })
     z.object({
       project_id: z.string().uuid(),
       scoped_rate: z.number().min(0).max(100000).nullable().optional(),
+      fixed_fee: z.number().min(0).max(100000000).nullable().optional(),
       reason: z.string().trim().max(500).optional().nullable(),
     }).parse(d),
   )
@@ -301,20 +305,30 @@ export const updateProjectFinancial = createServerFn({ method: "POST" })
     const { firmId } = await ensurePrincipal(supabase, userId);
     const { data: existing } = await supabase
       .from("projects")
-      .select("id, firm_id, scoped_rate")
+      .select("id, firm_id, scoped_rate, fixed_fee")
       .eq("id", data.project_id)
       .eq("firm_id", firmId)
       .single();
     if (!existing) throw new Error("Project not found");
 
     const audits: { field_changed: string; old_value: string | null; new_value: string | null }[] = [];
-    const patch: { scoped_rate?: number | null } = {};
+    const patch: { scoped_rate?: number | null; fixed_fee?: number | null } = {};
     if (data.scoped_rate !== undefined) {
       const oldVal = existing.scoped_rate == null ? null : String(existing.scoped_rate);
       const newVal = data.scoped_rate == null ? null : String(data.scoped_rate);
       if (oldVal !== newVal) {
         patch.scoped_rate = data.scoped_rate;
         audits.push({ field_changed: "scoped_rate", old_value: oldVal, new_value: newVal });
+      }
+    }
+    if (data.fixed_fee !== undefined) {
+      const oldVal = (existing as { fixed_fee?: number | null }).fixed_fee == null
+        ? null
+        : String((existing as { fixed_fee?: number | null }).fixed_fee);
+      const newVal = data.fixed_fee == null ? null : String(data.fixed_fee);
+      if (oldVal !== newVal) {
+        patch.fixed_fee = data.fixed_fee;
+        audits.push({ field_changed: "fixed_fee", old_value: oldVal, new_value: newVal });
       }
     }
     if (Object.keys(patch).length === 0) return { ok: true, changed: 0 };

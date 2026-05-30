@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowLeft, AlertTriangle, Filter, Plus, Trash2, Info, ChevronDown, Lock, History,
-  TrendingDown, Check, X, Pencil,
 } from "lucide-react";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { ModulePage } from "@/components/shell/ModulePage";
@@ -83,7 +82,7 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "" });
+  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
 
   async function submitCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -95,10 +94,11 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           client_name: draft.client_name.trim() || null,
           status: "active",
           scoped_rate: draft.scoped_rate ? Number(draft.scoped_rate) : null,
+          fixed_fee: draft.fixed_fee ? Number(draft.fixed_fee) : null,
         },
       });
       toast.success("Project created");
-      setDraft({ name: "", client_name: "", scoped_rate: "" });
+      setDraft({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
       setCreating(false);
       qc.invalidateQueries({ queryKey: ["sightline-list"] });
       onOpen(res.id);
@@ -131,20 +131,28 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       }
     >
       {creating && (
-        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-end gap-3 rounded-lg border border-border bg-white p-4">
-          <div className="col-span-5">
+        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-start gap-3 rounded-lg border border-border bg-white p-4">
+          <div className="col-span-12 md:col-span-6">
             <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
             <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus required />
           </div>
-          <div className="col-span-4">
+          <div className="col-span-12 md:col-span-6">
             <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
             <Input value={draft.client_name} onChange={(e) => setDraft({ ...draft, client_name: e.target.value })} />
           </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Scoped rate $/hr</label>
-            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder={billedRate ? String(billedRate) : "—"} />
+          <div className="col-span-12 md:col-span-6">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Hourly project rate</label>
+            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder="$250" />
+            <p className="mt-1 text-[11px] text-ch/50">The rate per hour agreed with this client — not the total project fee.</p>
           </div>
-          <Button type="submit" className="col-span-1 bg-ch text-cream hover:bg-ch/90">Create</Button>
+          <div className="col-span-12 md:col-span-6">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Fixed project fee $ (optional)</label>
+            <Input type="number" min={0} step="any" value={draft.fixed_fee} onChange={(e) => setDraft({ ...draft, fixed_fee: e.target.value })} placeholder="$25,000" />
+            <p className="mt-1 text-[11px] text-ch/50">If this is a fixed-fee project, enter the total. Leave blank if billing hourly.</p>
+          </div>
+          <div className="col-span-12 flex justify-end">
+            <Button type="submit" className="bg-ch text-cream hover:bg-ch/90">Create project</Button>
+          </div>
         </form>
       )}
 
@@ -366,6 +374,8 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
   const projectRate = Number(project.scoped_rate) || Number(config?.rate_billed) || 0;
   const hasExplicitRate = Number(project.scoped_rate) > 0;
+  const fixedFee = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
+  const isFixedFee = fixedFee > 0;
   const teamCostRates = team.map((m) => Number(m.cost_rate) || 0).filter((n) => n > 0);
   const avgCostRate = teamCostRates.length
     ? teamCostRates.reduce((s, n) => s + n, 0) / teamCostRates.length
@@ -404,8 +414,8 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const actualHrs = phaseRows.reduce((s, p) => s + p.ac, 0);
   const billableHrs = entries.filter((e) => e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
   const nonBillableHrs = entries.reduce((s, e) => s + Number(e.hrs || 0), 0) - billableHrs;
-  const scopedRevenue = billableScopedHrs * projectRate;
-  const actualRevenue = billableHrs * projectRate;
+  const scopedRevenue = isFixedFee ? fixedFee : billableScopedHrs * projectRate;
+  const actualRevenue = isFixedFee ? fixedFee : billableHrs * projectRate;
   const scopedCost = scopedHrs * avgCostRate;
   const actualCost = actualHrs * avgCostRate;
   const scopedMargin = scopedRevenue - scopedCost;
@@ -414,47 +424,64 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const marginVariancePct = scopedMargin !== 0 ? (marginVariance / Math.abs(scopedMargin)) * 100 : 0;
   const nonBillableCostAbsorbed = nonBillableHrs * avgCostRate;
 
-  // Health indicator
-  const overPhases = phaseRows.filter((p) => p.pct > 100);
-  const headsUpPhases = phaseRows.filter((p) => p.pct >= 80 && p.pct <= 99);
-  const health: { tone: "track" | "watch" | "over"; pillLabel: string; detail: string } =
-    overPhases.length > 0
-      ? {
-          tone: "over",
-          pillLabel: "Over Budget",
-          detail: `${formatHours(overPhases[0].variance)} over on ${overPhases[0].name}  ·  ${fmtUsd(actualMargin)} actual margin`,
-        }
-      : headsUpPhases.length > 0
-        ? {
-            tone: "watch",
-            pillLabel: "Heads Up",
-            detail: `${headsUpPhases[0].name} at ${headsUpPhases[0].pct.toFixed(0)}% of budget  ·  ${fmtUsd(actualMargin)} margin remaining`,
-          }
-        : {
-            tone: "track",
-            pillLabel: "On Track",
-            detail: `${fmtUsd(actualMargin)} margin remaining  ·  ${formatHours(Math.max(0, scopedHrs - actualHrs))} budget remaining`,
-          };
-
-  // Warnings panel
-  const warnings: { kind: "over" | "near" | "nonbill"; text: string; tone: "terra" | "gold" }[] = [];
-  for (const p of overPhases) {
-    warnings.push({
-      kind: "over",
-      tone: "terra",
-      text: `${p.name} is over by ${formatHours(p.variance)} — ${fmtUsd(p.variance * projectRate)} at project rate`,
-    });
-  }
-  for (const p of headsUpPhases) {
-    warnings.push({
-      kind: "near",
-      tone: "gold",
-      text: `${p.name} is at ${p.pct.toFixed(0)}% of budget — ${formatHours(p.sc - p.ac)} remaining`,
-    });
-  }
+  // Proportionate health + warnings
+  // Tier 3 (terracotta): actual margin negative OR actual hours exceed total scoped hours
+  // Tier 2 (gold): total used 80-99% of scope AND margin still positive
+  // Tier 1: handled inside phase cards (per-phase over-estimate notes)
   const totalLogged = billableHrs + nonBillableHrs;
-  if (totalLogged >= 2 && billableHrs === 0) {
-    warnings.push({ kind: "nonbill", tone: "terra", text: "All logged time on this project is non-billable." });
+  const totalPct = scopedHrs > 0 ? (actualHrs / scopedHrs) * 100 : 0;
+  const hoursRemaining = Math.max(0, scopedHrs - actualHrs);
+  const hoursOver = Math.max(0, actualHrs - scopedHrs);
+  const hasActuals = actualHrs > 0;
+
+  const isOverBudget = hasActuals && (actualMargin < 0 || actualHrs > scopedHrs);
+  const isHeadsUp = !isOverBudget && hasActuals && scopedHrs > 0 && totalPct >= 80 && actualMargin >= 0;
+
+  const health: { tone: "track" | "watch" | "over"; pillLabel: string; detail: string } = isOverBudget
+    ? {
+        tone: "over",
+        pillLabel: "Over Budget",
+        detail: `${fmtUsd(actualMargin)} actual margin${hoursOver > 0 ? `  ·  ${formatHours(hoursOver)} over scope` : ""}`,
+      }
+    : isHeadsUp
+      ? {
+          tone: "watch",
+          pillLabel: "Heads Up",
+          detail: `${totalPct.toFixed(0)}% of budget used  ·  ${fmtUsd(actualMargin)} margin remaining`,
+        }
+      : {
+          tone: "track",
+          pillLabel: "On Track",
+          detail: hasActuals
+            ? `${fmtUsd(actualMargin)} margin so far  ·  ${formatHours(hoursRemaining)} remaining in budget`
+            : `${fmtUsd(scopedMargin)} margin target  ·  ${formatHours(scopedHrs)} of budget`,
+        };
+
+  // Warnings panel — only Tier 2 + Tier 3 conditions surface here.
+  // Individual phase overages live inside the phase card as Tier 1 notes.
+  const warnings: { text: string; tone: "terra" | "gold" }[] = [];
+  if (isOverBudget) {
+    if (actualMargin < 0) {
+      warnings.push({
+        tone: "terra",
+        text: `This project is currently running at a loss. Actual costs (${fmtUsd(actualCost)}) exceed actual revenue (${fmtUsd(actualRevenue)}) by ${fmtUsd(Math.abs(actualMargin))}. Review unbilled time or adjust scope.`,
+      });
+    }
+    if (hoursOver > 0) {
+      warnings.push({
+        tone: "terra",
+        text: `Total hours logged (${formatHours(actualHrs)}) exceed the scoped budget (${formatHours(scopedHrs)}) by ${formatHours(hoursOver)}.`,
+      });
+    }
+  } else if (isHeadsUp) {
+    warnings.push({
+      tone: "gold",
+      text: `You've used ${totalPct.toFixed(0)}% of your total project budget. ${formatHours(hoursRemaining)} remaining before you're at scope.`,
+    });
+  }
+  // Tier 1 (downgraded): non-billable dominance only when total hrs >= 4 and 0 billable.
+  if (totalLogged >= 4 && billableHrs === 0) {
+    warnings.push({ tone: "gold", text: "All logged time on this project is non-billable." });
   }
 
   // Template label rule
@@ -573,7 +600,9 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <p className="text-[11px] uppercase tracking-[0.25em] text-gold">Project profitability</p>
             <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{project.name}</h1>
             <p className="mt-1 text-ch/60">
-              {project.client_name ?? "No client"}  ·  {templateLabel}  ·  {hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "No project rate"}
+              {project.client_name ?? "No client"}  ·  {templateLabel}  ·  {isFixedFee
+                ? `Fixed fee ${fmtUsd(fixedFee)}${hasExplicitRate ? ` · ${fmtUsd(projectRate)}/hr` : ""}`
+                : hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "No project rate"}
               {project.start_date && project.end_date && ` · ${project.start_date} → ${project.end_date}`}
             </p>
           </div>
@@ -663,6 +692,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             marginVariancePct={marginVariancePct}
             nonBillableCostAbsorbed={nonBillableCostAbsorbed}
             hasRate={hasExplicitRate}
+            isFixedFee={isFixedFee}
           />
 
           <HoursSummary
@@ -1016,7 +1046,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             {isPrincipal && (
               <div className="border-t border-border pt-3">
                 <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
-                  Project rate ($/hr) <span className="ml-1 text-ch/40">— financial, audited</span>
+                  Hourly project rate ($/hr) <span className="ml-1 text-ch/40">— financial, audited</span>
                 </label>
                 <div className="flex gap-2">
                   <Input
@@ -1038,7 +1068,44 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                     }}
                   >Update rate</Button>
                 </div>
-                <p className="mt-1 text-xs text-ch/50">Defaults to your billed rate. Changes are logged.</p>
+                <p className="mt-1 text-xs text-ch/50">The rate per hour agreed with this client — not the total project fee. Changes are logged.</p>
+
+                <label className="mt-4 mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                  Fixed project fee $ (optional) <span className="ml-1 text-ch/40">— financial, audited</span>
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="proj-fixedfee-input"
+                    type="number"
+                    min={0}
+                    step="any"
+                    defaultValue={(project as { fixed_fee?: number | null }).fixed_fee ?? ""}
+                    placeholder="$25,000"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const el = document.getElementById("proj-fixedfee-input") as HTMLInputElement | null;
+                      if (!el) return;
+                      const raw = el.value.trim();
+                      const v = raw === "" ? null : Number(raw);
+                      if (v !== null && (!Number.isFinite(v) || v < 0)) return;
+                      const oldVal = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
+                      if ((v ?? 0) === oldVal) return;
+                      setFinReason("");
+                      setFinConfirm({
+                        label: "fixed project fee",
+                        oldDisplay: oldVal ? fmtUsd(oldVal) : "(none)",
+                        newDisplay: v ? fmtUsd(v) : "(none)",
+                        apply: async (reason) => {
+                          await finFn({ data: { project_id: id, fixed_fee: v, reason: reason || null } });
+                          invalidate();
+                        },
+                      });
+                    }}
+                  >Update fee</Button>
+                </div>
+                <p className="mt-1 text-xs text-ch/50">If this is a fixed-fee project, enter the total. Leave blank if billing hourly.</p>
               </div>
             )}
           </div>
@@ -1127,11 +1194,12 @@ function ProfitabilitySummary(props: {
   marginVariance: number; marginVariancePct: number;
   nonBillableCostAbsorbed: number;
   hasRate: boolean;
+  isFixedFee: boolean;
 }) {
   const {
     scopedRevenue, scopedCost, scopedMargin,
     actualRevenue, actualCost, actualMargin,
-    marginVariance, marginVariancePct, nonBillableCostAbsorbed, hasRate,
+    marginVariance, marginVariancePct, nonBillableCostAbsorbed, hasRate, isFixedFee,
   } = props;
 
   return (
@@ -1139,13 +1207,25 @@ function ProfitabilitySummary(props: {
       <h3 className="font-display text-xl tracking-tight text-ch">Profitability</h3>
 
       <SummarySection label="What you planned">
-        <ProfitRow label="Scoped revenue" value={fmtUsd(scopedRevenue)} tip="The total you expected to earn on this project — billable budgeted hours multiplied by your agreed project rate. Non-billable phases are excluded from revenue but included in cost." />
+        <ProfitRow
+          label="Scoped revenue"
+          value={fmtUsd(scopedRevenue)}
+          tip={isFixedFee
+            ? "For fixed-fee projects this is your agreed total. For hourly projects this is your budgeted billable hours × your rate."
+            : "For fixed-fee projects this is your agreed total. For hourly projects this is your budgeted billable hours × your rate. Non-billable phases are excluded from revenue but included in cost."}
+        />
         <ProfitRow label="Scoped cost" value={fmtUsd(scopedCost)} tip="What it was supposed to cost you to deliver this project — your budgeted hours multiplied by your cost rate." />
         <ProfitRow label="Scoped margin" value={fmtUsd(scopedMargin)} bold accent={scopedMargin < 0 ? "danger" : "success"} tip="The profit you planned to make. Scoped revenue minus scoped cost. Your intended outcome before any work began." />
       </SummarySection>
 
       <SummarySection label="What's happened so far">
-        <ProfitRow label="Actual revenue" value={fmtUsd(actualRevenue)} tip="What this project has actually earned so far — billable hours logged multiplied by your rate." />
+        <ProfitRow
+          label="Actual revenue"
+          value={fmtUsd(actualRevenue)}
+          tip={isFixedFee
+            ? "For fixed-fee projects this stays at the agreed total regardless of hours logged."
+            : "What this project has actually earned so far — billable hours logged multiplied by your rate."}
+        />
         <ProfitRow label="Actual cost" value={fmtUsd(actualCost)} tip="What this project has actually cost you so far — all hours logged, billable and non-billable, multiplied by your cost rate." />
         <ProfitRow label="Actual margin" value={fmtUsd(actualMargin)} bold accent={actualMargin < 0 ? "danger" : "success"} tip="The profit you've made so far on this project. Actual revenue minus actual cost. If this is negative the project is currently costing more than it's earning." />
       </SummarySection>
@@ -1224,13 +1304,17 @@ function HoursSummary({ scopedHrs, billableHrs, nonBillableHrs }: {
   const remaining = Math.max(0, scopedHrs - total);
   const overflow = Math.max(0, total - scopedHrs);
 
-  // Within-scope percentages (relative to scopedHrs, capped at 100 visually)
+  // Bar is bounded to 100% of container. Overflow is shown as a separate
+  // labeled callout above the bar — never as a segment that extends past
+  // the container edge.
   const denom = scopedHrs > 0 ? scopedHrs : Math.max(1, total);
-  const billPct = Math.min(100, (Math.min(billableHrs, denom) / denom) * 100);
-  const nonBillPct = Math.min(100 - billPct, (Math.min(nonBillableHrs, Math.max(0, denom - billableHrs)) / denom) * 100);
+  const rawBillPct = Math.min(100, (billableHrs / denom) * 100);
+  const rawNonBillPct = Math.min(100 - rawBillPct, (nonBillableHrs / denom) * 100);
+  // When over scope, push billable+non-bill to fill the full 100%, no remainder.
+  const overScope = total > scopedHrs;
+  const billPct = overScope && total > 0 ? (billableHrs / total) * 100 : rawBillPct;
+  const nonBillPct = overScope && total > 0 ? (nonBillableHrs / total) * 100 : rawNonBillPct;
   const remainPct = Math.max(0, 100 - billPct - nonBillPct);
-  // Overflow shown as extension beyond bar — visually 0-30% of original bar width
-  const overflowPct = scopedHrs > 0 ? Math.min(30, (overflow / scopedHrs) * 100) : 0;
 
   return (
     <div className="rounded-lg border border-border bg-white p-6">
@@ -1241,19 +1325,12 @@ function HoursSummary({ scopedHrs, billableHrs, nonBillableHrs }: {
         )}
       </div>
 
-      <div className="relative mt-5">
+      <div className="relative mt-5 w-full overflow-hidden">
         <div className="flex h-3 w-full overflow-hidden rounded-full bg-creamd">
           {billPct > 0 && <div className="h-full bg-success" style={{ width: `${billPct}%` }} />}
           {nonBillPct > 0 && <div className="h-full bg-terra/70" style={{ width: `${nonBillPct}%` }} />}
           {remainPct > 0 && <div className="h-full" style={{ width: `${remainPct}%` }} />}
         </div>
-        {overflow > 0 && (
-          <div
-            className="absolute top-0 h-3 rounded-r-full bg-terra"
-            style={{ left: "100%", width: `${overflowPct}%` }}
-            aria-label={`${overflow} hours over budget`}
-          />
-        )}
       </div>
 
       <div className="mt-5 space-y-1.5 text-sm">
@@ -1315,7 +1392,7 @@ function PhaseCard({
   const status = !phase.billable
     ? { label: "Non-bill", tone: "muted" as const }
     : phase.pct > 100
-      ? { label: "Over", tone: "terra" as const }
+      ? { label: "Over estimate", tone: "muted" as const }
       : phase.pct >= 80
         ? { label: "Heads up", tone: "gold" as const }
         : { label: "On track", tone: "success" as const };
@@ -1350,7 +1427,7 @@ function PhaseCard({
               <div className="mt-0.5 text-[11px]">
                 {phase.billable
                   ? variance > 0
-                    ? <span className="text-terra">+{formatHours(variance)} over</span>
+                    ? <span className="text-ch/60">+{formatHours(variance)} over estimate</span>
                     : <span className="text-success/80">{formatHours(Math.abs(variance))} remaining</span>
                   : <span className="text-ch/50">Non-billable</span>}
               </div>
@@ -1467,6 +1544,12 @@ function PhaseCard({
               </div>
             )}
 
+            {phase.billable && phase.variance > 0 && (
+              <p className="mt-4 text-xs text-ch/60">
+                This phase used {formatHours(phase.variance)} more than its estimate.
+              </p>
+            )}
+
             <div className="mt-5 flex items-center justify-between">
               <a
                 href="/time-calendar"
@@ -1489,21 +1572,20 @@ function PhaseCard({
 
 function PhaseMiniBar({ phase }: { phase: PhaseRow }) {
   const denom = phase.sc > 0 ? phase.sc : Math.max(1, phase.ac);
-  const billPct = Math.min(100, (Math.min(phase.billableActual, denom) / denom) * 100);
-  const nonBillPct = Math.min(100 - billPct, (phase.nonBillActual / denom) * 100);
+  const total = phase.billableActual + phase.nonBillActual;
+  const overScope = total > phase.sc;
+  const rawBill = Math.min(100, (phase.billableActual / denom) * 100);
+  const rawNon = Math.min(100 - rawBill, (phase.nonBillActual / denom) * 100);
+  const billPct = overScope && total > 0 ? (phase.billableActual / total) * 100 : rawBill;
+  const nonBillPct = overScope && total > 0 ? (phase.nonBillActual / total) * 100 : rawNon;
   const remainPct = Math.max(0, 100 - billPct - nonBillPct);
-  const overflow = Math.max(0, phase.ac - phase.sc);
-  const overflowPct = phase.sc > 0 ? Math.min(30, (overflow / phase.sc) * 100) : 0;
   return (
-    <div className="relative mt-2 w-full max-w-md">
+    <div className="relative mt-2 w-full max-w-md overflow-hidden">
       <div className="flex h-1 w-full overflow-hidden rounded-full bg-creamd">
         {billPct > 0 && <div className="h-full bg-success" style={{ width: `${billPct}%` }} />}
         {nonBillPct > 0 && <div className="h-full bg-terra/70" style={{ width: `${nonBillPct}%` }} />}
         {remainPct > 0 && <div className="h-full" style={{ width: `${remainPct}%` }} />}
       </div>
-      {overflow > 0 && (
-        <div className="absolute top-0 h-1 rounded-r-full bg-terra" style={{ left: "100%", width: `${overflowPct}%` }} />
-      )}
     </div>
   );
 }
