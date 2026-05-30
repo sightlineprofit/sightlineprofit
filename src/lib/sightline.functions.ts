@@ -39,10 +39,12 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("firm_id")
+      .select("firm_id, role")
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
+    const isPrincipal = profile.role === "principal";
+    const isAdmin = profile.role === "principal" || profile.role === "admin";
     const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }] = await Promise.all([
       supabase.from("projects").select("*").eq("id", data.id).eq("firm_id", profile.firm_id).single(),
       supabase.from("project_phases").select("*").eq("project_id", data.id).order("sort_order"),
@@ -56,13 +58,28 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       supabase.from("profiles").select("id, name, email, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
     ]);
     if (!project) throw new Error("Project not found");
+    const phaseIds = (phases ?? []).map((p) => p.id);
+    const { data: steps } = phaseIds.length
+      ? await supabase.from("project_steps").select("*").in("project_phase_id", phaseIds).order("sort_order")
+      : { data: [] as never[] };
+    const { data: audit } = isPrincipal
+      ? await supabase
+          .from("project_financial_audit")
+          .select("*")
+          .eq("project_id", data.id)
+          .order("changed_at", { ascending: false })
+      : { data: [] as never[] };
     return {
       project,
       phases: phases ?? [],
+      steps: steps ?? [],
       entries: entries ?? [],
       config,
       template,
       team: team ?? [],
+      audit: audit ?? [],
+      isPrincipal,
+      isAdmin,
     };
   });
 
