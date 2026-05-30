@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowLeft, AlertTriangle, TrendingDown, Filter, Plus, Trash2, Pencil, Check, X, Info } from "lucide-react";
+import {
+  ArrowLeft, AlertTriangle, Filter, Plus, Trash2, Info, ChevronDown, Lock, History,
+} from "lucide-react";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
@@ -10,14 +12,24 @@ import { getMyContext } from "@/lib/firm.functions";
 import {
   getProjectList, getProjectDetail, updateProjectStatus,
   createProject, upsertProjectPhase, deleteProjectPhase,
+  updateProjectMeta, updateProjectFinancial, updateProjectPhaseFinancial,
+  patchTimeEntry, listSopTemplatesLite,
 } from "@/lib/sightline.functions";
+import { attachTemplateToProject } from "@/lib/sop.functions";
+import { deleteTimeEntry } from "@/lib/time.functions";
 import { toast } from "sonner";
 import { fmtUsd, fmtPct, formatHours } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 
