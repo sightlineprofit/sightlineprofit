@@ -691,6 +691,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             marginVariancePct={marginVariancePct}
             nonBillableCostAbsorbed={nonBillableCostAbsorbed}
             hasRate={hasExplicitRate}
+            isFixedFee={isFixedFee}
           />
 
           <HoursSummary
