@@ -255,50 +255,103 @@ function Cell({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+
+// =============================================================================
+// PROJECT DETAIL
+// =============================================================================
+
+type PhaseRow = {
+  id: string;
+  name: string;
+  expected_hrs: number;
+  actual_hrs: number;
+  billable: boolean;
+  sop_phase_id: string | null;
+  sort_order: number;
+  project_id: string;
+  phase_over_scope: boolean;
+  sc: number;
+  ac: number;
+  variance: number;
+  pct: number;
+  billableActual: number;
+  nonBillActual: number;
+};
+
 function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const qc = useQueryClient();
   const getDetail = useServerFn(getProjectDetail);
   const statusFn = useServerFn(updateProjectStatus);
+  const metaFn = useServerFn(updateProjectMeta);
+  const finFn = useServerFn(updateProjectFinancial);
+  const phaseFinFn = useServerFn(updateProjectPhaseFinancial);
+  const upsertPhaseFn = useServerFn(upsertProjectPhase);
+  const deletePhaseFn = useServerFn(deleteProjectPhase);
+  const patchEntryFn = useServerFn(patchTimeEntry);
+  const deleteEntryFn = useServerFn(deleteTimeEntry);
+  const listTemplatesFn = useServerFn(listSopTemplatesLite);
+  const attachTplFn = useServerFn(attachTemplateToProject);
+
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
     queryFn: () => getDetail({ data: { id } }),
   });
-  // Live-refresh phase actuals (and the entries that drive them) when time is logged.
   useRealtimeInvalidate(
     `sightline-detail-${id}`,
     [
       { table: "project_phases", filter: `project_id=eq.${id}` },
       { table: "time_entries", filter: `project_id=eq.${id}` },
+      { table: "project_financial_audit", filter: `project_id=eq.${id}` },
     ],
     [["sightline-detail", id]],
   );
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] });
   const statusMut = useMutation({
     mutationFn: (status: Status) => statusFn({ data: { id, status } }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["sightline-detail", id] });
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-    },
+    onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["sightline-list"] }); },
   });
 
-  const upsertPhaseFn = useServerFn(upsertProjectPhase);
-  const deletePhaseFn = useServerFn(deleteProjectPhase);
-  const phaseMut = useMutation({
-    mutationFn: (input: { id?: string; name: string; expected_hrs: number; billable: boolean }) =>
-      upsertPhaseFn({ data: { project_id: id, ...input } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] }),
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
-  });
-  const deletePhaseMut = useMutation({
-    mutationFn: (phaseId: string) => deletePhaseFn({ data: { id: phaseId } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] }),
-  });
-  const [editingPhase, setEditingPhase] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState({ name: "", expected_hrs: "", billable: true });
+  // Tab state
+  const [tab, setTab] = useState<"overview" | "phases" | "timelog">("overview");
+
+  // Phase add/edit state (non-financial: name)
   const [addingPhase, setAddingPhase] = useState(false);
   const [addDraft, setAddDraft] = useState({ name: "", expected_hrs: "", billable: true });
 
+  // Financial confirm dialog state
+  const [finConfirm, setFinConfirm] = useState<null | {
+    label: string;
+    oldDisplay: string;
+    newDisplay: string;
+    apply: (reason: string) => Promise<void>;
+  }>(null);
+  const [finReason, setFinReason] = useState("");
+
+  // Operational edit drawer (overview details card)
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaDraft, setMetaDraft] = useState({
+    name: "", client_name: "", start_date: "", end_date: "",
+  });
+
+  // Add-from-template picker state
+  const [tplPickerOpen, setTplPickerOpen] = useState(false);
+  const [tplPicked, setTplPicked] = useState<string>("");
+
+  // Time log filters
   const [memberFilter, setMemberFilter] = useState<string>("all");
   const [phaseFilter, setPhaseFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "billable" | "nonbill">("all");
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Templates picker query
+  const { data: tplData } = useQuery({
+    queryKey: ["sightline-templates"],
+    queryFn: () => listTemplatesFn(),
+    enabled: tplPickerOpen,
+  });
 
   if (isLoading || !data) {
     return (
@@ -309,52 +362,202 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     );
   }
 
-  const billedRate = Number(data.config?.rate_billed) || 0;
-  // Avg cost rate across team for cost-floor estimation
-  const teamCostRates = data.team.map((m) => Number(m.cost_rate) || 0).filter((n) => n > 0);
-  const avgCostRate = teamCostRates.length ? teamCostRates.reduce((s, n) => s + n, 0) / teamCostRates.length : billedRate * 0.6;
+  const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const projectRate = Number(project.scoped_rate) || Number(config?.rate_billed) || 0;
+  const hasExplicitRate = Number(project.scoped_rate) > 0;
+  const teamCostRates = team.map((m) => Number(m.cost_rate) || 0).filter((n) => n > 0);
+  const avgCostRate = teamCostRates.length
+    ? teamCostRates.reduce((s, n) => s + n, 0) / teamCostRates.length
+    : (Number(config?.rate_billed) || 0) * 0.6;
 
-  const scopedHrs = data.phases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-  const actualHrs = data.phases.reduce((s, p) => s + Number(p.actual_hrs || 0), 0);
-  const billableHrs = data.entries.filter((e) => e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
-  const nonBillableHrs = data.entries.reduce((s, e) => s + Number(e.hrs || 0), 0) - billableHrs;
-  const scopedRevenue = scopedHrs * billedRate;
-  const actualRevenue = billableHrs * billedRate;
+  // Per-phase billable/non-bill hour split (for stacked bars)
+  const phaseHoursByPhase = useMemo(() => {
+    const map = new Map<string, { billable: number; nonBill: number }>();
+    for (const e of entries) {
+      if (!e.project_phase_id) continue;
+      const cur = map.get(e.project_phase_id) ?? { billable: 0, nonBill: 0 };
+      const h = Number(e.hrs || 0);
+      if (e.billable) cur.billable += h; else cur.nonBill += h;
+      map.set(e.project_phase_id, cur);
+    }
+    return map;
+  }, [entries]);
+
+  const phaseRows: PhaseRow[] = phases.map((p) => {
+    const sc = Number(p.expected_hrs || 0);
+    const ac = Number(p.actual_hrs || 0);
+    const variance = ac - sc;
+    const pct = sc > 0 ? (ac / sc) * 100 : ac > 0 ? 100 : 0;
+    const split = phaseHoursByPhase.get(p.id) ?? { billable: 0, nonBill: 0 };
+    return {
+      ...p,
+      sc, ac, variance, pct,
+      billableActual: split.billable,
+      nonBillActual: split.nonBill,
+    };
+  });
+
+  // Aggregates
+  const scopedHrs = phaseRows.reduce((s, p) => s + p.sc, 0);
+  const billableScopedHrs = phaseRows.filter((p) => p.billable).reduce((s, p) => s + p.sc, 0);
+  const actualHrs = phaseRows.reduce((s, p) => s + p.ac, 0);
+  const billableHrs = entries.filter((e) => e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
+  const nonBillableHrs = entries.reduce((s, e) => s + Number(e.hrs || 0), 0) - billableHrs;
+  const scopedRevenue = billableScopedHrs * projectRate;
+  const actualRevenue = billableHrs * projectRate;
   const scopedCost = scopedHrs * avgCostRate;
   const actualCost = actualHrs * avgCostRate;
   const scopedMargin = scopedRevenue - scopedCost;
   const actualMargin = actualRevenue - actualCost;
+  const marginVariance = actualMargin - scopedMargin;
+  const marginVariancePct = scopedMargin !== 0 ? (marginVariance / Math.abs(scopedMargin)) * 100 : 0;
   const nonBillableCostAbsorbed = nonBillableHrs * avgCostRate;
 
-  const phaseRows = data.phases.map((p) => {
-    const sc = Number(p.expected_hrs || 0);
-    const ac = Number(p.actual_hrs || 0);
-    const variance = ac - sc;
-    const dollars = variance * billedRate;
-    const pct = sc > 0 ? (ac / sc) * 100 : ac > 0 ? 100 : 0;
-    return { ...p, sc, ac, variance, dollars, pct };
-  });
+  // Health indicator
+  const overPhases = phaseRows.filter((p) => p.pct > 100);
+  const headsUpPhases = phaseRows.filter((p) => p.pct >= 80 && p.pct <= 99);
+  const health: { tone: "track" | "watch" | "over"; pillLabel: string; detail: string } =
+    overPhases.length > 0
+      ? {
+          tone: "over",
+          pillLabel: "Over Budget",
+          detail: `${formatHours(overPhases[0].variance)} over on ${overPhases[0].name}  ·  ${fmtUsd(actualMargin)} actual margin`,
+        }
+      : headsUpPhases.length > 0
+        ? {
+            tone: "watch",
+            pillLabel: "Heads Up",
+            detail: `${headsUpPhases[0].name} at ${headsUpPhases[0].pct.toFixed(0)}% of budget  ·  ${fmtUsd(actualMargin)} margin remaining`,
+          }
+        : {
+            tone: "track",
+            pillLabel: "On Track",
+            detail: `${fmtUsd(actualMargin)} margin remaining  ·  ${formatHours(Math.max(0, scopedHrs - actualHrs))} budget remaining`,
+          };
 
-  const unscopedTotal = phaseRows.filter((p) => p.variance > 0).reduce((s, p) => s + p.variance, 0);
-  const overPhases = phaseRows.filter((p) => p.variance > 0);
-
-  const warnings: { kind: "over" | "near" | "nonbill"; text: string }[] = [];
-  for (const p of phaseRows) {
-    if (p.variance > 0) warnings.push({ kind: "over", text: `${p.name} is over scope by ${p.variance.toFixed(1)}h` });
+  // Warnings panel
+  const warnings: { kind: "over" | "near" | "nonbill"; text: string; tone: "terra" | "gold" }[] = [];
+  for (const p of overPhases) {
+    warnings.push({
+      kind: "over",
+      tone: "terra",
+      text: `${p.name} is over by ${formatHours(p.variance)} — ${fmtUsd(p.variance * projectRate)} at project rate`,
+    });
   }
-  if (scopedHrs > 0 && actualHrs / scopedHrs >= 0.8 && actualHrs / scopedHrs < 1) {
-    warnings.push({ kind: "near", text: `Total hours at ${((actualHrs / scopedHrs) * 100).toFixed(0)}% of scope` });
+  for (const p of headsUpPhases) {
+    warnings.push({
+      kind: "near",
+      tone: "gold",
+      text: `${p.name} is at ${p.pct.toFixed(0)}% of budget — ${formatHours(p.sc - p.ac)} remaining`,
+    });
   }
   const totalLogged = billableHrs + nonBillableHrs;
-  if (totalLogged > 0 && nonBillableHrs / totalLogged > 0.15) {
-    warnings.push({ kind: "nonbill", text: `Non-billable hours are ${((nonBillableHrs / totalLogged) * 100).toFixed(0)}% of project time` });
+  if (totalLogged >= 2 && billableHrs === 0) {
+    warnings.push({ kind: "nonbill", tone: "terra", text: "All logged time on this project is non-billable." });
   }
 
-  const filteredEntries = data.entries.filter((e) => {
+  // Template label rule
+  const phaseCount = phases.length;
+  const templateLabel = template?.name
+    ? `Template: ${template.name}`
+    : phaseCount > 0
+      ? "Custom phases"
+      : "No phases yet";
+
+  // Filter entries for Time Log tab
+  const filteredEntries = entries.filter((e) => {
     if (memberFilter !== "all" && e.user_id !== memberFilter) return false;
     if (phaseFilter !== "all" && e.project_phase_id !== phaseFilter) return false;
+    if (typeFilter === "billable" && !e.billable) return false;
+    if (typeFilter === "nonbill" && e.billable) return false;
+    if (dateFrom && e.date < dateFrom) return false;
+    if (dateTo && e.date > dateTo) return false;
     return true;
   });
+
+  // Financial edit helpers
+  const openRateConfirm = (newRate: number) => {
+    const oldRate = Number(project.scoped_rate) || 0;
+    if (oldRate === newRate) return;
+    setFinReason("");
+    setFinConfirm({
+      label: "project rate",
+      oldDisplay: oldRate ? fmtUsd(oldRate) + "/hr" : "(unset)",
+      newDisplay: fmtUsd(newRate) + "/hr",
+      apply: async (reason) => {
+        await finFn({ data: { project_id: id, scoped_rate: newRate, reason: reason || null } });
+        invalidate();
+      },
+    });
+  };
+  const openPhaseHrsConfirm = (p: PhaseRow, newHrs: number) => {
+    if (Number(p.expected_hrs) === newHrs) return;
+    setFinReason("");
+    setFinConfirm({
+      label: `${p.name} budgeted hours`,
+      oldDisplay: formatHours(Number(p.expected_hrs)),
+      newDisplay: formatHours(newHrs),
+      apply: async (reason) => {
+        await phaseFinFn({ data: { id: p.id, expected_hrs: newHrs, reason: reason || null } });
+        invalidate();
+      },
+    });
+  };
+  const openPhaseBillableConfirm = (p: PhaseRow, newBillable: boolean) => {
+    if (p.billable === newBillable) return;
+    setFinReason("");
+    setFinConfirm({
+      label: `${p.name} billable status`,
+      oldDisplay: p.billable ? "Billable" : "Non-billable",
+      newDisplay: newBillable ? "Billable" : "Non-billable",
+      apply: async (reason) => {
+        await phaseFinFn({ data: { id: p.id, billable: newBillable, reason: reason || null } });
+        invalidate();
+      },
+    });
+  };
+
+  // Operational edit handler
+  const openMetaEdit = () => {
+    setMetaDraft({
+      name: project.name,
+      client_name: project.client_name ?? "",
+      start_date: project.start_date ?? "",
+      end_date: project.end_date ?? "",
+    });
+    setEditingMeta(true);
+  };
+  const saveMeta = async () => {
+    try {
+      await metaFn({
+        data: {
+          id,
+          name: metaDraft.name.trim() || project.name,
+          client_name: metaDraft.client_name.trim() || null,
+          start_date: metaDraft.start_date || null,
+          end_date: metaDraft.end_date || null,
+        },
+      });
+      setEditingMeta(false);
+      toast.success("Project updated");
+      invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const attachSelectedTemplate = async () => {
+    if (!tplPicked) return;
+    try {
+      const r = await attachTplFn({ data: { template_id: tplPicked, project_id: id } });
+      toast.success(`${r.attached} phase${r.attached !== 1 ? "s" : ""} added from template`);
+      setTplPickerOpen(false);
+      setTplPicked("");
+      invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    }
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-8 py-10">
@@ -362,26 +565,51 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
         <ArrowLeft className="h-4 w-4" /> Back to projects
       </button>
 
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.25em] text-gold">Project profitability</p>
-          <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{data.project.name}</h1>
-          <p className="mt-1 text-ch/60">
-            {data.project.client_name ?? "No client"} ·{" "}
-            {data.template?.name ? `Template: ${data.template.name}` : "No template attached"}
-          </p>
+      {/* HEADER */}
+      <div className="rounded-lg border border-border bg-white p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] uppercase tracking-[0.25em] text-gold">Project profitability</p>
+            <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{project.name}</h1>
+            <p className="mt-1 text-ch/60">
+              {project.client_name ?? "No client"}  ·  {templateLabel}  ·  {hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "No project rate"}
+              {project.start_date && project.end_date && ` · ${project.start_date} → ${project.end_date}`}
+            </p>
+          </div>
+          <Select value={project.status} onValueChange={(v) => statusMut.mutate(v as Status)}>
+            <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="pipeline">Pipeline</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="on_hold">On hold</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={data.project.status} onValueChange={(v) => statusMut.mutate(v as Status)}>
-          <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="pipeline">Pipeline</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
-            <SelectItem value="on_hold">On hold</SelectItem>
-          </SelectContent>
-        </Select>
+
+        {/* HEALTH PILL */}
+        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]",
+              health.tone === "track" && "bg-success/10 text-success",
+              health.tone === "watch" && "bg-goldp text-gold",
+              health.tone === "over" && "bg-terra/10 text-terra",
+            )}
+          >
+            <span className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              health.tone === "track" && "bg-success",
+              health.tone === "watch" && "bg-gold",
+              health.tone === "over" && "bg-terra",
+            )} />
+            {health.pillLabel}
+          </span>
+          <span className="text-sm text-ch/70">{health.detail}</span>
+        </div>
       </div>
 
+      {/* WARNINGS PANEL — only when there is something to say */}
       {warnings.length > 0 && (
         <div className="mt-6 rounded-lg border border-terra/30 bg-terra/5 p-4">
           <div className="mb-2 flex items-center gap-2 text-terra">
@@ -389,280 +617,904 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <h3 className="font-display text-lg">Warnings</h3>
           </div>
           <ul className="space-y-1 text-sm text-ch/80">
-            {warnings.map((w, i) => <li key={i}>· {w.text}</li>)}
+            {warnings.map((w, i) => (
+              <li key={i} className={cn(w.tone === "gold" && "text-gold")}>· {w.text}</li>
+            ))}
           </ul>
         </div>
       )}
 
-      {unscopedTotal > 0 && billedRate > 0 && (
-        <div className="mt-6 rounded-lg border border-gold/40 bg-goldp/40 p-5">
-          <div className="flex items-center gap-2 text-gold">
-            <TrendingDown className="h-4 w-4" />
-            <h3 className="font-display text-lg text-ch">Scope creep</h3>
+      {/* TABS */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="mt-6">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="phases">Phases</TabsTrigger>
+          <TabsTrigger value="timelog">Time log</TabsTrigger>
+        </TabsList>
+
+        {/* ============ OVERVIEW ============ */}
+        <TabsContent value="overview" className="mt-6 space-y-6">
+          {!hasExplicitRate && (
+            <div className="rounded-lg border border-gold/40 bg-goldp/40 p-4 text-sm text-ch/80">
+              Add a project rate to see profitability figures. This is the hourly rate agreed with this client.
+              <button
+                className="ml-2 inline-flex items-center gap-1 font-medium text-gold hover:text-goldl"
+                onClick={openMetaEdit}
+              >
+                Set rate →
+              </button>
+            </div>
+          )}
+          {phaseCount === 0 && (
+            <div className="rounded-lg border border-border bg-white p-4 text-sm text-ch/70">
+              Add phases to define your project budget. Without phases, scoped revenue cannot be calculated.
+            </div>
+          )}
+
+          <ProfitabilitySummary
+            scopedRevenue={scopedRevenue}
+            scopedCost={scopedCost}
+            scopedMargin={scopedMargin}
+            actualRevenue={actualRevenue}
+            actualCost={actualCost}
+            actualMargin={actualMargin}
+            marginVariance={marginVariance}
+            marginVariancePct={marginVariancePct}
+            nonBillableCostAbsorbed={nonBillableCostAbsorbed}
+            hasRate={hasExplicitRate}
+          />
+
+          <HoursSummary
+            scopedHrs={scopedHrs}
+            billableHrs={billableHrs}
+            nonBillableHrs={nonBillableHrs}
+          />
+
+          {/* PROJECT DETAILS CARD */}
+          <div className="rounded-lg border border-border bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="font-display text-xl tracking-tight text-ch">Project details</h3>
+              {isAdmin && (
+                <Button variant="outline" size="sm" onClick={openMetaEdit}>Edit</Button>
+              )}
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Client</dt>
+                <dd className="mt-0.5 text-ch">{project.client_name ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Project rate</dt>
+                <dd className="mt-0.5 text-ch">{hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Template</dt>
+                <dd className="mt-0.5 text-ch">{template?.name ?? (phaseCount > 0 ? "Custom phases" : "—")}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Start date</dt>
+                <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">End date</dt>
+                <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Team logging time</dt>
+                <dd className="mt-0.5 text-ch">
+                  {Array.from(new Set(entries.map((e) => e.user_id))).length || "—"}
+                </dd>
+              </div>
+            </dl>
           </div>
-          <p className="mt-2 text-ch/80">
-            You've spent <span className="font-display text-xl text-ch">{formatHours(unscopedTotal)} unscoped</span>
-            {" "}across {overPhases.length} phase{overPhases.length !== 1 && "s"} — that's{" "}
-            <span className="font-display text-xl text-terra">{fmtUsd(unscopedTotal * billedRate)}</span>
-            {" "}at your billed rate.
-          </p>
-          {overPhases.length > 0 && (
-            <ul className="mt-3 space-y-1 text-sm text-ch/70">
-              {overPhases.map((p) => (
-                <li key={p.id}>· {p.name}: +{formatHours(p.variance)} ({fmtUsd(p.variance * billedRate)})</li>
-              ))}
-            </ul>
+
+          {/* FINANCIAL CHANGE HISTORY (principal-only, hidden if empty) */}
+          {isPrincipal && audit.length > 0 && (
+            <Collapsible>
+              <div className="rounded-lg border border-border bg-white p-5">
+                <CollapsibleTrigger className="flex w-full items-center justify-between text-left">
+                  <div className="flex items-center gap-2 text-ch">
+                    <History className="h-4 w-4 text-ch/50" />
+                    <h3 className="font-display text-xl tracking-tight">Financial change history</h3>
+                    <span className="text-xs text-ch/50">({audit.length})</span>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-ch/50 transition-transform data-[state=open]:rotate-180" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-4">
+                  <ul className="space-y-3 text-sm">
+                    {audit.map((a) => {
+                      const who = team.find((t) => t.id === a.changed_by);
+                      return (
+                        <li key={a.id} className="border-t border-border pt-3 first:border-0 first:pt-0">
+                          <div className="text-ch/70">
+                            <span className="text-ch/50">{new Date(a.changed_at).toLocaleString()}</span>
+                            {"  "}
+                            <span className="text-ch">{who?.name || who?.email || "Someone"}</span>
+                            {" changed "}
+                            <span className="text-ch">{a.field_changed}</span>
+                            {" from "}<span className="text-ch">{a.old_value ?? "—"}</span>
+                            {" to "}<span className="text-ch">{a.new_value ?? "—"}</span>
+                          </div>
+                          {a.reason && (
+                            <div className="mt-1 text-xs italic text-ch/60">{a.reason}</div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
           )}
-        </div>
-      )}
+        </TabsContent>
 
-      <section className="mt-10">
-        <h2 className="mb-4 font-display text-2xl tracking-tight text-ch">Phase breakdown</h2>
-        <div className="overflow-hidden rounded-lg border border-border bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-creamd/60 text-[10px] uppercase tracking-[0.16em] text-ch/50">
-              <tr>
-                <th className="px-4 py-3 text-left">Phase</th>
-                <th className="px-3 py-3 text-right">Scoped</th>
-                <th className="px-3 py-3 text-right">Actual</th>
-                <th className="px-3 py-3 text-right">Variance</th>
-                <th className="px-3 py-3 text-right">Δ $</th>
-                <th className="px-3 py-3 text-right">% used</th>
-                <th className="px-4 py-3 text-right">Status</th>
-                <th className="px-3 py-3 text-right w-20">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {phaseRows.map((p) => {
-                const h = healthColor(p.pct);
-                const isEditing = editingPhase === p.id;
-                if (isEditing) {
-                  return (
-                    <tr key={p.id} className="border-t border-border bg-creamd/40">
-                      <td className="px-4 py-2"><Input value={editDraft.name} onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })} /></td>
-                      <td className="px-3 py-2"><Input type="number" min={0} step="any" value={editDraft.expected_hrs} onChange={(e) => setEditDraft({ ...editDraft, expected_hrs: e.target.value })} className="text-right" /></td>
-                      <td colSpan={4} className="px-3 py-2 text-right text-xs text-ch/50">
-                        <label className="inline-flex items-center gap-1.5">
-                          <input type="checkbox" checked={editDraft.billable} onChange={(e) => setEditDraft({ ...editDraft, billable: e.target.checked })} className="accent-gold" />
-                          Billable
-                        </label>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="inline-flex gap-1">
-                          <button onClick={() => { phaseMut.mutate({ id: p.id, name: editDraft.name, expected_hrs: Number(editDraft.expected_hrs) || 0, billable: editDraft.billable }); setEditingPhase(null); }} className="text-success hover:opacity-70"><Check className="h-4 w-4" /></button>
-                          <button onClick={() => setEditingPhase(null)} className="text-ch/40 hover:text-ch"><X className="h-4 w-4" /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-                return (
-                  <tr key={p.id} className="border-t border-border">
-                    <td className="px-4 py-3 font-medium text-ch">
-                      <div className="flex items-center gap-2">
-                        <span>{p.name}</span>
-                        {!p.billable && (
-                          <span className="rounded-full bg-terra/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-terra">Non-bill</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatHours(p.sc)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">{formatHours(p.ac)}</td>
-                    <td className={cn("px-3 py-3 text-right tabular-nums", p.variance > 0 ? "text-terra" : p.variance < 0 ? "text-success" : "")}>
-                      {p.variance >= 0 ? "+" : ""}{formatHours(Math.abs(p.variance))}
-                    </td>
-                    {!p.billable ? (
-                      <td className="px-3 py-3 text-right tabular-nums text-terra">
-                        <div>{fmtUsd(-(p.ac * avgCostRate))}</div>
-                        <div className="text-[10px] font-normal normal-case tracking-normal text-ch/50">Non-billable — absorbed cost</div>
-                      </td>
-                    ) : (
-                      <td className={cn("px-3 py-3 text-right tabular-nums", p.dollars > 0 ? "text-terra" : "text-ch/60")}>
-                        {billedRate > 0 ? fmtUsd(p.dollars) : "—"}
-                      </td>
-                    )}
-                    <td className="px-3 py-3 text-right tabular-nums">{p.pct.toFixed(0)}%</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.15em]", h.text, "border border-current/20")}>
-                        {h.label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      <div className="inline-flex gap-1.5">
-                        <button onClick={() => { setEditingPhase(p.id); setEditDraft({ name: p.name, expected_hrs: String(p.sc), billable: p.billable }); }} className="text-ch/40 hover:text-ch"><Pencil className="h-3.5 w-3.5" /></button>
-                        <button onClick={() => { if (confirm(`Delete phase "${p.name}"?`)) deletePhaseMut.mutate(p.id); }} className="text-ch/40 hover:text-danger"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {phaseRows.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-ch/50">No phases on this project.</td></tr>
-              )}
-              {addingPhase && (
-                <tr className="border-t border-border bg-creamd/40">
-                  <td className="px-4 py-2"><Input placeholder="Phase name" value={addDraft.name} onChange={(e) => setAddDraft({ ...addDraft, name: e.target.value })} autoFocus /></td>
-                  <td className="px-3 py-2"><Input type="number" min={0} step="any" placeholder="hrs" value={addDraft.expected_hrs} onChange={(e) => setAddDraft({ ...addDraft, expected_hrs: e.target.value })} className="text-right" /></td>
-                  <td colSpan={4} className="px-3 py-2 text-right text-xs text-ch/50">
-                    <label className="inline-flex items-center gap-1.5">
-                      <input type="checkbox" checked={addDraft.billable} onChange={(e) => setAddDraft({ ...addDraft, billable: e.target.checked })} className="accent-gold" />
-                      Billable
-                    </label>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="inline-flex gap-1">
-                      <button onClick={() => { if (!addDraft.name.trim()) return; phaseMut.mutate({ name: addDraft.name.trim(), expected_hrs: Number(addDraft.expected_hrs) || 0, billable: addDraft.billable }); setAddDraft({ name: "", expected_hrs: "", billable: true }); setAddingPhase(false); }} className="text-success hover:opacity-70"><Check className="h-4 w-4" /></button>
-                      <button onClick={() => setAddingPhase(false)} className="text-ch/40 hover:text-ch"><X className="h-4 w-4" /></button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {!addingPhase && (
-          <button onClick={() => setAddingPhase(true)} className="mt-3 inline-flex items-center gap-1.5 text-sm text-gold hover:text-goldl">
-            <Plus className="h-4 w-4" /> Add phase
-          </button>
-        )}
-      </section>
+        {/* ============ PHASES ============ */}
+        <TabsContent value="phases" className="mt-6 space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className="text-sm text-ch/60">
+              {phaseCount} phase{phaseCount !== 1 && "s"} · {formatHours(scopedHrs)} scoped
+              {hasExplicitRate && <> · {fmtUsd(scopedRevenue)} potential revenue</>}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setTplPickerOpen(true)}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add from SOP Library
+              </Button>
+              <Button size="sm" className="bg-ch text-cream hover:bg-ch/90" onClick={() => setAddingPhase(true)}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add phase
+              </Button>
+            </div>
+          </div>
 
-      <section className="mt-10 grid gap-6 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-white p-5">
-          <h3 className="font-display text-xl tracking-tight text-ch">Profitability summary</h3>
-          <table className="mt-4 w-full text-sm">
-            <tbody className="[&_td]:py-1.5">
-              <SummaryRow label="Scoped revenue" value={fmtUsd(scopedRevenue)} />
-              <SummaryRow label="Actual revenue" value={fmtUsd(actualRevenue)} />
-              <SummaryRow label="Scoped cost" value={fmtUsd(scopedCost)} />
-              <SummaryRow label="Actual cost" value={fmtUsd(actualCost)} />
-              <tr><td colSpan={2}><div className="my-2 border-t border-border" /></td></tr>
-              <SummaryRow label="Scoped margin" value={fmtUsd(scopedMargin)} bold />
-              <SummaryRow label="Actual margin" value={fmtUsd(actualMargin)} bold accent={actualMargin < 0 ? "danger" : "success"} />
-              <SummaryRow
-                label="Margin variance"
-                value={`${fmtUsd(actualMargin - scopedMargin)} (${fmtPct(scopedMargin !== 0 ? ((actualMargin - scopedMargin) / Math.abs(scopedMargin)) * 100 : 0)})`}
-                accent={actualMargin < scopedMargin ? "danger" : "success"}
-              />
-              <tr>
-                <td className="text-ch/60">
-                  <span className="inline-flex items-center gap-1">
-                    Non-billable cost absorbed
-                    <HoverCard openDelay={120}>
-                      <HoverCardTrigger asChild>
-                        <button type="button" className="text-ch/40 hover:text-ch" aria-label="About non-billable cost absorbed">
-                          <Info className="h-3.5 w-3.5" />
-                        </button>
-                      </HoverCardTrigger>
-                      <HoverCardContent className="w-80 text-xs leading-relaxed text-ch/80">
-                        This is the cost of time you logged as non-billable on this project. It is already reflected in your actual margin above. Surfaced here so you can see what you chose to absorb versus what you billed.
-                      </HoverCardContent>
-                    </HoverCard>
-                  </span>
-                </td>
-                <td className="text-right tabular-nums text-terra">{fmtUsd(nonBillableCostAbsorbed)}</td>
-              </tr>
-            </tbody>
-          </table>
-          {billedRate === 0 && (
-            <p className="mt-3 text-xs text-ch/50">Set your billed rate in Rate & Cost Architecture to see revenue figures.</p>
+          {addingPhase && (
+            <div className="rounded-lg border border-border bg-white p-4">
+              <div className="grid grid-cols-12 gap-3">
+                <div className="col-span-6">
+                  <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Phase name</label>
+                  <Input value={addDraft.name} onChange={(e) => setAddDraft({ ...addDraft, name: e.target.value })} autoFocus />
+                </div>
+                <div className="col-span-3">
+                  <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Budgeted hours</label>
+                  <Input type="number" min={0} step="any" value={addDraft.expected_hrs} onChange={(e) => setAddDraft({ ...addDraft, expected_hrs: e.target.value })} />
+                </div>
+                <div className="col-span-3 flex items-end gap-3">
+                  <label className="inline-flex items-center gap-1.5 text-sm text-ch/80">
+                    <input type="checkbox" checked={addDraft.billable} onChange={(e) => setAddDraft({ ...addDraft, billable: e.target.checked })} className="accent-gold" />
+                    Billable
+                  </label>
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setAddingPhase(false)}>Cancel</Button>
+                <Button
+                  size="sm"
+                  className="bg-ch text-cream hover:bg-ch/90"
+                  onClick={async () => {
+                    if (!addDraft.name.trim()) return;
+                    try {
+                      await upsertPhaseFn({ data: {
+                        project_id: id,
+                        name: addDraft.name.trim(),
+                        expected_hrs: Number(addDraft.expected_hrs) || 0,
+                        billable: addDraft.billable,
+                      } });
+                      setAddDraft({ name: "", expected_hrs: "", billable: true });
+                      setAddingPhase(false);
+                      invalidate();
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : "Failed");
+                    }
+                  }}
+                >
+                  Add phase
+                </Button>
+              </div>
+            </div>
           )}
-        </div>
 
-        <div className="rounded-lg border border-border bg-white p-5">
-          <h3 className="font-display text-xl tracking-tight text-ch">Hours summary</h3>
-          <table className="mt-4 w-full text-sm">
-            <tbody className="[&_td]:py-1.5">
-              <SummaryRow label="Scoped hours" value={formatHours(scopedHrs)} />
-              <SummaryRow label="Actual hours" value={formatHours(actualHrs)} />
-              <SummaryRow label="Billable logged" value={formatHours(billableHrs)} />
-              <SummaryRow label="Non-billable logged" value={formatHours(nonBillableHrs)} />
-              <SummaryRow
-                label="% consumed"
-                value={scopedHrs > 0 ? `${((actualHrs / scopedHrs) * 100).toFixed(0)}%` : "—"}
-                accent={scopedHrs > 0 && actualHrs > scopedHrs ? "danger" : undefined}
+          {phaseRows.length === 0 && !addingPhase && (
+            <div className="rounded-lg border border-dashed border-border bg-white/60 p-8 text-center text-sm text-ch/60">
+              No phases yet. Add one manually or pull from your SOP Library.
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {phaseRows.map((p) => (
+              <PhaseCard
+                key={p.id}
+                phase={p}
+                steps={steps.filter((s) => s.project_phase_id === p.id)}
+                entries={entries.filter((e) => e.project_phase_id === p.id)}
+                team={team}
+                isPrincipal={isPrincipal}
+                isAdmin={isAdmin}
+                onEditHrs={(hrs) => openPhaseHrsConfirm(p, hrs)}
+                onEditBillable={(b) => openPhaseBillableConfirm(p, b)}
+                onDelete={async () => {
+                  if (!confirm(`Delete phase "${p.name}"?`)) return;
+                  await deletePhaseFn({ data: { id: p.id } });
+                  invalidate();
+                }}
               />
-            </tbody>
-          </table>
-        </div>
-      </section>
+            ))}
+          </div>
+        </TabsContent>
 
-      <section className="mt-10">
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <h2 className="font-display text-2xl tracking-tight text-ch">Time entries</h2>
-          <div className="ml-auto flex gap-2">
+        {/* ============ TIME LOG ============ */}
+        <TabsContent value="timelog" className="mt-6 space-y-4">
+          {/* Summary bar */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <SummaryStat label="Total hrs" value={formatHours(billableHrs + nonBillableHrs)} />
+            <SummaryStat label="Billable" value={formatHours(billableHrs)} />
+            <SummaryStat label="Non-billable" value={formatHours(nonBillableHrs)} />
+            <SummaryStat label="Revenue to date" value={hasExplicitRate ? fmtUsd(actualRevenue) : "—"} />
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-white p-3">
             <Select value={memberFilter} onValueChange={setMemberFilter}>
-              <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="Member" /></SelectTrigger>
+              <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="Assignee" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All members</SelectItem>
-                {data.team.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name || m.email}</SelectItem>
-                ))}
+                <SelectItem value="all">All assignees</SelectItem>
+                {team.map((m) => <SelectItem key={m.id} value={m.id}>{m.name || m.email}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={phaseFilter} onValueChange={setPhaseFilter}>
               <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Phase" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All phases</SelectItem>
-                {data.phases.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                ))}
+                {phases.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as typeof typeFilter)}>
+              <SelectTrigger className="w-36 bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="billable">Billable</SelectItem>
+                <SelectItem value="nonbill">Non-billable</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40 bg-white" />
+            <span className="text-xs text-ch/50">to</span>
+            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40 bg-white" />
+            {(memberFilter !== "all" || phaseFilter !== "all" || typeFilter !== "all" || dateFrom || dateTo) && (
+              <Button variant="ghost" size="sm" onClick={() => { setMemberFilter("all"); setPhaseFilter("all"); setTypeFilter("all"); setDateFrom(""); setDateTo(""); }}>
+                Clear
+              </Button>
+            )}
           </div>
-        </div>
-        <div className="overflow-hidden rounded-lg border border-border bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-creamd/60 text-[10px] uppercase tracking-[0.16em] text-ch/50">
-              <tr>
-                <th className="px-4 py-3 text-left">Date</th>
-                <th className="px-3 py-3 text-left">Member</th>
-                <th className="px-3 py-3 text-left">Phase</th>
-                <th className="px-3 py-3 text-right">Hours</th>
-                <th className="px-4 py-3 text-left">Type</th>
-                <th className="px-4 py-3 text-left">Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEntries.slice(0, 100).map((e) => {
-                const member = data.team.find((m) => m.id === e.user_id);
-                const phase = data.phases.find((p) => p.id === e.project_phase_id);
-                return (
-                  <tr key={e.id} className="border-t border-border">
-                    <td className="px-4 py-2 text-ch/80">{e.date}</td>
-                    <td className="px-3 py-2 text-ch/80">{member?.name || member?.email || "—"}</td>
-                    <td className="px-3 py-2 text-ch/80">{phase?.name || "—"}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatHours(Number(e.hrs))}</td>
-                    <td className="px-4 py-2">
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.15em]",
-                        e.billable ? "bg-success/10 text-success" : "bg-terra/10 text-terra")}>
-                        {e.billable ? "Billable" : "Non-bill"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 max-w-xs truncate text-ch/60">{e.notes ?? ""}</td>
-                  </tr>
-                );
-              })}
-              {filteredEntries.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-ch/50">No time entries match these filters.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+
+          <div className="overflow-hidden rounded-lg border border-border bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-creamd/60 text-[10px] uppercase tracking-[0.16em] text-ch/50">
+                <tr>
+                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-3 py-3 text-left">Assignee</th>
+                  <th className="px-3 py-3 text-left">Phase</th>
+                  <th className="px-3 py-3 text-right">Hours</th>
+                  <th className="px-3 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Notes</th>
+                  {isAdmin && <th className="px-3 py-3 w-12"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEntries.length === 0 ? (
+                  <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-10 text-center text-ch/50">
+                    No time logged on this project yet. Log time from the Phases tab or from the Time Calendar.
+                  </td></tr>
+                ) : filteredEntries.slice(0, 200).map((e) => {
+                  const member = team.find((m) => m.id === e.user_id);
+                  return (
+                    <tr key={e.id} className="border-t border-border">
+                      <td className="px-4 py-2 text-ch/80 whitespace-nowrap">{e.date}</td>
+                      <td className="px-3 py-2 text-ch/80">{member?.name || member?.email || "—"}</td>
+                      <td className="px-3 py-2">
+                        <Select
+                          value={e.project_phase_id ?? "__none__"}
+                          onValueChange={async (v) => {
+                            try {
+                              await patchEntryFn({ data: { id: e.id, project_phase_id: v === "__none__" ? null : v } });
+                              invalidate();
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Failed");
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-40 bg-white text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">
+                              <span className="text-terra">No phase</span>
+                            </SelectItem>
+                            {phases.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatHours(Number(e.hrs))}</td>
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await patchEntryFn({ data: { id: e.id, billable: !e.billable } });
+                              invalidate();
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : "Failed");
+                            }
+                          }}
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.15em]",
+                            e.billable ? "bg-success/10 text-success" : "bg-terra/10 text-terra",
+                          )}
+                        >
+                          {e.billable ? "Billable" : "Non-bill"}
+                        </button>
+                      </td>
+                      <td className="px-4 py-2 max-w-xs truncate text-ch/60">{e.notes ?? ""}</td>
+                      {isAdmin && (
+                        <td className="px-3 py-2 text-right">
+                          {deleteConfirmId === e.id ? (
+                            <div className="inline-flex gap-1">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await deleteEntryFn({ data: { id: e.id } });
+                                    setDeleteConfirmId(null);
+                                    invalidate();
+                                  } catch (err) {
+                                    toast.error(err instanceof Error ? err.message : "Failed");
+                                  }
+                                }}
+                                className="rounded px-2 py-0.5 text-[10px] uppercase text-terra hover:bg-terra/10"
+                              >
+                                Confirm
+                              </button>
+                              <button onClick={() => setDeleteConfirmId(null)} className="rounded px-2 py-0.5 text-[10px] uppercase text-ch/50 hover:bg-creamd">
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setDeleteConfirmId(e.id)} className="text-ch/40 hover:text-terra">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* OPERATIONAL EDIT DIALOG */}
+      <Dialog open={editingMeta} onOpenChange={setEditingMeta}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit project details</DialogTitle>
+            <DialogDescription>Operational fields. Financial fields (rate, hours, billable) are edited from the Phases tab.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
+              <Input value={metaDraft.name} onChange={(e) => setMetaDraft({ ...metaDraft, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
+              <Input value={metaDraft.client_name} onChange={(e) => setMetaDraft({ ...metaDraft, client_name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Start date</label>
+                <Input type="date" value={metaDraft.start_date} onChange={(e) => setMetaDraft({ ...metaDraft, start_date: e.target.value })} />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">End date</label>
+                <Input type="date" value={metaDraft.end_date} onChange={(e) => setMetaDraft({ ...metaDraft, end_date: e.target.value })} />
+              </div>
+            </div>
+            {isPrincipal && (
+              <div className="border-t border-border pt-3">
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                  Project rate ($/hr) <span className="ml-1 text-ch/40">— financial, audited</span>
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="proj-rate-input"
+                    type="number"
+                    min={0}
+                    step="any"
+                    defaultValue={project.scoped_rate ?? ""}
+                    placeholder={config?.rate_billed ? String(config.rate_billed) : "—"}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const el = document.getElementById("proj-rate-input") as HTMLInputElement | null;
+                      if (!el) return;
+                      const v = Number(el.value);
+                      if (!Number.isFinite(v) || v < 0) return;
+                      openRateConfirm(v);
+                    }}
+                  >Update rate</Button>
+                </div>
+                <p className="mt-1 text-xs text-ch/50">Defaults to your billed rate. Changes are logged.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditingMeta(false)}>Cancel</Button>
+            <Button className="bg-ch text-cream hover:bg-ch/90" onClick={saveMeta}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* FINANCIAL CONFIRM DIALOG */}
+      <Dialog open={!!finConfirm} onOpenChange={(o) => !o && setFinConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm financial change</DialogTitle>
+            <DialogDescription>
+              You are changing <span className="text-ch">{finConfirm?.label}</span> from{" "}
+              <span className="text-ch">{finConfirm?.oldDisplay}</span> to{" "}
+              <span className="text-ch">{finConfirm?.newDisplay}</span>. This will update scoped revenue and margin figures. Continue?
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Reason for change (optional)</label>
+            <Textarea
+              value={finReason}
+              onChange={(e) => setFinReason(e.target.value)}
+              placeholder="e.g. Client revised scope, corrected data entry error"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setFinConfirm(null)}>Cancel</Button>
+            <Button
+              className="bg-ch text-cream hover:bg-ch/90"
+              onClick={async () => {
+                if (!finConfirm) return;
+                try {
+                  await finConfirm.apply(finReason.trim());
+                  toast.success("Change saved and logged");
+                  setFinConfirm(null);
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Failed");
+                }
+              }}
+            >
+              Confirm change
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* TEMPLATE PICKER DIALOG */}
+      <Dialog open={tplPickerOpen} onOpenChange={setTplPickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add phases from SOP Library</DialogTitle>
+            <DialogDescription>Phases are copied into this project. Future edits to the template won't affect this project.</DialogDescription>
+          </DialogHeader>
+          <Select value={tplPicked} onValueChange={setTplPicked}>
+            <SelectTrigger className="bg-white"><SelectValue placeholder="Choose a template…" /></SelectTrigger>
+            <SelectContent>
+              {(tplData?.templates ?? []).map((t) => (
+                <SelectItem key={t.id} value={t.id}>{t.name}{t.category ? ` — ${t.category}` : ""}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTplPickerOpen(false)}>Cancel</Button>
+            <Button className="bg-ch text-cream hover:bg-ch/90" disabled={!tplPicked} onClick={attachSelectedTemplate}>
+              Attach phases
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function SummaryRow({ label, value, bold, accent }: { label: string; value: string; bold?: boolean; accent?: "success" | "danger" }) {
+// =============================================================================
+// PROFITABILITY SUMMARY (Plan / Reality / Gap)
+// =============================================================================
+
+function ProfitabilitySummary(props: {
+  scopedRevenue: number; scopedCost: number; scopedMargin: number;
+  actualRevenue: number; actualCost: number; actualMargin: number;
+  marginVariance: number; marginVariancePct: number;
+  nonBillableCostAbsorbed: number;
+  hasRate: boolean;
+}) {
+  const {
+    scopedRevenue, scopedCost, scopedMargin,
+    actualRevenue, actualCost, actualMargin,
+    marginVariance, marginVariancePct, nonBillableCostAbsorbed, hasRate,
+  } = props;
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-6">
+      <h3 className="font-display text-xl tracking-tight text-ch">Profitability</h3>
+
+      <SummarySection label="What you planned">
+        <ProfitRow label="Scoped revenue" value={fmtUsd(scopedRevenue)} tip="The total you expected to earn on this project — billable budgeted hours multiplied by your agreed project rate. Non-billable phases are excluded from revenue but included in cost." />
+        <ProfitRow label="Scoped cost" value={fmtUsd(scopedCost)} tip="What it was supposed to cost you to deliver this project — your budgeted hours multiplied by your cost rate." />
+        <ProfitRow label="Scoped margin" value={fmtUsd(scopedMargin)} bold accent={scopedMargin < 0 ? "danger" : "success"} tip="The profit you planned to make. Scoped revenue minus scoped cost. Your intended outcome before any work began." />
+      </SummarySection>
+
+      <SummarySection label="What's happened so far">
+        <ProfitRow label="Actual revenue" value={fmtUsd(actualRevenue)} tip="What this project has actually earned so far — billable hours logged multiplied by your rate." />
+        <ProfitRow label="Actual cost" value={fmtUsd(actualCost)} tip="What this project has actually cost you so far — all hours logged, billable and non-billable, multiplied by your cost rate." />
+        <ProfitRow label="Actual margin" value={fmtUsd(actualMargin)} bold accent={actualMargin < 0 ? "danger" : "success"} tip="The profit you've made so far on this project. Actual revenue minus actual cost. If this is negative the project is currently costing more than it's earning." />
+      </SummarySection>
+
+      <SummarySection label="The difference">
+        <ProfitRow
+          label="Margin variance"
+          value={`${fmtUsd(marginVariance)} (${fmtPct(marginVariancePct)})`}
+          accent={marginVariance < 0 ? "danger" : "success"}
+          tip="The gap between what you planned to make and what you're actually making. Negative means underperforming the plan. Positive means doing better than expected."
+        />
+        <ProfitRow
+          label="Non-billable cost absorbed"
+          value={fmtUsd(nonBillableCostAbsorbed)}
+          accent="danger"
+          tip="The cost of hours you worked but didn't bill. Already reflected in your actual margin above. Shown here so it's always a visible, conscious decision rather than invisible erosion."
+        />
+      </SummarySection>
+
+      {!hasRate && (
+        <p className="mt-3 text-xs text-ch/50">Set a project rate to see revenue and margin figures.</p>
+      )}
+    </div>
+  );
+}
+
+function SummarySection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-5 border-t border-border pt-4 first:mt-4 first:border-0 first:pt-0">
+      <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-ch/40">{label}</p>
+      <table className="w-full text-sm">
+        <tbody className="[&_td]:py-1.5">{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProfitRow({ label, value, bold, accent, tip }: {
+  label: string; value: string; bold?: boolean;
+  accent?: "success" | "danger"; tip: string;
+}) {
   return (
     <tr>
-      <td className="text-ch/60">{label}</td>
-      <td className={cn("text-right tabular-nums",
-        bold && "font-display text-lg text-ch",
+      <td className="text-ch/70">
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <HoverCard openDelay={120}>
+            <HoverCardTrigger asChild>
+              <button type="button" className="text-ch/40 hover:text-ch" aria-label={`About ${label}`}>
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-80 text-xs leading-relaxed text-ch/80">{tip}</HoverCardContent>
+          </HoverCard>
+        </span>
+      </td>
+      <td className={cn(
+        "text-right tabular-nums font-display text-lg",
+        bold && "text-xl",
         accent === "danger" && "text-terra",
         accent === "success" && "text-success",
+        !accent && "text-ch",
       )}>{value}</td>
     </tr>
+  );
+}
+
+// =============================================================================
+// HOURS SUMMARY — stacked bar
+// =============================================================================
+
+function HoursSummary({ scopedHrs, billableHrs, nonBillableHrs }: {
+  scopedHrs: number; billableHrs: number; nonBillableHrs: number;
+}) {
+  const total = billableHrs + nonBillableHrs;
+  const remaining = Math.max(0, scopedHrs - total);
+  const overflow = Math.max(0, total - scopedHrs);
+
+  // Within-scope percentages (relative to scopedHrs, capped at 100 visually)
+  const denom = scopedHrs > 0 ? scopedHrs : Math.max(1, total);
+  const billPct = Math.min(100, (Math.min(billableHrs, denom) / denom) * 100);
+  const nonBillPct = Math.min(100 - billPct, (Math.min(nonBillableHrs, Math.max(0, denom - billableHrs)) / denom) * 100);
+  const remainPct = Math.max(0, 100 - billPct - nonBillPct);
+  // Overflow shown as extension beyond bar — visually 0-30% of original bar width
+  const overflowPct = scopedHrs > 0 ? Math.min(30, (overflow / scopedHrs) * 100) : 0;
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-6">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl tracking-tight text-ch">Hours</h3>
+        {overflow > 0 && (
+          <span className="text-xs uppercase tracking-[0.15em] text-terra">+{formatHours(overflow)} over budget</span>
+        )}
+      </div>
+
+      <div className="relative mt-5">
+        <div className="flex h-3 w-full overflow-hidden rounded-full bg-creamd">
+          {billPct > 0 && <div className="h-full bg-success" style={{ width: `${billPct}%` }} />}
+          {nonBillPct > 0 && <div className="h-full bg-terra/70" style={{ width: `${nonBillPct}%` }} />}
+          {remainPct > 0 && <div className="h-full" style={{ width: `${remainPct}%` }} />}
+        </div>
+        {overflow > 0 && (
+          <div
+            className="absolute top-0 h-3 rounded-r-full bg-terra"
+            style={{ left: "100%", width: `${overflowPct}%` }}
+            aria-label={`${overflow} hours over budget`}
+          />
+        )}
+      </div>
+
+      <div className="mt-5 space-y-1.5 text-sm">
+        <LegendRow swatch="bg-success" label="Billable logged" value={formatHours(billableHrs)} />
+        <LegendRow swatch="bg-terra/70" label="Non-billable logged" value={formatHours(nonBillableHrs)} />
+        <LegendRow swatch="bg-creamd border border-border" label="Remaining budget" value={formatHours(remaining)} />
+        <div className="border-t border-border pt-2 mt-2 flex justify-between font-medium text-ch">
+          <span>Total scoped</span>
+          <span className="tabular-nums">{formatHours(scopedHrs)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LegendRow({ swatch, label, value }: { swatch: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="flex items-center gap-2 text-ch/70">
+        <span className={cn("inline-block h-2.5 w-2.5 rounded-sm", swatch)} />
+        {label}
+      </span>
+      <span className="tabular-nums text-ch">{value}</span>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-4">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
+      <div className="mt-1 font-display text-2xl text-ch">{value}</div>
+    </div>
+  );
+}
+
+// =============================================================================
+// PHASE CARD (collapsible)
+// =============================================================================
+
+function PhaseCard({
+  phase, steps, entries, team, isPrincipal, isAdmin,
+  onEditHrs, onEditBillable, onDelete,
+}: {
+  phase: PhaseRow;
+  steps: { id: string; description: string; estimated_hrs: number; sort_order: number; project_phase_id: string }[];
+  entries: { id: string; date: string; user_id: string; hrs: number; billable: boolean; notes: string | null }[];
+  team: { id: string; name: string | null; email: string }[];
+  isPrincipal: boolean;
+  isAdmin: boolean;
+  onEditHrs: (hrs: number) => void;
+  onEditBillable: (b: boolean) => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editHrs, setEditHrs] = useState(false);
+  const [hrsDraft, setHrsDraft] = useState(String(phase.expected_hrs));
+
+  const status = !phase.billable
+    ? { label: "Non-bill", tone: "muted" as const }
+    : phase.pct > 100
+      ? { label: "Over", tone: "terra" as const }
+      : phase.pct >= 80
+        ? { label: "Heads up", tone: "gold" as const }
+        : { label: "On track", tone: "success" as const };
+
+  const variance = phase.variance;
+  const overUnderText = !phase.billable
+    ? "Absorbed cost"
+    : variance > 0
+      ? `+${fmtUsd(variance * 0)}`  // dollar amount uses project rate at call site
+      : `${fmtUsd(Math.abs(variance) * 0)} remaining`;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="rounded-lg border border-border bg-white">
+        <CollapsibleTrigger asChild>
+          <button className="flex w-full items-center gap-4 p-4 text-left hover:bg-creamd/30">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-ch">{phase.name}</span>
+                {phase.sop_phase_id && (
+                  <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-ch/60">
+                    In SOP library
+                  </span>
+                )}
+                <StatusBadge tone={status.tone} label={status.label} />
+              </div>
+              {/* mini stacked progress bar */}
+              <PhaseMiniBar phase={phase} />
+            </div>
+            <div className="hidden text-right text-xs text-ch/60 md:block">
+              <div className="tabular-nums text-ch">{formatHours(phase.ac)} / {formatHours(phase.sc)}</div>
+              <div className="mt-0.5 text-[11px]">
+                {phase.billable
+                  ? variance > 0
+                    ? <span className="text-terra">+{formatHours(variance)} over</span>
+                    : <span className="text-success/80">{formatHours(Math.abs(variance))} remaining</span>
+                  : <span className="text-ch/50">Non-billable</span>}
+              </div>
+            </div>
+            <ChevronDown className={cn("h-4 w-4 text-ch/40 transition-transform", open && "rotate-180")} />
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <div className="border-t border-border p-5">
+            {/* Process steps */}
+            {steps.length > 0 ? (
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Process steps</p>
+                <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-creamd/30">
+                  {steps.map((s) => (
+                    <li key={s.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                      <span className="text-ch/80">{s.description}</span>
+                      <span className="text-xs text-ch/50 tabular-nums">{formatHours(Number(s.estimated_hrs))}</span>
+                    </li>
+                  ))}
+                  <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-ch">
+                    <span>Phase total</span>
+                    <span className="tabular-nums">{formatHours(phase.sc)}</span>
+                  </li>
+                </ul>
+              </div>
+            ) : (
+              <p className="text-sm text-ch/50">No process steps recorded for this phase.</p>
+            )}
+
+            {/* Financial controls */}
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                  Budgeted hours
+                  {!isPrincipal && (
+                    <HoverCard openDelay={120}>
+                      <HoverCardTrigger asChild>
+                        <Lock className="h-3 w-3 text-ch/40" />
+                      </HoverCardTrigger>
+                      <HoverCardContent className="w-72 text-xs">Financial parameters can only be edited by the firm principal.</HoverCardContent>
+                    </HoverCard>
+                  )}
+                </label>
+                {editHrs && isPrincipal ? (
+                  <div className="flex gap-2">
+                    <Input type="number" min={0} step="any" value={hrsDraft} onChange={(e) => setHrsDraft(e.target.value)} />
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const v = Number(hrsDraft);
+                        if (!Number.isFinite(v) || v < 0) return;
+                        onEditHrs(v);
+                        setEditHrs(false);
+                      }}
+                    >Update</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setHrsDraft(String(phase.expected_hrs)); setEditHrs(false); }}>Cancel</Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="tabular-nums text-ch">{formatHours(phase.sc)}</span>
+                    {isPrincipal && (
+                      <Button size="sm" variant="outline" onClick={() => setEditHrs(true)}>Edit</Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                  Billable
+                  {!isPrincipal && (
+                    <HoverCard openDelay={120}>
+                      <HoverCardTrigger asChild>
+                        <Lock className="h-3 w-3 text-ch/40" />
+                      </HoverCardTrigger>
+                      <HoverCardContent className="w-72 text-xs">Financial parameters can only be edited by the firm principal.</HoverCardContent>
+                    </HoverCard>
+                  )}
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={phase.billable}
+                    disabled={!isPrincipal}
+                    onChange={(e) => onEditBillable(e.target.checked)}
+                    className="accent-gold"
+                  />
+                  <span className="text-ch/80">{phase.billable ? "Billable phase" : "Non-billable phase"}</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Time entries for this phase */}
+            {entries.length > 0 && (
+              <div className="mt-5">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Time logged on this phase</p>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {entries.slice(0, 8).map((e) => {
+                    const who = team.find((m) => m.id === e.user_id);
+                    return (
+                      <li key={e.id} className="flex items-center justify-between gap-3 border-b border-border/60 py-1.5 last:border-0">
+                        <span className="text-ch/70">{e.date} · {who?.name || who?.email || "—"}</span>
+                        <span className={cn("tabular-nums", e.billable ? "text-ch" : "text-terra/80")}>
+                          {formatHours(Number(e.hrs))}{!e.billable && " · non-bill"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                  {entries.length > 8 && (
+                    <li className="text-xs text-ch/50">+{entries.length - 8} more in Time Log</li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-5 flex items-center justify-between">
+              <a
+                href="/time-calendar"
+                className="inline-flex items-center gap-1.5 rounded-full bg-gold px-3 py-1.5 text-xs uppercase tracking-[0.15em] text-white hover:bg-goldl"
+              >
+                Log time
+              </a>
+              {isAdmin && (
+                <button onClick={onDelete} className="text-xs text-ch/40 hover:text-terra">
+                  <Trash2 className="mr-1 inline h-3 w-3" /> Delete phase
+                </button>
+              )}
+            </div>
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+function PhaseMiniBar({ phase }: { phase: PhaseRow }) {
+  const denom = phase.sc > 0 ? phase.sc : Math.max(1, phase.ac);
+  const billPct = Math.min(100, (Math.min(phase.billableActual, denom) / denom) * 100);
+  const nonBillPct = Math.min(100 - billPct, (phase.nonBillActual / denom) * 100);
+  const remainPct = Math.max(0, 100 - billPct - nonBillPct);
+  const overflow = Math.max(0, phase.ac - phase.sc);
+  const overflowPct = phase.sc > 0 ? Math.min(30, (overflow / phase.sc) * 100) : 0;
+  return (
+    <div className="relative mt-2 w-full max-w-md">
+      <div className="flex h-1 w-full overflow-hidden rounded-full bg-creamd">
+        {billPct > 0 && <div className="h-full bg-success" style={{ width: `${billPct}%` }} />}
+        {nonBillPct > 0 && <div className="h-full bg-terra/70" style={{ width: `${nonBillPct}%` }} />}
+        {remainPct > 0 && <div className="h-full" style={{ width: `${remainPct}%` }} />}
+      </div>
+      {overflow > 0 && (
+        <div className="absolute top-0 h-1 rounded-r-full bg-terra" style={{ left: "100%", width: `${overflowPct}%` }} />
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ tone, label }: { tone: "success" | "gold" | "terra" | "muted"; label: string }) {
+  return (
+    <span className={cn(
+      "rounded-full px-2 py-0.5 text-[10px] tracking-[0.05em]",
+      tone === "success" && "bg-success/10 text-success",
+      tone === "gold" && "bg-goldp text-gold",
+      tone === "terra" && "bg-terra/10 text-terra",
+      tone === "muted" && "bg-creamd text-ch/60",
+    )}>{label}</span>
   );
 }
