@@ -483,6 +483,42 @@ export type Database = {
           },
         ]
       }
+      project_financial_audit: {
+        Row: {
+          changed_at: string
+          changed_by: string
+          field_changed: string
+          firm_id: string
+          id: string
+          new_value: string | null
+          old_value: string | null
+          project_id: string
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by: string
+          field_changed: string
+          firm_id: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          project_id: string
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string
+          field_changed?: string
+          firm_id?: string
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          project_id?: string
+          reason?: string | null
+        }
+        Relationships: []
+      }
       project_phases: {
         Row: {
           actual_hrs: number
