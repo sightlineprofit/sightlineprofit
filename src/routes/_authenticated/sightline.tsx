@@ -83,7 +83,7 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "" });
+  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
 
   async function submitCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -95,10 +95,11 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           client_name: draft.client_name.trim() || null,
           status: "active",
           scoped_rate: draft.scoped_rate ? Number(draft.scoped_rate) : null,
+          fixed_fee: draft.fixed_fee ? Number(draft.fixed_fee) : null,
         },
       });
       toast.success("Project created");
-      setDraft({ name: "", client_name: "", scoped_rate: "" });
+      setDraft({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
       setCreating(false);
       qc.invalidateQueries({ queryKey: ["sightline-list"] });
       onOpen(res.id);
@@ -131,20 +132,28 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       }
     >
       {creating && (
-        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-end gap-3 rounded-lg border border-border bg-white p-4">
-          <div className="col-span-5">
+        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-start gap-3 rounded-lg border border-border bg-white p-4">
+          <div className="col-span-12 md:col-span-6">
             <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
             <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus required />
           </div>
-          <div className="col-span-4">
+          <div className="col-span-12 md:col-span-6">
             <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
             <Input value={draft.client_name} onChange={(e) => setDraft({ ...draft, client_name: e.target.value })} />
           </div>
-          <div className="col-span-2">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Scoped rate $/hr</label>
-            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder={billedRate ? String(billedRate) : "—"} />
+          <div className="col-span-12 md:col-span-6">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Hourly project rate</label>
+            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder="$250" />
+            <p className="mt-1 text-[11px] text-ch/50">The rate per hour agreed with this client — not the total project fee.</p>
           </div>
-          <Button type="submit" className="col-span-1 bg-ch text-cream hover:bg-ch/90">Create</Button>
+          <div className="col-span-12 md:col-span-6">
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Fixed project fee $ (optional)</label>
+            <Input type="number" min={0} step="any" value={draft.fixed_fee} onChange={(e) => setDraft({ ...draft, fixed_fee: e.target.value })} placeholder="$25,000" />
+            <p className="mt-1 text-[11px] text-ch/50">If this is a fixed-fee project, enter the total. Leave blank if billing hourly.</p>
+          </div>
+          <div className="col-span-12 flex justify-end">
+            <Button type="submit" className="bg-ch text-cream hover:bg-ch/90">Create project</Button>
+          </div>
         </form>
       )}
 
