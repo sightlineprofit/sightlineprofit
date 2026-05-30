@@ -1045,7 +1045,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             {isPrincipal && (
               <div className="border-t border-border pt-3">
                 <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
-                  Project rate ($/hr) <span className="ml-1 text-ch/40">— financial, audited</span>
+                  Hourly project rate ($/hr) <span className="ml-1 text-ch/40">— financial, audited</span>
                 </label>
                 <div className="flex gap-2">
                   <Input
@@ -1067,7 +1067,44 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                     }}
                   >Update rate</Button>
                 </div>
-                <p className="mt-1 text-xs text-ch/50">Defaults to your billed rate. Changes are logged.</p>
+                <p className="mt-1 text-xs text-ch/50">The rate per hour agreed with this client — not the total project fee. Changes are logged.</p>
+
+                <label className="mt-4 mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                  Fixed project fee $ (optional) <span className="ml-1 text-ch/40">— financial, audited</span>
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="proj-fixedfee-input"
+                    type="number"
+                    min={0}
+                    step="any"
+                    defaultValue={(project as { fixed_fee?: number | null }).fixed_fee ?? ""}
+                    placeholder="$25,000"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const el = document.getElementById("proj-fixedfee-input") as HTMLInputElement | null;
+                      if (!el) return;
+                      const raw = el.value.trim();
+                      const v = raw === "" ? null : Number(raw);
+                      if (v !== null && (!Number.isFinite(v) || v < 0)) return;
+                      const oldVal = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
+                      if ((v ?? 0) === oldVal) return;
+                      setFinReason("");
+                      setFinConfirm({
+                        label: "fixed project fee",
+                        oldDisplay: oldVal ? fmtUsd(oldVal) : "(none)",
+                        newDisplay: v ? fmtUsd(v) : "(none)",
+                        apply: async (reason) => {
+                          await finFn({ data: { project_id: id, fixed_fee: v, reason: reason || null } });
+                          invalidate();
+                        },
+                      });
+                    }}
+                  >Update fee</Button>
+                </div>
+                <p className="mt-1 text-xs text-ch/50">If this is a fixed-fee project, enter the total. Leave blank if billing hourly.</p>
               </div>
             )}
           </div>
