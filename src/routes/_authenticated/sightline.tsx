@@ -375,6 +375,8 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
   const projectRate = Number(project.scoped_rate) || Number(config?.rate_billed) || 0;
   const hasExplicitRate = Number(project.scoped_rate) > 0;
+  const fixedFee = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
+  const isFixedFee = fixedFee > 0;
   const teamCostRates = team.map((m) => Number(m.cost_rate) || 0).filter((n) => n > 0);
   const avgCostRate = teamCostRates.length
     ? teamCostRates.reduce((s, n) => s + n, 0) / teamCostRates.length
@@ -413,8 +415,8 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const actualHrs = phaseRows.reduce((s, p) => s + p.ac, 0);
   const billableHrs = entries.filter((e) => e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
   const nonBillableHrs = entries.reduce((s, e) => s + Number(e.hrs || 0), 0) - billableHrs;
-  const scopedRevenue = billableScopedHrs * projectRate;
-  const actualRevenue = billableHrs * projectRate;
+  const scopedRevenue = isFixedFee ? fixedFee : billableScopedHrs * projectRate;
+  const actualRevenue = isFixedFee ? fixedFee : billableHrs * projectRate;
   const scopedCost = scopedHrs * avgCostRate;
   const actualCost = actualHrs * avgCostRate;
   const scopedMargin = scopedRevenue - scopedCost;
@@ -423,47 +425,64 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const marginVariancePct = scopedMargin !== 0 ? (marginVariance / Math.abs(scopedMargin)) * 100 : 0;
   const nonBillableCostAbsorbed = nonBillableHrs * avgCostRate;
 
-  // Health indicator
-  const overPhases = phaseRows.filter((p) => p.pct > 100);
-  const headsUpPhases = phaseRows.filter((p) => p.pct >= 80 && p.pct <= 99);
-  const health: { tone: "track" | "watch" | "over"; pillLabel: string; detail: string } =
-    overPhases.length > 0
-      ? {
-          tone: "over",
-          pillLabel: "Over Budget",
-          detail: `${formatHours(overPhases[0].variance)} over on ${overPhases[0].name}  ·  ${fmtUsd(actualMargin)} actual margin`,
-        }
-      : headsUpPhases.length > 0
-        ? {
-            tone: "watch",
-            pillLabel: "Heads Up",
-            detail: `${headsUpPhases[0].name} at ${headsUpPhases[0].pct.toFixed(0)}% of budget  ·  ${fmtUsd(actualMargin)} margin remaining`,
-          }
-        : {
-            tone: "track",
-            pillLabel: "On Track",
-            detail: `${fmtUsd(actualMargin)} margin remaining  ·  ${formatHours(Math.max(0, scopedHrs - actualHrs))} budget remaining`,
-          };
-
-  // Warnings panel
-  const warnings: { kind: "over" | "near" | "nonbill"; text: string; tone: "terra" | "gold" }[] = [];
-  for (const p of overPhases) {
-    warnings.push({
-      kind: "over",
-      tone: "terra",
-      text: `${p.name} is over by ${formatHours(p.variance)} — ${fmtUsd(p.variance * projectRate)} at project rate`,
-    });
-  }
-  for (const p of headsUpPhases) {
-    warnings.push({
-      kind: "near",
-      tone: "gold",
-      text: `${p.name} is at ${p.pct.toFixed(0)}% of budget — ${formatHours(p.sc - p.ac)} remaining`,
-    });
-  }
+  // Proportionate health + warnings
+  // Tier 3 (terracotta): actual margin negative OR actual hours exceed total scoped hours
+  // Tier 2 (gold): total used 80-99% of scope AND margin still positive
+  // Tier 1: handled inside phase cards (per-phase over-estimate notes)
   const totalLogged = billableHrs + nonBillableHrs;
-  if (totalLogged >= 2 && billableHrs === 0) {
-    warnings.push({ kind: "nonbill", tone: "terra", text: "All logged time on this project is non-billable." });
+  const totalPct = scopedHrs > 0 ? (actualHrs / scopedHrs) * 100 : 0;
+  const hoursRemaining = Math.max(0, scopedHrs - actualHrs);
+  const hoursOver = Math.max(0, actualHrs - scopedHrs);
+  const hasActuals = actualHrs > 0;
+
+  const isOverBudget = hasActuals && (actualMargin < 0 || actualHrs > scopedHrs);
+  const isHeadsUp = !isOverBudget && hasActuals && scopedHrs > 0 && totalPct >= 80 && actualMargin >= 0;
+
+  const health: { tone: "track" | "watch" | "over"; pillLabel: string; detail: string } = isOverBudget
+    ? {
+        tone: "over",
+        pillLabel: "Over Budget",
+        detail: `${fmtUsd(actualMargin)} actual margin${hoursOver > 0 ? `  ·  ${formatHours(hoursOver)} over scope` : ""}`,
+      }
+    : isHeadsUp
+      ? {
+          tone: "watch",
+          pillLabel: "Heads Up",
+          detail: `${totalPct.toFixed(0)}% of budget used  ·  ${fmtUsd(actualMargin)} margin remaining`,
+        }
+      : {
+          tone: "track",
+          pillLabel: "On Track",
+          detail: hasActuals
+            ? `${fmtUsd(actualMargin)} margin so far  ·  ${formatHours(hoursRemaining)} remaining in budget`
+            : `${fmtUsd(scopedMargin)} margin target  ·  ${formatHours(scopedHrs)} of budget`,
+        };
+
+  // Warnings panel — only Tier 2 + Tier 3 conditions surface here.
+  // Individual phase overages live inside the phase card as Tier 1 notes.
+  const warnings: { text: string; tone: "terra" | "gold" }[] = [];
+  if (isOverBudget) {
+    if (actualMargin < 0) {
+      warnings.push({
+        tone: "terra",
+        text: `This project is currently running at a loss. Actual costs (${fmtUsd(actualCost)}) exceed actual revenue (${fmtUsd(actualRevenue)}) by ${fmtUsd(Math.abs(actualMargin))}. Review unbilled time or adjust scope.`,
+      });
+    }
+    if (hoursOver > 0) {
+      warnings.push({
+        tone: "terra",
+        text: `Total hours logged (${formatHours(actualHrs)}) exceed the scoped budget (${formatHours(scopedHrs)}) by ${formatHours(hoursOver)}.`,
+      });
+    }
+  } else if (isHeadsUp) {
+    warnings.push({
+      tone: "gold",
+      text: `You've used ${totalPct.toFixed(0)}% of your total project budget. ${formatHours(hoursRemaining)} remaining before you're at scope.`,
+    });
+  }
+  // Tier 1 (downgraded): non-billable dominance only when total hrs >= 4 and 0 billable.
+  if (totalLogged >= 4 && billableHrs === 0) {
+    warnings.push({ tone: "gold", text: "All logged time on this project is non-billable." });
   }
 
   // Template label rule
