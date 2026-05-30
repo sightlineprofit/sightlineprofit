@@ -1156,11 +1156,12 @@ function ProfitabilitySummary(props: {
   marginVariance: number; marginVariancePct: number;
   nonBillableCostAbsorbed: number;
   hasRate: boolean;
+  isFixedFee: boolean;
 }) {
   const {
     scopedRevenue, scopedCost, scopedMargin,
     actualRevenue, actualCost, actualMargin,
-    marginVariance, marginVariancePct, nonBillableCostAbsorbed, hasRate,
+    marginVariance, marginVariancePct, nonBillableCostAbsorbed, hasRate, isFixedFee,
   } = props;
 
   return (
@@ -1168,13 +1169,25 @@ function ProfitabilitySummary(props: {
       <h3 className="font-display text-xl tracking-tight text-ch">Profitability</h3>
 
       <SummarySection label="What you planned">
-        <ProfitRow label="Scoped revenue" value={fmtUsd(scopedRevenue)} tip="The total you expected to earn on this project — billable budgeted hours multiplied by your agreed project rate. Non-billable phases are excluded from revenue but included in cost." />
+        <ProfitRow
+          label="Scoped revenue"
+          value={fmtUsd(scopedRevenue)}
+          tip={isFixedFee
+            ? "For fixed-fee projects this is your agreed total. For hourly projects this is your budgeted billable hours × your rate."
+            : "For fixed-fee projects this is your agreed total. For hourly projects this is your budgeted billable hours × your rate. Non-billable phases are excluded from revenue but included in cost."}
+        />
         <ProfitRow label="Scoped cost" value={fmtUsd(scopedCost)} tip="What it was supposed to cost you to deliver this project — your budgeted hours multiplied by your cost rate." />
         <ProfitRow label="Scoped margin" value={fmtUsd(scopedMargin)} bold accent={scopedMargin < 0 ? "danger" : "success"} tip="The profit you planned to make. Scoped revenue minus scoped cost. Your intended outcome before any work began." />
       </SummarySection>
 
       <SummarySection label="What's happened so far">
-        <ProfitRow label="Actual revenue" value={fmtUsd(actualRevenue)} tip="What this project has actually earned so far — billable hours logged multiplied by your rate." />
+        <ProfitRow
+          label="Actual revenue"
+          value={fmtUsd(actualRevenue)}
+          tip={isFixedFee
+            ? "For fixed-fee projects this stays at the agreed total regardless of hours logged."
+            : "What this project has actually earned so far — billable hours logged multiplied by your rate."}
+        />
         <ProfitRow label="Actual cost" value={fmtUsd(actualCost)} tip="What this project has actually cost you so far — all hours logged, billable and non-billable, multiplied by your cost rate." />
         <ProfitRow label="Actual margin" value={fmtUsd(actualMargin)} bold accent={actualMargin < 0 ? "danger" : "success"} tip="The profit you've made so far on this project. Actual revenue minus actual cost. If this is negative the project is currently costing more than it's earning." />
       </SummarySection>
