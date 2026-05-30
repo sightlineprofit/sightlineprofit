@@ -1528,21 +1528,20 @@ function PhaseCard({
 
 function PhaseMiniBar({ phase }: { phase: PhaseRow }) {
   const denom = phase.sc > 0 ? phase.sc : Math.max(1, phase.ac);
-  const billPct = Math.min(100, (Math.min(phase.billableActual, denom) / denom) * 100);
-  const nonBillPct = Math.min(100 - billPct, (phase.nonBillActual / denom) * 100);
+  const total = phase.billableActual + phase.nonBillActual;
+  const overScope = total > phase.sc;
+  const rawBill = Math.min(100, (phase.billableActual / denom) * 100);
+  const rawNon = Math.min(100 - rawBill, (phase.nonBillActual / denom) * 100);
+  const billPct = overScope && total > 0 ? (phase.billableActual / total) * 100 : rawBill;
+  const nonBillPct = overScope && total > 0 ? (phase.nonBillActual / total) * 100 : rawNon;
   const remainPct = Math.max(0, 100 - billPct - nonBillPct);
-  const overflow = Math.max(0, phase.ac - phase.sc);
-  const overflowPct = phase.sc > 0 ? Math.min(30, (overflow / phase.sc) * 100) : 0;
   return (
-    <div className="relative mt-2 w-full max-w-md">
+    <div className="relative mt-2 w-full max-w-md overflow-hidden">
       <div className="flex h-1 w-full overflow-hidden rounded-full bg-creamd">
         {billPct > 0 && <div className="h-full bg-success" style={{ width: `${billPct}%` }} />}
         {nonBillPct > 0 && <div className="h-full bg-terra/70" style={{ width: `${nonBillPct}%` }} />}
         {remainPct > 0 && <div className="h-full" style={{ width: `${remainPct}%` }} />}
       </div>
-      {overflow > 0 && (
-        <div className="absolute top-0 h-1 rounded-r-full bg-terra" style={{ left: "100%", width: `${overflowPct}%` }} />
-      )}
     </div>
   );
 }
