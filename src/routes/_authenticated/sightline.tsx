@@ -601,7 +601,9 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <p className="text-[11px] uppercase tracking-[0.25em] text-gold">Project profitability</p>
             <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{project.name}</h1>
             <p className="mt-1 text-ch/60">
-              {project.client_name ?? "No client"}  ·  {templateLabel}  ·  {hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "No project rate"}
+              {project.client_name ?? "No client"}  ·  {templateLabel}  ·  {isFixedFee
+                ? `Fixed fee ${fmtUsd(fixedFee)}${hasExplicitRate ? ` · ${fmtUsd(projectRate)}/hr` : ""}`
+                : hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "No project rate"}
               {project.start_date && project.end_date && ` · ${project.start_date} → ${project.end_date}`}
             </p>
           </div>
