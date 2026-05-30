@@ -1266,13 +1266,17 @@ function HoursSummary({ scopedHrs, billableHrs, nonBillableHrs }: {
   const remaining = Math.max(0, scopedHrs - total);
   const overflow = Math.max(0, total - scopedHrs);
 
-  // Within-scope percentages (relative to scopedHrs, capped at 100 visually)
+  // Bar is bounded to 100% of container. Overflow is shown as a separate
+  // labeled callout above the bar — never as a segment that extends past
+  // the container edge.
   const denom = scopedHrs > 0 ? scopedHrs : Math.max(1, total);
-  const billPct = Math.min(100, (Math.min(billableHrs, denom) / denom) * 100);
-  const nonBillPct = Math.min(100 - billPct, (Math.min(nonBillableHrs, Math.max(0, denom - billableHrs)) / denom) * 100);
+  const rawBillPct = Math.min(100, (billableHrs / denom) * 100);
+  const rawNonBillPct = Math.min(100 - rawBillPct, (nonBillableHrs / denom) * 100);
+  // When over scope, push billable+non-bill to fill the full 100%, no remainder.
+  const overScope = total > scopedHrs;
+  const billPct = overScope && total > 0 ? (billableHrs / total) * 100 : rawBillPct;
+  const nonBillPct = overScope && total > 0 ? (nonBillableHrs / total) * 100 : rawNonBillPct;
   const remainPct = Math.max(0, 100 - billPct - nonBillPct);
-  // Overflow shown as extension beyond bar — visually 0-30% of original bar width
-  const overflowPct = scopedHrs > 0 ? Math.min(30, (overflow / scopedHrs) * 100) : 0;
 
   return (
     <div className="rounded-lg border border-border bg-white p-6">
@@ -1283,19 +1287,12 @@ function HoursSummary({ scopedHrs, billableHrs, nonBillableHrs }: {
         )}
       </div>
 
-      <div className="relative mt-5">
+      <div className="relative mt-5 w-full overflow-hidden">
         <div className="flex h-3 w-full overflow-hidden rounded-full bg-creamd">
           {billPct > 0 && <div className="h-full bg-success" style={{ width: `${billPct}%` }} />}
           {nonBillPct > 0 && <div className="h-full bg-terra/70" style={{ width: `${nonBillPct}%` }} />}
           {remainPct > 0 && <div className="h-full" style={{ width: `${remainPct}%` }} />}
         </div>
-        {overflow > 0 && (
-          <div
-            className="absolute top-0 h-3 rounded-r-full bg-terra"
-            style={{ left: "100%", width: `${overflowPct}%` }}
-            aria-label={`${overflow} hours over budget`}
-          />
-        )}
       </div>
 
       <div className="mt-5 space-y-1.5 text-sm">
