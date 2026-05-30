@@ -308,7 +308,7 @@ export const updateProjectFinancial = createServerFn({ method: "POST" })
     if (!existing) throw new Error("Project not found");
 
     const audits: { field_changed: string; old_value: string | null; new_value: string | null }[] = [];
-    const patch: Record<string, unknown> = {};
+    const patch: { scoped_rate?: number | null } = {};
     if (data.scoped_rate !== undefined) {
       const oldVal = existing.scoped_rate == null ? null : String(existing.scoped_rate);
       const newVal = data.scoped_rate == null ? null : String(data.scoped_rate);
@@ -358,7 +358,7 @@ export const updateProjectPhaseFinancial = createServerFn({ method: "POST" })
     if (phaseFirmId !== firmId) throw new Error("Not allowed");
 
     const audits: { field_changed: string; old_value: string | null; new_value: string | null }[] = [];
-    const patch: Record<string, unknown> = {};
+    const patch: { expected_hrs?: number; billable?: boolean } = {};
     if (data.expected_hrs !== undefined && Number(phase.expected_hrs) !== data.expected_hrs) {
       patch.expected_hrs = data.expected_hrs;
       audits.push({
@@ -412,7 +412,7 @@ export const patchTimeEntry = createServerFn({ method: "POST" })
       .select("project_phase_id, hrs")
       .eq("id", data.id)
       .single();
-    const patch: Record<string, unknown> = {};
+    const patch: { project_phase_id?: string | null; billable?: boolean; notes?: string | null } = {};
     if (data.project_phase_id !== undefined) patch.project_phase_id = data.project_phase_id;
     if (data.billable !== undefined) patch.billable = data.billable;
     if (data.notes !== undefined) patch.notes = data.notes;
