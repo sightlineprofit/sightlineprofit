@@ -1389,7 +1389,7 @@ function PhaseCard({
               <div className="mt-0.5 text-[11px]">
                 {phase.billable
                   ? variance > 0
-                    ? <span className="text-terra">+{formatHours(variance)} over</span>
+                    ? <span className="text-ch/60">+{formatHours(variance)} over estimate</span>
                     : <span className="text-success/80">{formatHours(Math.abs(variance))} remaining</span>
                   : <span className="text-ch/50">Non-billable</span>}
               </div>
