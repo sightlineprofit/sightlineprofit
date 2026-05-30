@@ -1506,6 +1506,12 @@ function PhaseCard({
               </div>
             )}
 
+            {phase.billable && phase.variance > 0 && (
+              <p className="mt-4 text-xs text-ch/60">
+                This phase used {formatHours(phase.variance)} more than its estimate.
+              </p>
+            )}
+
             <div className="mt-5 flex items-center justify-between">
               <a
                 href="/time-calendar"
