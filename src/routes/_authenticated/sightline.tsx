@@ -1354,7 +1354,7 @@ function PhaseCard({
   const status = !phase.billable
     ? { label: "Non-bill", tone: "muted" as const }
     : phase.pct > 100
-      ? { label: "Over", tone: "terra" as const }
+      ? { label: "Over estimate", tone: "muted" as const }
       : phase.pct >= 80
         ? { label: "Heads up", tone: "gold" as const }
         : { label: "On track", tone: "success" as const };
