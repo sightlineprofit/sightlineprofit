@@ -85,7 +85,9 @@ function FirmTab() {
   const getCtx = useServerFn(getMyContext);
   const upd = useServerFn(updateFirm);
   const updCfg = useServerFn(upsertFirmConfig);
+  const expensesFn = useServerFn(listExpenses);
   const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => expensesFn() });
   const [name, setName] = useState(data?.firm?.name ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -109,6 +111,10 @@ function FirmTab() {
   const [reserve, setReserve] = useState<string>(
     cfg?.comp_reserve_target_annual != null ? String(cfg.comp_reserve_target_annual) : "",
   );
+  type ReserveMode = "months_1" | "months_2" | "months_3" | "months_6" | "months_12" | "custom";
+  const [reserveMode, setReserveMode] = useState<ReserveMode>(
+    ((cfg as { comp_reserve_mode?: string } | null)?.comp_reserve_mode as ReserveMode) || "custom",
+  );
   const [advancedOpen, setAdvancedOpen] = useState(structure === "s_corp");
 
   // Re-sync local state when context loads
@@ -125,13 +131,43 @@ function FirmTab() {
     setReserve(
       cfg.comp_reserve_target_annual != null ? String(cfg.comp_reserve_target_annual) : "",
     );
+    setReserveMode(
+      (((cfg as { comp_reserve_mode?: string }).comp_reserve_mode as ReserveMode) || "custom"),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.config]);
+
+  // Annual OpEx total derived from expenses
+  const annualOpex = useMemo(() => {
+    const rows = expenses ?? [];
+    let total = 0;
+    for (const e of rows) {
+      const amt = Number(e.amount) || 0;
+      switch (e.frequency) {
+        case "annual": total += amt; break;
+        case "monthly": total += amt * 12; break;
+        case "quarterly": total += amt * 4; break;
+        case "onetime": {
+          const months = Number(e.amort_months) || 12;
+          total += (amt / months) * 12;
+          break;
+        }
+      }
+    }
+    return total;
+  }, [expenses]);
+  const monthlyOpex = annualOpex / 12;
+
+  const reserveMonths: Record<ReserveMode, number | null> = {
+    months_1: 1, months_2: 2, months_3: 3, months_6: 6, months_12: 12, custom: null,
+  };
+  const computedReserve =
+    reserveMode === "custom" ? Number(reserve) || 0 : (reserveMonths[reserveMode] ?? 0) * monthlyOpex;
 
   const salaryNum = Number(salary) || 0;
   const ptaxOnSalary = (salaryNum * (Number(ptaxPct) || 0)) / 100;
   const distNum = Number(distribution) || 0;
-  const reserveNum = Number(reserve) || 0;
+  const reserveNum = computedReserve;
   const totalPackage = salaryNum + ptaxOnSalary + distNum + reserveNum;
 
   async function save(e: React.FormEvent) {
@@ -147,6 +183,7 @@ function FirmTab() {
           comp_ptax_pct: Number(ptaxPct) || null,
           comp_distribution_annual: structure === "s_corp" ? distNum || null : null,
           comp_reserve_target_annual: structure === "s_corp" ? reserveNum || null : null,
+          comp_reserve_mode: reserveMode,
         },
       });
       toast.success("Firm updated");
