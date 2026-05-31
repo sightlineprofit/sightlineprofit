@@ -1198,68 +1198,229 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
 }
 
 // =============================================================================
-// PROFITABILITY SUMMARY (Plan / Reality / Gap)
+// PROFITABILITY SUMMARY — "Is the fee enough for the time this is taking?"
 // =============================================================================
 
 function ProfitabilitySummary(props: {
-  scopedRevenue: number; scopedCost: number; scopedMargin: number;
-  actualRevenue: number; actualCost: number; actualMargin: number;
-  marginVariance: number; marginVariancePct: number;
-  nonBillableCostAbsorbed: number;
-  hasRate: boolean;
+  projectFee: number;
   isFixedFee: boolean;
+  budgetedBillableHrs: number;
+  actualHrs: number;
+  billableHrs: number;
+  nonBillableHrs: number;
+  rate: number;
+  rateIsProject: boolean;
+  firmBilledRate: number;
+  phaseRows: PhaseRow[];
+  startDate: string | null;
+  endDate: string | null;
+  hasOwnerSalary: boolean;
+  alignedRate: number;
+  onOpenSettings: () => void;
 }) {
   const {
-    scopedRevenue, scopedCost, scopedMargin,
-    actualRevenue, actualCost, actualMargin,
-    marginVariance, marginVariancePct, nonBillableCostAbsorbed, hasRate, isFixedFee,
+    projectFee, isFixedFee, budgetedBillableHrs, actualHrs, billableHrs, nonBillableHrs,
+    rate, rateIsProject, firmBilledRate, phaseRows, startDate, endDate,
+    hasOwnerSalary, alignedRate, onOpenSettings,
   } = props;
+
+  const hasFee = projectFee > 0;
+  const usableRate = rate > 0 ? rate : firmBilledRate;
+
+  // Empty state: no fee at all
+  if (!hasFee) {
+    return (
+      <div className="rounded-lg border border-border bg-white p-6">
+        <h3 className="font-display text-xl tracking-tight text-ch">Profitability</h3>
+        <p className="mt-4 text-sm text-ch/70">
+          Add a project rate to see profitability.{" "}
+          <button onClick={onOpenSettings} className="font-medium text-gold hover:text-goldl">
+            Go to project settings →
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  const impliedValuePerHr = budgetedBillableHrs > 0 ? projectFee / budgetedBillableHrs : 0;
+  const hoursRemaining = Math.max(0, budgetedBillableHrs - actualHrs);
+  const overHrs = Math.max(0, actualHrs - budgetedBillableHrs);
+  const feeConsumed = actualHrs * usableRate;
+  const feeRemaining = projectFee - feeConsumed;
+  const usedPct = budgetedBillableHrs > 0 ? Math.min(100, (actualHrs / budgetedBillableHrs) * 100) : 0;
+  const overPct = budgetedBillableHrs > 0 ? Math.min(100, (overHrs / budgetedBillableHrs) * 100) : 0;
+  const isOver = actualHrs > budgetedBillableHrs && budgetedBillableHrs > 0;
+
+  // Projection (Section 3): only when ≥20% of budget logged.
+  const showProjection = budgetedBillableHrs > 0 && actualHrs / budgetedBillableHrs >= 0.2;
+  let projectedHrs = 0;
+  if (showProjection) {
+    if (startDate && endDate) {
+      const start = new Date(startDate).getTime();
+      const end = new Date(endDate).getTime();
+      const today = Date.now();
+      const total = Math.max(1, end - start);
+      const elapsed = Math.max(1, Math.min(total, today - start));
+      const elapsedPct = elapsed / total;
+      for (const p of phaseRows) {
+        if (p.ac >= p.sc && p.sc > 0) {
+          projectedHrs += p.ac;
+        } else if (p.sc > 0 && elapsedPct > 0) {
+          const pace = p.ac / elapsedPct;
+          projectedHrs += Math.max(p.sc, Math.min(p.ac + (p.sc - p.ac) / Math.max(elapsedPct, 0.01), pace));
+        } else {
+          projectedHrs += Math.max(p.sc, p.ac);
+        }
+      }
+    } else {
+      // No project dates → assume linear pace based on hours-used fraction of budget.
+      const usedFrac = actualHrs / budgetedBillableHrs;
+      projectedHrs = usedFrac > 0 ? Math.max(actualHrs, actualHrs / Math.min(0.99, usedFrac)) : actualHrs;
+    }
+  }
+  const projectedFeeConsumed = projectedHrs * usableRate;
+  const projectedMargin = projectFee - projectedFeeConsumed;
+  const projMarginPct = projectFee > 0 ? projectedMargin / projectFee : 0;
+  const projMarginTone: "success" | "danger" | "gold" =
+    projectedMargin <= 0 ? "danger" : projMarginPct < 0.1 ? "gold" : "success";
+
+  // Bottom line
+  const timeCost = actualHrs * usableRate;
+  const marginToDate = projectFee - timeCost;
+  const marginPct = projectFee > 0 ? (marginToDate / projectFee) * 100 : 0;
+  const nonBillableAbsorbed = nonBillableHrs * usableRate;
+  const marginTone: "success" | "danger" = marginToDate < 0 ? "danger" : "success";
+
+  const rateLabel = rateIsProject
+    ? `Calculated at ${fmtUsd(usableRate)}/hr (your project rate)`
+    : `Calculated at ${fmtUsd(usableRate)}/hr (your billed rate — add a project rate for precision)`;
 
   return (
     <div className="rounded-lg border border-border bg-white p-6">
       <h3 className="font-display text-xl tracking-tight text-ch">Profitability</h3>
+      <p className="mt-1 text-xs text-ch/50 italic">Is the fee enough for the time this is taking?</p>
 
-      <SummarySection label="What you planned">
+      {/* SECTION 1 — THE FEE */}
+      <SummarySection label="What this project earns">
         <ProfitRow
-          label="Scoped revenue"
-          value={fmtUsd(scopedRevenue)}
-          tip={isFixedFee
-            ? "For fixed-fee projects this is your agreed total. For hourly projects this is your budgeted billable hours × your rate."
-            : "For fixed-fee projects this is your agreed total. For hourly projects this is your budgeted billable hours × your rate. Non-billable phases are excluded from revenue but included in cost."}
-        />
-        <ProfitRow label="Scoped cost" value={fmtUsd(scopedCost)} tip="What it was supposed to cost you to deliver this project — your budgeted hours multiplied by your cost rate." />
-        <ProfitRow label="Scoped margin" value={fmtUsd(scopedMargin)} bold accent={scopedMargin < 0 ? "danger" : "success"} tip="The profit you planned to make. Scoped revenue minus scoped cost. Your intended outcome before any work began." />
-      </SummarySection>
-
-      <SummarySection label="What's happened so far">
-        <ProfitRow
-          label="Actual revenue"
-          value={fmtUsd(actualRevenue)}
-          tip={isFixedFee
-            ? "For fixed-fee projects this stays at the agreed total regardless of hours logged."
-            : "What this project has actually earned so far — billable hours logged multiplied by your rate."}
-        />
-        <ProfitRow label="Actual cost" value={fmtUsd(actualCost)} tip="What this project has actually cost you so far — all hours logged, billable and non-billable, multiplied by your cost rate." />
-        <ProfitRow label="Actual margin" value={fmtUsd(actualMargin)} bold accent={actualMargin < 0 ? "danger" : "success"} tip="The profit you've made so far on this project. Actual revenue minus actual cost. If this is negative the project is currently costing more than it's earning." />
-      </SummarySection>
-
-      <SummarySection label="The difference">
-        <ProfitRow
-          label="Margin variance"
-          value={`${fmtUsd(marginVariance)} (${fmtPct(marginVariancePct)})`}
-          accent={marginVariance < 0 ? "danger" : "success"}
-          tip="The gap between what you planned to make and what you're actually making. Negative means underperforming the plan. Positive means doing better than expected."
+          label="Project fee"
+          value={fmtUsd(projectFee)}
+          bold
+          tip="The total this project is worth at the rate and scope agreed with your client. This is the ceiling — the most this project can ever earn at full efficiency."
         />
         <ProfitRow
-          label="Non-billable cost absorbed"
-          value={fmtUsd(nonBillableCostAbsorbed)}
-          accent="danger"
-          tip="The cost of hours you worked but didn't bill. Already reflected in your actual margin above. Shown here so it's always a visible, conscious decision rather than invisible erosion."
+          label="Billable hours budgeted"
+          value={formatHours(budgetedBillableHrs)}
+          tip="The billable hours scoped across all phases. This is how long the project was designed to take."
+        />
+        <ProfitRow
+          label="Implied value per hour"
+          value={`${fmtUsd(impliedValuePerHr)}/hr`}
+          tip="Project fee divided by budgeted hours. This is what each hour of your time is worth on this project. If you spend more hours than budgeted, the value per hour you actually earned drops."
         />
       </SummarySection>
 
-      {!hasRate && (
-        <p className="mt-3 text-xs text-ch/50">Set a project rate to see revenue and margin figures.</p>
+      {/* SECTION 2 — THE TIME PICTURE */}
+      <SummarySection label="How the time is tracking">
+        <ProfitRow label="Hours budgeted" value={formatHours(budgetedBillableHrs)} tip="The billable hours scoped across all phases." />
+        <ProfitRow
+          label="Hours used so far"
+          value={formatHours(actualHrs)}
+          accent={isOver ? "danger" : undefined}
+          tip="Total time logged on this project, billable and non-billable. Every hour comes out of your fee bucket."
+        />
+        <ProfitRow
+          label="Hours remaining"
+          value={isOver ? `−${formatHours(overHrs)}` : formatHours(hoursRemaining)}
+          accent={isOver ? "danger" : undefined}
+          tip="Budgeted hours minus hours used. When this hits zero, every additional hour erodes margin directly."
+        />
+      </SummarySection>
+
+      {/* Bucket bar */}
+      <div className="mt-3">
+        <div className="relative h-3 w-full overflow-hidden rounded-full border border-border bg-cream">
+          <div
+            className={cn("h-full transition-all", isOver ? "bg-terra" : "bg-gold")}
+            style={{ width: `${usedPct}%` }}
+          />
+          {isOver && (
+            <div
+              className="absolute top-0 right-0 h-full bg-terra/60 transition-all"
+              style={{ width: `${overPct}%` }}
+            />
+          )}
+        </div>
+        <div className="mt-1.5 flex items-center justify-between text-[11px] text-ch/50">
+          <span>{formatHours(actualHrs)} used</span>
+          <span>{formatHours(budgetedBillableHrs)} budget</span>
+        </div>
+      </div>
+
+      <SummarySection label="">
+        <ProfitRow
+          label="Fee consumed by time so far"
+          value={fmtUsd(feeConsumed)}
+          tip="Hours logged so far multiplied by your project rate. This is how much of your project fee has been used up in time. When this equals your project fee, the project stops being profitable."
+        />
+        <ProfitRow
+          label="Fee remaining"
+          value={fmtUsd(feeRemaining)}
+          bold
+          accent={feeRemaining < 0 ? "danger" : "success"}
+          tip="Project fee minus the cost of time logged so far. This is your remaining margin if no more hours are spent. Every additional hour reduces this."
+        />
+      </SummarySection>
+      <p className="mt-2 text-xs italic text-ch/50">{rateLabel}</p>
+
+      {/* SECTION 3 — IF NOTHING CHANGES */}
+      {showProjection && (
+        <SummarySection label="At your current pace">
+          <ProfitRow
+            label="Projected total hours"
+            value={formatHours(projectedHrs)}
+            tip="Based on your current pace across phases, this is the estimated final hour count. This is a projection — it updates as more time is logged."
+          />
+          <ProfitRow label="Projected fee consumed" value={fmtUsd(projectedFeeConsumed)} tip="Projected total hours multiplied by your project rate." />
+          <ProfitRow
+            label="Projected margin"
+            value={fmtUsd(projectedMargin)}
+            bold
+            accent={projMarginTone === "success" ? "success" : projMarginTone === "danger" ? "danger" : "gold"}
+            tip="Project fee minus projected fee consumed. What you'll keep if the project finishes at this pace."
+          />
+        </SummarySection>
+      )}
+
+      {/* SECTION 4 — THE BOTTOM LINE */}
+      <SummarySection label="The bottom line">
+        <ProfitRow label="Project fee" value={fmtUsd(projectFee)} tip="Total fee for this project." />
+        <ProfitRow label="Time cost to date" value={fmtUsd(timeCost)} tip="Hours logged so far multiplied by your project rate — the share of the fee already consumed." />
+        <ProfitRow
+          label="Margin to date"
+          value={fmtUsd(marginToDate)}
+          bold
+          accent={marginTone}
+          tip="Project fee minus time cost to date. What's left of the fee if no more hours are spent."
+        />
+        <ProfitRow label="Margin %" value={fmtPct(marginPct)} tip="Margin to date as a percent of the project fee." />
+        <ProfitRow
+          label="Non-billable time absorbed"
+          value={fmtUsd(nonBillableAbsorbed)}
+          accent={nonBillableAbsorbed > 0 ? "danger" : undefined}
+          tip="Time you logged as non-billable on this project. This time has a cost — it consumed hours that could have been spent on billable work. It's a choice, not an error. Showing it here makes it visible."
+        />
+      </SummarySection>
+
+      {!hasOwnerSalary && (
+        <p className="mt-3 text-xs text-ch/60">
+          No owner salary set. Time costs are calculated at your aligned rate ({fmtUsd(alignedRate)}/hr) — the rate your cost structure requires. This reflects the earning capacity consumed, not cash paid out.{" "}
+          <a href="/dashboard/rate" className="font-medium text-gold hover:text-goldl">Set owner compensation →</a>
+        </p>
+      )}
+
+      {isFixedFee && (
+        <p className="mt-3 text-xs text-ch/40">Fixed-fee project. Fee is the agreed total regardless of hours logged.</p>
       )}
     </div>
   );
