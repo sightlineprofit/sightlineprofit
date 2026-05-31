@@ -825,6 +825,7 @@ export type Database = {
           category: string | null
           common_failure_modes: string | null
           created_at: string
+          deleted_at: string | null
           department: string | null
           description: string | null
           done_when: string | null
@@ -840,6 +841,7 @@ export type Database = {
           category?: string | null
           common_failure_modes?: string | null
           created_at?: string
+          deleted_at?: string | null
           department?: string | null
           description?: string | null
           done_when?: string | null
@@ -855,6 +857,7 @@ export type Database = {
           category?: string | null
           common_failure_modes?: string | null
           created_at?: string
+          deleted_at?: string | null
           department?: string | null
           description?: string | null
           done_when?: string | null
@@ -1032,6 +1035,36 @@ export type Database = {
         }
         Update: {
           hidden_metrics?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_sop_preferences: {
+        Row: {
+          created_at: string
+          hidden: boolean
+          hidden_at: string | null
+          id: string
+          template_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          hidden?: boolean
+          hidden_at?: string | null
+          id?: string
+          template_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          hidden?: boolean
+          hidden_at?: string | null
+          id?: string
+          template_id?: string
           updated_at?: string
           user_id?: string
         }
