@@ -33,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 
-type Status = "active" | "pipeline" | "completed" | "on_hold";
+type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
 export const Route = createFileRoute("/_authenticated/sightline")({
   head: () => ({ meta: [{ title: "Sightline — Project Profitability" }] }),
@@ -171,6 +171,9 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
             <SelectItem value="all">All projects</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="pipeline">Pipeline</SelectItem>
+            <SelectItem value="pursuit">Pursuit (BD)</SelectItem>
+            <SelectItem value="invoiced">Invoiced</SelectItem>
+            <SelectItem value="collected">Collected</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="on_hold">On hold</SelectItem>
           </SelectContent>
@@ -611,6 +614,9 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="pipeline">Pipeline</SelectItem>
+              <SelectItem value="pursuit">Pursuit (BD)</SelectItem>
+              <SelectItem value="invoiced">Invoiced</SelectItem>
+              <SelectItem value="collected">Collected</SelectItem>
               <SelectItem value="completed">Completed</SelectItem>
               <SelectItem value="on_hold">On hold</SelectItem>
             </SelectContent>
