@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle, Lock } from "lucide-react";
+import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle, MoreHorizontal, EyeOff, Eye, Copy as CopyIcon, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { ModulePage } from "@/components/shell/ModulePage";
@@ -13,6 +13,10 @@ import {
   saveSopTemplate,
   deleteSopTemplate,
   attachTemplateToProject,
+  setSopHidden,
+  unhideAllSops,
+  duplicateSopTemplate,
+  getTemplateUsage,
 } from "@/lib/sop.functions";
 import { fmtUsd, formatHours } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
@@ -26,6 +30,14 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
+} from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 type Risk = "low" | "medium" | "high";
@@ -52,6 +64,7 @@ type TemplateDraft = {
   scope_risk_level: Risk;
   common_failure_modes: string;
   phases: Phase[];
+  is_default?: boolean;
 };
 
 const emptyDraft = (): TemplateDraft => ({
@@ -65,6 +78,7 @@ const emptyDraft = (): TemplateDraft => ({
   scope_risk_level: "low",
   common_failure_modes: "",
   phases: [],
+  is_default: false,
 });
 
 const RISK_STYLE: Record<Risk, string> = {
@@ -72,6 +86,9 @@ const RISK_STYLE: Record<Risk, string> = {
   medium: "bg-goldl/15 text-gold border-gold/30",
   high: "bg-terra/10 text-terra border-terra/30",
 };
+
+type StatusFilter = "all" | "default" | "custom" | "hidden";
+type SortKey = "recent" | "name" | "hours" | "created";
 
 export const Route = createFileRoute("/_authenticated/sop-library")({
   head: () => ({ meta: [{ title: "SOP Library — Sightline" }] }),
@@ -112,12 +129,24 @@ function Library() {
   const saveFn = useServerFn(saveSopTemplate);
   const delFn = useServerFn(deleteSopTemplate);
   const attachFn = useServerFn(attachTemplateToProject);
+  const hideFn = useServerFn(setSopHidden);
+  const unhideAllFn = useServerFn(unhideAllSops);
+  const duplicateFn = useServerFn(duplicateSopTemplate);
 
   const { data, isLoading } = useQuery({ queryKey: ["sop-library"], queryFn: () => getLib() });
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<"all" | Risk>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [editing, setEditing] = useState<TemplateDraft | null>(null);
   const [attachFor, setAttachFor] = useState<{ id: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; uses: number; activeUses: number } | null>(null);
+  const [usageFor, setUsageFor] = useState<{ id: string; name: string } | null>(null);
+
+  const role = (data?.role ?? "team") as string;
+  const canManage = role === "principal" || role === "admin";
+  const hiddenSet = useMemo(() => new Set(data?.hiddenIds ?? []), [data?.hiddenIds]);
 
   const saveMut = useMutation({
     mutationFn: (d: TemplateDraft) =>
@@ -137,24 +166,30 @@ function Library() {
             id: p.id, name: p.name, expected_hrs: Number(p.expected_hrs) || 0,
             billable: p.billable, description: p.description, time_benchmark_notes: p.time_benchmark_notes,
             sort_order: i,
-            steps: p.steps.map((s, j) => ({ id: s.id, description: s.description, sort_order: j })),
+            steps: p.steps.map((s, j) => ({ id: s.id, description: s.description, estimated_hrs: Number(s.estimated_hrs) || 0, sort_order: j })),
           })),
         },
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
       setEditing(null);
+      toast.success("Template saved");
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
   });
 
   const delMut = useMutation({
     mutationFn: (id: string) => delFn({ data: { id } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sop-library"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      toast.success("Template deleted");
+      setDeleteTarget(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
   const attachMut = useMutation({
-    mutationFn: (v: { template_id: string; project_id: string }) =>
-      attachFn({ data: v }),
+    mutationFn: (v: { template_id: string; project_id: string }) => attachFn({ data: v }),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
       qc.invalidateQueries({ queryKey: ["sightline-list"] });
@@ -162,9 +197,36 @@ function Library() {
       setAttachFor(null);
       toast.success("Template attached to project");
     },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Failed to attach");
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to attach"),
+  });
+
+  const hideMut = useMutation({
+    mutationFn: (v: { template_id: string; hidden: boolean }) => hideFn({ data: v }),
+    onSuccess: (_r, v) => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      toast.success(v.hidden ? "Hidden from your library" : "Restored to your library");
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
+  const unhideAllMut = useMutation({
+    mutationFn: () => unhideAllFn(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      toast.success("All templates restored");
+    },
+  });
+
+  const duplicateMut = useMutation({
+    mutationFn: (id: string) => duplicateFn({ data: { id } }),
+    onSuccess: async (res: { id: string }) => {
+      await qc.invalidateQueries({ queryKey: ["sop-library"] });
+      const fresh = await getLib();
+      const tpl = fresh.templates.find((t: { id: string }) => t.id === res.id);
+      if (tpl) openEditFromTemplate(tpl, fresh);
+      toast.success("Template duplicated. Customize your copy below.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Duplicate failed"),
   });
 
   const backfillFn = useServerFn(backfillStarterSops);
@@ -172,22 +234,81 @@ function Library() {
     mutationFn: () => backfillFn(),
     onSuccess: (res: { inserted: number; skipped: number }) => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
-      toast.success(
-        `Starter templates restored — ${res.inserted} added, ${res.skipped} already existed`,
-      );
+      toast.success(`Starter templates restored — ${res.inserted} added, ${res.skipped} already existed`);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Backfill failed"),
   });
 
+  function openEditFromTemplate(tpl: { id: string; name: string; category: string | null; department: string | null; description: string | null; tags: string[] | null; triggered_by: string | null; done_when: string | null; scope_risk_level: string | null; common_failure_modes: string | null; is_default?: boolean }, libData = data) {
+    if (!libData) return;
+    const phs = libData.phases
+      .filter((p) => p.template_id === tpl.id)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((p): Phase => ({
+        id: p.id, name: p.name, expected_hrs: Number(p.expected_hrs),
+        billable: p.billable, description: p.description,
+        time_benchmark_notes: p.time_benchmark_notes, sort_order: p.sort_order,
+        steps: libData.steps
+          .filter((s) => s.phase_id === p.id)
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((s) => ({
+            id: s.id,
+            description: s.description,
+            estimated_hrs: Number((s as { estimated_hrs?: number }).estimated_hrs) || 0,
+            sort_order: s.sort_order,
+          })),
+      }));
+    setEditing({
+      id: tpl.id, name: tpl.name, category: tpl.category ?? "",
+      department: tpl.department ?? "", description: tpl.description ?? "",
+      tags: tpl.tags ?? [], triggered_by: tpl.triggered_by ?? "",
+      done_when: tpl.done_when ?? "", scope_risk_level: (tpl.scope_risk_level ?? "low") as Risk,
+      common_failure_modes: tpl.common_failure_modes ?? "", phases: phs,
+      is_default: !!tpl.is_default,
+    });
+  }
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of data?.templates ?? []) if (t.category) set.add(t.category);
+    return Array.from(set).sort();
+  }, [data?.templates]);
+
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    return data.templates.filter((t) => {
+    const usage = data.usageCounts ?? {};
+    const last = data.lastUsed ?? {};
+    const arr = data.templates.filter((t) => {
+      const isHidden = hiddenSet.has(t.id);
+      if (statusFilter === "hidden" && !isHidden) return false;
+      if (statusFilter !== "hidden" && isHidden) return false;
+      if (statusFilter === "default" && !(t as { is_default?: boolean }).is_default) return false;
+      if (statusFilter === "custom" && (t as { is_default?: boolean }).is_default) return false;
       if (riskFilter !== "all" && t.scope_risk_level !== riskFilter) return false;
-      if (!q) return true;
-      return [t.name, t.category, t.department].filter(Boolean).some((v) => v!.toLowerCase().includes(q));
+      if (categoryFilter !== "all" && t.category !== categoryFilter) return false;
+      if (q && ![t.name, t.category, t.department].filter(Boolean).some((v) => v!.toLowerCase().includes(q))) return false;
+      return true;
     });
-  }, [data, search, riskFilter]);
+    arr.sort((a, b) => {
+      if (sortBy === "name") return a.name.localeCompare(b.name);
+      if (sortBy === "hours") {
+        const ah = (data.phases ?? []).filter((p) => p.template_id === a.id).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
+        const bh = (data.phases ?? []).filter((p) => p.template_id === b.id).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
+        return bh - ah;
+      }
+      if (sortBy === "created") return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+      // recent
+      const al = last[a.id] ?? "";
+      const bl = last[b.id] ?? "";
+      if (al || bl) return bl.localeCompare(al);
+      void usage;
+      return 0;
+    });
+    return arr;
+  }, [data, search, riskFilter, statusFilter, categoryFilter, sortBy, hiddenSet, sortBy]);
+
+  const hiddenCount = hiddenSet.size;
 
   if (editing) {
     return (
@@ -196,8 +317,12 @@ function Library() {
         onChange={setEditing}
         onSave={() => saveMut.mutate(editing)}
         onCancel={() => setEditing(null)}
+        onDuplicateInstead={editing.id ? () => duplicateMut.mutate(editing.id!) : undefined}
         saving={saveMut.isPending}
         config={data?.config ?? null}
+        usageCount={editing.id ? (data?.usageCounts?.[editing.id] ?? 0) : 0}
+        activeUsageCount={editing.id ? (data?.activeUsageCounts?.[editing.id] ?? 0) : 0}
+        onShowUsage={editing.id ? () => setUsageFor({ id: editing.id!, name: editing.name }) : undefined}
       />
     );
   }
@@ -208,18 +333,20 @@ function Library() {
       title="SOP Library"
       description="The way your studio works — codified, priced, and reusable."
       actions={
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => backfillMut.mutate()}
-            disabled={backfillMut.isPending}
-          >
-            {backfillMut.isPending ? "Restoring…" : "Restore starter templates"}
-          </Button>
-          <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
-            <Plus className="mr-2 h-4 w-4" /> New template
-          </Button>
-        </div>
+        canManage ? (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => backfillMut.mutate()}
+              disabled={backfillMut.isPending}
+            >
+              {backfillMut.isPending ? "Restoring…" : "Restore starter templates"}
+            </Button>
+            <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
+              <Plus className="mr-2 h-4 w-4" /> New template
+            </Button>
+          </div>
+        ) : null
       }
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -232,28 +359,69 @@ function Library() {
             className="pl-9 bg-white"
           />
         </div>
-        <Select value={riskFilter} onValueChange={(v) => setRiskFilter(v as typeof riskFilter)}>
-          <SelectTrigger className="w-44 bg-white"><SelectValue /></SelectTrigger>
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+          <SelectTrigger className="w-36 bg-white"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All risk levels</SelectItem>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="default">Starter</SelectItem>
+            <SelectItem value="custom">Custom</SelectItem>
+            <SelectItem value="hidden">Hidden{hiddenCount > 0 ? ` (${hiddenCount})` : ""}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={riskFilter} onValueChange={(v) => setRiskFilter(v as typeof riskFilter)}>
+          <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All risk</SelectItem>
             <SelectItem value="low">Low risk</SelectItem>
             <SelectItem value="medium">Medium risk</SelectItem>
             <SelectItem value="high">High risk</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
+          <SelectTrigger className="w-44 bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="recent">Recently used</SelectItem>
+            <SelectItem value="name">Name</SelectItem>
+            <SelectItem value="hours">Hours</SelectItem>
+            <SelectItem value="created">Date created</SelectItem>
+          </SelectContent>
+        </Select>
+        {hiddenCount > 0 && statusFilter !== "hidden" && (
+          <button
+            type="button"
+            className="text-xs text-ch/60 underline-offset-2 hover:text-ch hover:underline"
+            onClick={() => unhideAllMut.mutate()}
+            disabled={unhideAllMut.isPending}
+          >
+            {hiddenCount} hidden · Show all
+          </button>
+        )}
       </div>
 
       {isLoading ? (
         <p className="text-ch/50">Loading library…</p>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-white/60 p-12 text-center">
-          <p className="font-display text-2xl italic text-ch/60">No templates yet</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
-            Templates capture how a workflow actually runs — phases, hours, scope language.
+          <p className="font-display text-2xl italic text-ch/60">
+            {statusFilter === "hidden" ? "No hidden templates" : "No templates match"}
           </p>
-          <Button onClick={() => setEditing(emptyDraft())} className="mt-4 bg-gold hover:bg-goldl">
-            Create your first template
-          </Button>
+          <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
+            {statusFilter === "hidden"
+              ? "Templates you hide from your personal view will show up here."
+              : "Adjust filters, or create a new template to capture how a workflow runs."}
+          </p>
+          {canManage && statusFilter !== "hidden" && (
+            <Button onClick={() => setEditing(emptyDraft())} className="mt-4 bg-gold hover:bg-goldl">
+              Create a template
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -262,18 +430,30 @@ function Library() {
             const scoped = phases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
             const scopedLabel = formatHours(scoped).replace(" hrs", "");
             const lastUsed = data!.lastUsed[tpl.id];
+            const isDefault = !!(tpl as { is_default?: boolean }).is_default;
+            const isHidden = hiddenSet.has(tpl.id);
+            const uses = data!.usageCounts?.[tpl.id] ?? 0;
+            const activeUses = data!.activeUsageCounts?.[tpl.id] ?? 0;
             return (
               <div
                 key={tpl.id}
-                className="group flex flex-col rounded-lg border border-border bg-white p-5 transition-shadow hover:shadow-md"
+                className={cn(
+                  "group flex flex-col rounded-lg border border-border bg-white p-5 transition-shadow hover:shadow-md",
+                  isHidden && "opacity-70",
+                )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="font-display text-xl tracking-tight text-ch">{tpl.name}</h3>
-                      {(tpl as { is_default?: boolean }).is_default && (
+                      {isDefault && (
                         <span className="shrink-0 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-gold">
                           Starter
+                        </span>
+                      )}
+                      {isHidden && (
+                        <span className="shrink-0 rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-ch/60">
+                          Hidden
                         </span>
                       )}
                     </div>
@@ -281,14 +461,55 @@ function Library() {
                       {tpl.category || "Uncategorized"}
                     </p>
                   </div>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]",
-                      RISK_STYLE[(tpl.scope_risk_level ?? "low") as Risk],
-                    )}
-                  >
-                    {tpl.scope_risk_level ?? "low"}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]",
+                        RISK_STYLE[(tpl.scope_risk_level ?? "low") as Risk],
+                      )}
+                    >
+                      {tpl.scope_risk_level ?? "low"}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-ch/50 hover:text-ch">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        {canManage && (
+                          <DropdownMenuItem onClick={() => openEditFromTemplate(tpl)}>
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </DropdownMenuItem>
+                        )}
+                        {canManage && (
+                          <DropdownMenuItem onClick={() => duplicateMut.mutate(tpl.id)}>
+                            <CopyIcon className="h-3.5 w-3.5" /> Duplicate
+                          </DropdownMenuItem>
+                        )}
+                        {isHidden ? (
+                          <DropdownMenuItem onClick={() => hideMut.mutate({ template_id: tpl.id, hidden: false })}>
+                            <Eye className="h-3.5 w-3.5" /> Unhide
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => hideMut.mutate({ template_id: tpl.id, hidden: true })}>
+                            <EyeOff className="h-3.5 w-3.5" /> Hide from view
+                          </DropdownMenuItem>
+                        )}
+                        {canManage && !isDefault && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => setDeleteTarget({ id: tpl.id, name: tpl.name, uses, activeUses })}
+                              className="text-terra focus:text-terra"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" /> Delete
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
                 {tpl.description && (
                   <p className="mt-3 line-clamp-2 text-sm text-ch/70">{tpl.description}</p>
@@ -302,43 +523,39 @@ function Library() {
                     <div className="font-display text-2xl text-ch">{scopedLabel}</div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Scoped hrs</div>
                   </div>
-                  <div className="ml-auto text-right text-[11px] text-ch/50">
-                    {lastUsed ? `Last used ${new Date(lastUsed).toLocaleDateString()}` : "Never used"}
+                  <div className="ml-auto text-right">
+                    <button
+                      type="button"
+                      className={cn(
+                        "text-[11px] text-ch/60 hover:text-ch",
+                        uses > 0 && "underline-offset-2 hover:underline",
+                      )}
+                      onClick={() => uses > 0 && setUsageFor({ id: tpl.id, name: tpl.name })}
+                      disabled={uses === 0}
+                    >
+                      {uses === 0
+                        ? "Never used"
+                        : activeUses === uses && uses === 1
+                          ? "Used on 1 active project"
+                          : `Used on ${uses} project${uses === 1 ? "" : "s"}`}
+                    </button>
+                    {lastUsed && (
+                      <div className="text-[10px] text-ch/40">
+                        Last {new Date(lastUsed).toLocaleDateString()}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="mt-4 flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 border-border"
-                    onClick={() => {
-                      const phs = data!.phases
-                        .filter((p) => p.template_id === tpl.id)
-                        .sort((a, b) => a.sort_order - b.sort_order)
-                        .map((p): Phase => ({
-                          id: p.id, name: p.name, expected_hrs: Number(p.expected_hrs),
-                          billable: p.billable, description: p.description,
-                          time_benchmark_notes: p.time_benchmark_notes, sort_order: p.sort_order,
-                          steps: data!.steps
-                            .filter((s) => s.phase_id === p.id)
-                            .sort((a, b) => a.sort_order - b.sort_order)
-                            .map((s) => ({
-                              id: s.id,
-                              description: s.description,
-                              estimated_hrs: Number((s as { estimated_hrs?: number }).estimated_hrs) || 0,
-                              sort_order: s.sort_order,
-                            })),
-                        }));
-                      setEditing({
-                        id: tpl.id, name: tpl.name, category: tpl.category ?? "",
-                        department: tpl.department ?? "", description: tpl.description ?? "",
-                        tags: tpl.tags ?? [], triggered_by: tpl.triggered_by ?? "",
-                        done_when: tpl.done_when ?? "", scope_risk_level: (tpl.scope_risk_level ?? "low") as Risk,
-                        common_failure_modes: tpl.common_failure_modes ?? "", phases: phs,
-                      });
-                    }}
-                  >
-                    Edit
-                  </Button>
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-border"
+                      onClick={() => openEditFromTemplate(tpl)}
+                    >
+                      Edit
+                    </Button>
+                  )}
                   <Button
                     className="flex-1 bg-ch text-white hover:bg-ch/85"
                     onClick={() => setAttachFor({ id: tpl.id, name: tpl.name })}
@@ -369,8 +586,81 @@ function Library() {
         </DialogContent>
       </Dialog>
 
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteTarget?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && deleteTarget.uses === 0 && (
+                <>This template has not been used on any projects. Deleting it is permanent and cannot be undone.</>
+              )}
+              {deleteTarget && deleteTarget.uses > 0 && deleteTarget.activeUses === 0 && (
+                <>
+                  This template has been used on {deleteTarget.uses} project{deleteTarget.uses === 1 ? "" : "s"}. Deleting the template does not affect those projects — their phases are snapshots and will remain intact. Deleting the template is permanent and cannot be undone.
+                </>
+              )}
+              {deleteTarget && deleteTarget.activeUses > 0 && (
+                <>
+                  This template is attached to {deleteTarget.activeUses} active project{deleteTarget.activeUses === 1 ? "" : "s"}. You can still delete it — the active projects will keep their phases. However you will no longer be able to attach this template to new projects.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && delMut.mutate(deleteTarget.id)}
+              className="bg-terra text-white hover:bg-terra/85"
+            >
+              Confirm delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <UsageSheet target={usageFor} onClose={() => setUsageFor(null)} />
+
       {delMut.isPending && <div className="sr-only">Deleting…</div>}
     </ModulePage>
+  );
+}
+
+function UsageSheet({ target, onClose }: { target: { id: string; name: string } | null; onClose: () => void }) {
+  const fn = useServerFn(getTemplateUsage);
+  const { data, isLoading } = useQuery({
+    queryKey: ["sop-usage", target?.id],
+    queryFn: () => fn({ data: { template_id: target!.id } }),
+    enabled: !!target,
+  });
+  return (
+    <Sheet open={!!target} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle className="font-display text-2xl">{target?.name}</SheetTitle>
+          <SheetDescription>Projects using this template</SheetDescription>
+        </SheetHeader>
+        <div className="mt-6 space-y-2">
+          {isLoading && <p className="text-sm text-ch/50">Loading…</p>}
+          {data && data.projects.length === 0 && <p className="text-sm text-ch/50">Not attached to any projects.</p>}
+          {data?.projects.map((p) => (
+            <div key={p.id} className="rounded-md border border-border bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-ch">{p.name}</div>
+                  {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
+                </div>
+                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
+                  {p.status}
+                </span>
+              </div>
+              <div className="mt-1 text-[11px] text-ch/40">
+                Attached {new Date(p.created_at).toLocaleDateString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -468,20 +758,23 @@ function AttachProjectPicker({
 }
 
 function TemplateEditor({
-  draft, onChange, onSave, onCancel, saving, config,
+  draft, onChange, onSave, onCancel, onDuplicateInstead, saving, config, usageCount, activeUsageCount, onShowUsage,
 }: {
   draft: TemplateDraft;
   onChange: (d: TemplateDraft) => void;
   onSave: () => void;
   onCancel: () => void;
+  onDuplicateInstead?: () => void;
   saving: boolean;
   config: { rate_billed: number | null; comp_draw_annual: number | null } | null;
+  usageCount: number;
+  activeUsageCount: number;
+  onShowUsage?: () => void;
 }) {
-  // Derive a per-hour cost from firm_config (simplified): break-even ≈ comp+opex / billable hrs.
-  // We use rate_billed if set, else a fallback for phase-level financials.
   const billedRate = Number(config?.rate_billed) || 0;
-  // Simple cost proxy: 60% of billed rate as cost-floor approximation
   const costPerHour = billedRate > 0 ? billedRate * 0.6 : 0;
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [phaseDeleteIdx, setPhaseDeleteIdx] = useState<number | null>(null);
 
   function setPhases(updater: (phs: Phase[]) => Phase[]) {
     onChange({ ...draft, phases: updater(draft.phases) });
@@ -516,6 +809,31 @@ function TemplateEditor({
         <ArrowLeft className="h-4 w-4" /> Back to library
       </button>
 
+      {draft.is_default && draft.id && !bannerDismissed && (
+        <div className="mb-6 rounded-lg border border-gold/40 bg-goldp/40 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+            <div className="flex-1 text-sm text-ch/85">
+              <p className="font-medium text-ch">You're editing a default Sightline template.</p>
+              <p className="mt-1">
+                Changes apply to this template for your firm. This does not affect other firms. Projects already using this template are not affected — they use a snapshot.
+              </p>
+              <p className="mt-1 text-ch/70">Want to keep the original? Duplicate first.</p>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setBannerDismissed(true)}>
+                  Continue editing
+                </Button>
+                {onDuplicateInstead && (
+                  <Button size="sm" className="bg-gold hover:bg-goldl" onClick={onDuplicateInstead}>
+                    Duplicate instead
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
         <div>
           <p className="text-[11px] uppercase tracking-[0.25em] text-gold">
@@ -524,6 +842,20 @@ function TemplateEditor({
           <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">
             {draft.name || "Untitled template"}
           </h1>
+          {draft.id && (
+            <button
+              type="button"
+              onClick={() => usageCount > 0 && onShowUsage?.()}
+              disabled={usageCount === 0}
+              className={cn("mt-1 text-xs text-ch/60", usageCount > 0 && "hover:text-ch hover:underline underline-offset-2")}
+            >
+              {usageCount === 0
+                ? "Never used"
+                : activeUsageCount === usageCount && usageCount === 1
+                  ? "Used on 1 active project"
+                  : `Used on ${usageCount} project${usageCount === 1 ? "" : "s"}`}
+            </button>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={onCancel} className="border-border">Cancel</Button>
@@ -603,7 +935,7 @@ function TemplateEditor({
             billedRate={billedRate}
             costPerHour={costPerHour}
             onChange={(next) => setPhases((phs) => phs.map((p, idx) => (idx === i ? next : p)))}
-            onRemove={() => setPhases((phs) => phs.filter((_, idx) => idx !== i))}
+            onRemove={() => setPhaseDeleteIdx(i)}
             onUp={() => movePhase(i, -1)}
             onDown={() => movePhase(i, 1)}
           />
@@ -621,6 +953,34 @@ function TemplateEditor({
           Set your billed rate in Rate & Cost Architecture to see live cost / revenue / margin per phase.
         </div>
       )}
+
+      <AlertDialog open={phaseDeleteIdx !== null} onOpenChange={(o) => !o && setPhaseDeleteIdx(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {phaseDeleteIdx !== null ? draft.phases[phaseDeleteIdx]?.name || "this phase" : "this phase"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the phase and all its steps from this template. Projects already using this template are not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-terra text-white hover:bg-terra/85"
+              onClick={() => {
+                if (phaseDeleteIdx !== null) {
+                  const idx = phaseDeleteIdx;
+                  setPhases((phs) => phs.filter((_, i) => i !== idx));
+                }
+                setPhaseDeleteIdx(null);
+              }}
+            >
+              Delete phase
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

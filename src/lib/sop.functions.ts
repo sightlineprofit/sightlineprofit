@@ -44,16 +44,19 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) {
-      return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {} };
+      return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {}, usageCounts: {}, activeUsageCounts: {}, hiddenIds: [], role: profile?.role ?? "team" };
     }
-    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }] = await Promise.all([
-      supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }),
+    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }, { data: prefs }] = await Promise.all([
+      supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).is("deleted_at", null).order("created_at", { ascending: false }),
       supabase.from("sop_phases").select("*").eq("firm_id", profile.firm_id).order("sort_order"),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
       supabase.from("projects")
         .select("id, name, client_name, status, sop_template_id, created_at")
         .eq("firm_id", profile.firm_id)
         .order("created_at", { ascending: false }),
+      (supabase.from("user_sop_preferences" as never) as never as { select: (s: string) => { eq: (k: string, v: string) => Promise<{ data: Array<{ template_id: string; hidden: boolean }> | null }> } })
+        .select("template_id, hidden")
+        .eq("user_id", userId),
     ]);
     const projects = projectsRaw ?? [];
     const phaseIds = (phases ?? []).map((p) => p.id);
@@ -62,11 +65,19 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       : { data: [] as never[] };
 
     const lastUsed: Record<string, string> = {};
+    const usageCounts: Record<string, number> = {};
+    const activeUsageCounts: Record<string, number> = {};
     for (const p of projects) {
-      if (p.sop_template_id && (!lastUsed[p.sop_template_id] || p.created_at > lastUsed[p.sop_template_id])) {
+      if (!p.sop_template_id) continue;
+      usageCounts[p.sop_template_id] = (usageCounts[p.sop_template_id] ?? 0) + 1;
+      if (p.status === "active") {
+        activeUsageCounts[p.sop_template_id] = (activeUsageCounts[p.sop_template_id] ?? 0) + 1;
+      }
+      if (!lastUsed[p.sop_template_id] || p.created_at > lastUsed[p.sop_template_id]) {
         lastUsed[p.sop_template_id] = p.created_at;
       }
     }
+    const hiddenIds = (prefs ?? []).filter((p) => p.hidden).map((p) => p.template_id);
     return {
       templates: templates ?? [],
       phases: phases ?? [],
@@ -74,6 +85,10 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       projects: projects.map((p) => ({ id: p.id, name: p.name, client_name: p.client_name, status: p.status })),
       config,
       lastUsed,
+      usageCounts,
+      activeUsageCounts,
+      hiddenIds,
+      role: profile.role as string,
     };
   });
 
@@ -158,16 +173,157 @@ export const deleteSopTemplate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const { data: phases } = await supabase.from("sop_phases").select("id").eq("template_id", data.id);
-    const ids = (phases ?? []).map((p) => p.id);
-    if (ids.length) {
-      await supabase.from("sop_steps").delete().in("phase_id", ids);
-      await supabase.from("sop_phases").delete().in("id", ids);
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("firm_id, role").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
+    const { data: tpl } = await supabase
+      .from("sop_templates")
+      .select("id, is_default, firm_id")
+      .eq("id", data.id)
+      .single();
+    if (!tpl || tpl.firm_id !== profile.firm_id) throw new Error("Template not found");
+    if ((tpl as { is_default?: boolean }).is_default) {
+      throw new Error(
+        "Default templates cannot be deleted. You can hide this template if it doesn't apply to your practice, or duplicate it to create your own version.",
+      );
     }
-    const { error } = await supabase.from("sop_templates").delete().eq("id", data.id);
+    // Soft delete — preserves any snapshotted project_phases referencing this template.
+    const { error } = await supabase
+      .from("sop_templates")
+      .update({ deleted_at: new Date().toISOString() } as never)
+      .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const setSopHidden = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ template_id: z.string().uuid(), hidden: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const tbl = supabase.from("user_sop_preferences" as never) as never as {
+      upsert: (row: Record<string, unknown>, opts: { onConflict: string }) => Promise<{ error: { message: string } | null }>;
+    };
+    const { error } = await tbl.upsert(
+      {
+        user_id: userId,
+        template_id: data.template_id,
+        hidden: data.hidden,
+        hidden_at: data.hidden ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,template_id" },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const unhideAllSops = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const tbl = supabase.from("user_sop_preferences" as never) as never as {
+      update: (row: Record<string, unknown>) => { eq: (k: string, v: string) => Promise<{ error: { message: string } | null }> };
+    };
+    const { error } = await tbl
+      .update({ hidden: false, hidden_at: null, updated_at: new Date().toISOString() })
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const duplicateSopTemplate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("firm_id, role").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
+    const { data: tpl } = await supabase
+      .from("sop_templates")
+      .select("*")
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id)
+      .single();
+    if (!tpl) throw new Error("Template not found");
+    const { data: ins, error } = await supabase
+      .from("sop_templates")
+      .insert({
+        firm_id: profile.firm_id,
+        name: `${tpl.name} (copy)`,
+        category: tpl.category,
+        department: tpl.department,
+        description: tpl.description,
+        tags: tpl.tags,
+        triggered_by: tpl.triggered_by,
+        done_when: tpl.done_when,
+        scope_risk_level: tpl.scope_risk_level,
+        common_failure_modes: tpl.common_failure_modes,
+        is_default: false,
+      } as never)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    const newId = (ins as { id: string }).id;
+
+    const { data: phases } = await supabase
+      .from("sop_phases")
+      .select("*")
+      .eq("template_id", data.id)
+      .order("sort_order");
+    for (const ph of phases ?? []) {
+      const { data: pIns, error: pErr } = await supabase
+        .from("sop_phases")
+        .insert({
+          firm_id: profile.firm_id,
+          template_id: newId,
+          name: ph.name,
+          expected_hrs: ph.expected_hrs,
+          billable: ph.billable,
+          description: ph.description,
+          time_benchmark_notes: ph.time_benchmark_notes,
+          sort_order: ph.sort_order,
+        })
+        .select("id")
+        .single();
+      if (pErr) throw new Error(pErr.message);
+      const { data: stepsSrc } = await supabase
+        .from("sop_steps")
+        .select("*")
+        .eq("phase_id", ph.id)
+        .order("sort_order");
+      if (stepsSrc?.length) {
+        await supabase.from("sop_steps").insert(
+          stepsSrc.map((s) => ({
+            phase_id: (pIns as { id: string }).id,
+            description: s.description,
+            estimated_hrs: (s as { estimated_hrs?: number }).estimated_hrs ?? 0,
+            sort_order: s.sort_order,
+          })),
+        );
+      }
+    }
+    return { id: newId };
+  });
+
+export const getTemplateUsage = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ template_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) return { projects: [] };
+    const { data: projects } = await supabase
+      .from("projects")
+      .select("id, name, client_name, status, created_at")
+      .eq("firm_id", profile.firm_id)
+      .eq("sop_template_id", data.template_id)
+      .order("created_at", { ascending: false });
+    return { projects: projects ?? [] };
   });
 
 const attachSchema = z.object({
