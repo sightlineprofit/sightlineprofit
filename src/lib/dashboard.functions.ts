@@ -12,26 +12,70 @@ export const getDashboardData = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) {
-      return { profile, firm: null, config: null, expenses: [], scenarios: [], prefs: { hidden_metrics: [] as string[] }, weekHours: 0 };
+      return {
+        profile,
+        firm: null,
+        config: null,
+        expenses: [],
+        scenarios: [],
+        prefs: { hidden_metrics: [] as string[] },
+        weekHours: 0,
+        bdWeekHours: 0,
+        committedRevenue: 0,
+        collectedRevenue: 0,
+      };
     }
     const startOfWeek = new Date();
     startOfWeek.setHours(0, 0, 0, 0);
     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
     const isoWeek = startOfWeek.toISOString().slice(0, 10);
 
-    const [{ data: firm }, { data: config }, { data: expenses }, { data: scenarios }, { data: prefs }, { data: weekEntries }] = await Promise.all([
+    const [{ data: firm }, { data: config }, { data: expenses }, { data: scenarios }, { data: prefs }, { data: weekEntries }, { data: projects }] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
       supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
       supabase.from("scenarios").select("id, name, payload, created_at").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }).limit(5),
       supabase.from("user_metric_prefs").select("hidden_metrics").eq("user_id", userId).maybeSingle(),
-      supabase.from("time_entries").select("hrs, billable").eq("firm_id", profile.firm_id).gte("date", isoWeek),
+      supabase
+        .from("time_entries")
+        .select("hrs, billable, project_id, projects(status)")
+        .eq("firm_id", profile.firm_id)
+        .gte("date", isoWeek),
+      supabase
+        .from("projects")
+        .select("id, status, scoped_hrs, scoped_rate, fixed_fee")
+        .eq("firm_id", profile.firm_id),
     ]);
-    const weekHours = (weekEntries ?? []).filter((t) => t.billable).reduce((s, t) => s + Number(t.hrs || 0), 0);
+
+    const isBD = (status: string | null | undefined) =>
+      status === "pursuit" || status === "pipeline";
+    const weekHours = (weekEntries ?? [])
+      .filter((t: any) => t.billable && !isBD(t.projects?.status))
+      .reduce((s, t: any) => s + Number(t.hrs || 0), 0);
+    const bdWeekHours = (weekEntries ?? [])
+      .filter((t: any) => isBD(t.projects?.status))
+      .reduce((s, t: any) => s + Number(t.hrs || 0), 0);
+
+    const projectRevenue = (p: any): number => {
+      const fee = Number(p.fixed_fee || 0);
+      if (fee > 0) return fee;
+      return Number(p.scoped_hrs || 0) * Number(p.scoped_rate || 0);
+    };
+    let committedRevenue = 0;
+    let collectedRevenue = 0;
+    for (const p of projects ?? []) {
+      const r = projectRevenue(p);
+      if (p.status === "active" || p.status === "invoiced") committedRevenue += r;
+      if (p.status === "collected") collectedRevenue += r;
+    }
+
     return {
       profile, firm, config, expenses: expenses ?? [], scenarios: scenarios ?? [],
       prefs: { hidden_metrics: prefs?.hidden_metrics ?? [] },
       weekHours,
+      bdWeekHours,
+      committedRevenue,
+      collectedRevenue,
     };
   });
 
