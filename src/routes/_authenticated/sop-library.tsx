@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
-import { getMyContext } from "@/lib/firm.functions";
+import { getMyContext, backfillStarterSops } from "@/lib/firm.functions";
 import {
   getSopLibrary,
   saveSopTemplate,
@@ -167,6 +167,18 @@ function Library() {
     },
   });
 
+  const backfillFn = useServerFn(backfillStarterSops);
+  const backfillMut = useMutation({
+    mutationFn: () => backfillFn(),
+    onSuccess: (res: { inserted: number; skipped: number }) => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      toast.success(
+        `Starter templates restored — ${res.inserted} added, ${res.skipped} already existed`,
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Backfill failed"),
+  });
+
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
@@ -196,9 +208,18 @@ function Library() {
       title="SOP Library"
       description="The way your studio works — codified, priced, and reusable."
       actions={
-        <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
-          <Plus className="mr-2 h-4 w-4" /> New template
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => backfillMut.mutate()}
+            disabled={backfillMut.isPending}
+          >
+            {backfillMut.isPending ? "Restoring…" : "Restore starter templates"}
+          </Button>
+          <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
+            <Plus className="mr-2 h-4 w-4" /> New template
+          </Button>
+        </div>
       }
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">

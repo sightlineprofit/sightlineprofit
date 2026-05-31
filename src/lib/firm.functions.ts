@@ -244,6 +244,23 @@ export const completeOnboarding = createServerFn({ method: "POST" })
     return { ok: true, userId: context.userId };
   });
 
+export const backfillStarterSops = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role, is_super_admin")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const isAdmin =
+      profile.is_super_admin || profile.role === "principal" || profile.role === "admin";
+    if (!isAdmin) throw new Error("Forbidden");
+    const result = await seedDefaultSops(profile.firm_id);
+    return { ok: true, ...result };
+  });
+
 export const listTeam = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
