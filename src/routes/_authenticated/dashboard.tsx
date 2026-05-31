@@ -3,7 +3,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getDashboardData, updateMetricPrefs, listKnowledge } from "@/lib/dashboard.functions";
-import { calc, fmtUsd, fmtPct, healthScore, type RateOverrides } from "@/lib/finance";
+import {
+  calc,
+  fmtUsd,
+  fmtPct,
+  healthScore,
+  cashRecovery,
+  oneTimePerHr,
+  marginBreakdown,
+  type RateOverrides,
+} from "@/lib/finance";
 import { Tile } from "@/components/dashboard/Tile";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,7 +37,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-type TileId = "rate" | "bva" | "health" | "scenario" | "growth" | "kb" | null;
+type TileId = "rate" | "bva" | "allocation" | "scenario" | "capacity" | "kb" | null;
 
 function greeting() {
   const h = new Date().getHours();
@@ -80,16 +89,22 @@ function Dashboard() {
           <RatePreview c={c} />
         </Tile>
         <Tile eyebrow="Budget vs Actual" title="This week" onOpen={() => setOpen("bva")}>
-          <BvAPreview c={c} weekHours={data?.weekHours ?? 0} />
+          <BvAPreview
+            c={c}
+            weekHours={data?.weekHours ?? 0}
+            committed={data?.committedRevenue ?? 0}
+            collected={data?.collectedRevenue ?? 0}
+            basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
+          />
         </Tile>
-        <Tile eyebrow="Health" title="Cost Architecture" onOpen={() => setOpen("health")}>
-          <HealthPreview c={c} />
+        <Tile eyebrow="Rate" title="Where Your Rate Goes" onOpen={() => setOpen("allocation")}>
+          <AllocationPreview c={c} />
         </Tile>
         <Tile eyebrow="Scenarios" title="Model a decision" onOpen={() => setOpen("scenario")}>
           <ScenarioPreview lastName={data?.scenarios?.[0]?.name} />
         </Tile>
-        <Tile eyebrow="Roadmap" title="Growth projection" onOpen={() => setOpen("growth")}>
-          <GrowthPreview c={c} />
+        <Tile eyebrow="Capacity" title="Firm capacity this week" onOpen={() => setOpen("capacity")}>
+          <CapacityPreview c={c} weekHours={data?.weekHours ?? 0} bdHours={data?.bdWeekHours ?? 0} />
         </Tile>
         <Tile eyebrow="Learn" title="Knowledge Base" onOpen={() => setOpen("kb")}>
           <KnowledgePreview />
@@ -105,11 +120,18 @@ function Dashboard() {
           prefs={data?.prefs.hidden_metrics ?? []}
           tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
           firmId={firmId}
+          committed={data?.committedRevenue ?? 0}
+          collected={data?.collectedRevenue ?? 0}
+          basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
         />
       </FullViewDialog>
-      <FullViewDialog open={open === "health"} onClose={() => setOpen(null)} title="Cost Architecture Health"><HealthFull c={c} /></FullViewDialog>
+      <FullViewDialog open={open === "allocation"} onClose={() => setOpen(null)} title="Where Your Rate Goes" wide>
+        <AllocationFull c={c} expenses={data?.expenses ?? []} />
+      </FullViewDialog>
       <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
-      <FullViewDialog open={open === "growth"} onClose={() => setOpen(null)} title="Growth Roadmap"><GrowthFull c={c} /></FullViewDialog>
+      <FullViewDialog open={open === "capacity"} onClose={() => setOpen(null)} title="Firm Capacity" wide>
+        <CapacityFull c={c} weekHours={data?.weekHours ?? 0} bdHours={data?.bdWeekHours ?? 0} />
+      </FullViewDialog>
       <FullViewDialog open={open === "kb"} onClose={() => setOpen(null)} title="Knowledge Base" wide><KnowledgeFull /></FullViewDialog>
     </div>
   );
