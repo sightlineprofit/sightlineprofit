@@ -89,7 +89,15 @@ export const updateProjectStatus = createServerFn({ method: "POST" })
     z
       .object({
         id: z.string().uuid(),
-        status: z.enum(["active", "pipeline", "completed", "on_hold"]),
+        status: z.enum([
+          "pursuit",
+          "pipeline",
+          "active",
+          "invoiced",
+          "collected",
+          "completed",
+          "on_hold",
+        ]),
       })
       .parse(d),
   )

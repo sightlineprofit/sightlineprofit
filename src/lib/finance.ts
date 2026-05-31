@@ -10,6 +10,11 @@ export type FirmConfig = {
   target_gross_margin_pct: number | null;
   rate_billed: number | null;
   actual_billed_rate: number | null;
+  accounting_basis?: "cash" | "accrual" | null;
+  business_structure?: "sole_prop" | "s_corp" | "other" | null;
+  comp_distribution_annual?: number | null;
+  comp_reserve_target_annual?: number | null;
+  planned_activity_allocation?: Record<string, number> | null;
 };
 
 export type Expense = {
@@ -42,12 +47,22 @@ export function annualizeExpense(e: Expense): { recurring: number; oneTime: numb
 }
 
 export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOverrides = {}) {
+  const structure = (config?.business_structure ?? "sole_prop") as
+    | "sole_prop"
+    | "s_corp"
+    | "other";
   const draw = (Number(config?.comp_draw_annual) || 0) + (ov.payIncreaseAnnual || 0);
   const ptaxPct = Number(config?.comp_ptax_pct) || 0;
+  // For S-Corp, payroll/SE-style tax applies only to the W-2 salary portion,
+  // not to distributions or business reserve.
   const ptax = (draw * ptaxPct) / 100;
   const health = Number(config?.comp_health_annual) || 0;
   const retire = Number(config?.comp_retire_annual) || 0;
-  const compTotal = draw + ptax + health + retire;
+  const distribution =
+    structure === "s_corp" ? Number(config?.comp_distribution_annual) || 0 : 0;
+  const reserveTarget =
+    structure === "s_corp" ? Number(config?.comp_reserve_target_annual) || 0 : 0;
+  const compTotal = draw + ptax + health + retire + distribution + reserveTarget;
 
   let opexRecurring = 0;
   let opexOneTime = 0;
@@ -92,12 +107,14 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
   } : { comp: 0, opexRecurring: 0, opexOneTime: 0, marginFloor: 0, marginAbove: 0 };
 
   return {
-    draw, ptax, health, retire, compTotal,
+    draw, ptax, health, retire, distribution, reserveTarget, compTotal,
+    structure,
     opexRecurring, opexOneTime, totalCost,
     targetBillableHrsWeek, weeksPerYear, annualBillableHrs,
     breakEvenRate, alignedRate, billedRate,
     annualRevenue, grossProfit, grossMarginPct,
     marginAboveFloor, rateSafetyBuffer,
+    marginBuffer: marginAboveFloor,
     perHour,
   };
 }
@@ -132,4 +149,52 @@ export function healthScore(c: ReturnType<typeof calc>) {
   // sweet spot for comp share is ~0.45-0.60
   const compScore = Math.max(0, 100 - Math.abs(compRatio - 0.52) * 200);
   return Math.round(marginScore * 0.45 + bufferScore * 0.35 + compScore * 0.2);
+}
+
+// ─── Plain-language helpers for "every dollar has a per-hour cost" framing ───
+
+/** Cash recovery for a one-time purchase, given current above-floor margin. */
+export function cashRecovery({
+  amount,
+  marginPerHr,
+  billableHrsPerWeek,
+}: {
+  amount: number;
+  marginPerHr: number;
+  billableHrsPerWeek: number;
+}) {
+  if (!Number.isFinite(amount) || amount <= 0) return { hours: 0, weeks: 0, months: 0 };
+  if (!Number.isFinite(marginPerHr) || marginPerHr <= 0) {
+    return { hours: Infinity, weeks: Infinity, months: Infinity };
+  }
+  const hours = amount / marginPerHr;
+  const weeks = billableHrsPerWeek > 0 ? hours / billableHrsPerWeek : Infinity;
+  const months = weeks / 4.33;
+  return { hours, weeks, months };
+}
+
+/** Per-hour cost added by spreading a one-time amount over N months. */
+export function oneTimePerHr({
+  amount,
+  months,
+  annualBillableHrs,
+}: {
+  amount: number;
+  months: number;
+  annualBillableHrs: number;
+}) {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  if (!Number.isFinite(months) || months <= 0) return 0;
+  if (!Number.isFinite(annualBillableHrs) || annualBillableHrs <= 0) return 0;
+  const annualized = (amount / months) * 12;
+  return annualized / annualBillableHrs;
+}
+
+/** Suggested split of above-floor margin: 25% tax, 10% reserve, remainder growth. */
+export function marginBreakdown(grossProfitPerHr: number) {
+  const m = Math.max(0, Number(grossProfitPerHr) || 0);
+  const tax = m * 0.25;
+  const reserve = m * 0.1;
+  const growth = Math.max(0, m - tax - reserve);
+  return { tax, reserve, growth, available: growth };
 }
