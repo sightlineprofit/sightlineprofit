@@ -222,11 +222,21 @@ export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
 }
 
 /* ───────── Tile 2: Budget vs Actual ───────── */
-function BvAPreview({ c, weekHours }: { c: ReturnType<typeof calc>; weekHours: number }) {
+function BvAPreview({
+  c,
+  weekHours,
+  committed,
+  collected,
+  basis,
+}: {
+  c: ReturnType<typeof calc>;
+  weekHours: number;
+  committed: number;
+  collected: number;
+  basis: "cash" | "accrual";
+}) {
   const target = c.targetBillableHrsWeek;
   const pct = target > 0 ? Math.min(100, (weekHours / target) * 100) : 0;
-  const revActual = weekHours * c.billedRate;
-  const revTarget = target * c.billedRate;
   return (
     <div className="space-y-4">
       <div>
@@ -238,9 +248,33 @@ function BvAPreview({ c, weekHours }: { c: ReturnType<typeof calc>; weekHours: n
           <div className="h-full bg-gold transition-all" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <div className="flex items-baseline justify-between text-sm">
-        <span className="text-ch/60">Revenue this week</span>
-        <span className="num text-ch">{fmtUsd(revActual)}<span className="text-ch/40"> / {fmtUsd(revTarget)}</span></span>
+      <div className="space-y-1.5 text-sm">
+        <div className="flex items-baseline justify-between">
+          <span className="flex items-center gap-1 text-ch/60">
+            Committed
+            <InfoTip
+              term="Committed revenue"
+              definition="Scoped revenue from Active and Invoiced projects."
+            />
+          </span>
+          <span className="num text-ch">{fmtUsd(committed)}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span className="flex items-center gap-1 text-ch/60">
+            {basis === "cash" ? "Revenue collected" : "Revenue earned (accrual)"}
+            <InfoTip
+              term={basis === "cash" ? "Cash basis" : "Accrual basis"}
+              definition={
+                basis === "cash"
+                  ? "Counted when payment is received. Invoices sent but unpaid are shown separately as committed revenue."
+                  : "Counted when work is delivered or invoiced, whether or not payment has arrived yet."
+              }
+            />
+          </span>
+          <span className="num text-ch">
+            {fmtUsd(basis === "cash" ? collected : collected + committed)}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -261,12 +295,18 @@ export function BvAFull({
   prefs,
   tier = "foundation",
   firmId,
+  committed = 0,
+  collected = 0,
+  basis = "cash",
 }: {
   c: ReturnType<typeof calc>;
   weekHours: number;
   prefs: string[];
   tier?: "foundation" | "studio" | "practice";
   firmId?: string;
+  committed?: number;
+  collected?: number;
+  basis?: "cash" | "accrual";
 }) {
   const [span, setSpan] = useState<"day" | "week" | "month" | "quarter" | "year">("week");
   const [customize, setCustomize] = useState(false);
