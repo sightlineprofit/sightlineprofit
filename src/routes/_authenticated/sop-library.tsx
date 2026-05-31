@@ -169,7 +169,7 @@ function Library() {
 
   const backfillFn = useServerFn(backfillStarterSops);
   const backfillMut = useMutation({
-    mutationFn: () => backfillFn({ data: {} as never }),
+    mutationFn: () => backfillFn(),
     onSuccess: (res: { inserted: number; skipped: number }) => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
       toast.success(
