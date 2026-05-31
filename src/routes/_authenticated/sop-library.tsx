@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
-import { getMyContext } from "@/lib/firm.functions";
+import { getMyContext, backfillStarterSops } from "@/lib/firm.functions";
 import {
   getSopLibrary,
   saveSopTemplate,
