@@ -367,20 +367,58 @@ function FirmTab() {
                     </p>
                   </div>
                   <div>
-                    <div className="mb-1 text-xs uppercase tracking-wider text-ch/50">
+                    <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-ch/50">
                       Business reserve target
+                      <HoverCard openDelay={150}>
+                        <HoverCardTrigger asChild>
+                          <button type="button" aria-label="About business reserve">
+                            <Info className="h-3 w-3 text-ch/40" />
+                          </button>
+                        </HoverCardTrigger>
+                        <HoverCardContent className="text-xs leading-relaxed">
+                          A business reserve is money kept in the firm for slow periods,
+                          unexpected costs, or equipment. Most financial advisors recommend
+                          3–6 months of operating expenses. Including this in your rate means
+                          you're actively building toward it with every hour you bill.
+                        </HoverCardContent>
+                      </HoverCard>
                     </div>
-                    <input
-                      type="number"
-                      min={0}
-                      step="1000"
-                      value={reserve}
-                      onChange={(e) => setReserve(e.target.value)}
+                    <select
+                      value={reserveMode}
+                      onChange={(e) => setReserveMode(e.target.value as typeof reserveMode)}
                       className={inputCls}
-                    />
-                    <p className="mt-1 text-xs text-ch/50">
-                      What you want to keep in the business for reinvestment or slow periods.
-                    </p>
+                    >
+                      <option value="months_1">1 month of operating expenses</option>
+                      <option value="months_2">2 months of operating expenses</option>
+                      <option value="months_3">3 months of operating expenses</option>
+                      <option value="months_6">6 months of operating expenses</option>
+                      <option value="months_12">12 months of operating expenses</option>
+                      <option value="custom">Custom amount</option>
+                    </select>
+                    {reserveMode === "custom" ? (
+                      <input
+                        type="number"
+                        min={0}
+                        step="1000"
+                        value={reserve}
+                        onChange={(e) => setReserve(e.target.value)}
+                        className={`${inputCls} mt-2`}
+                        placeholder="Reserve target ($)"
+                      />
+                    ) : (
+                      <p className="mt-2 text-xs text-ch/60">
+                        {reserveMonths[reserveMode]} {(reserveMonths[reserveMode] ?? 0) === 1 ? "month" : "months"} ×{" "}
+                        ${monthlyOpex.toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo ={" "}
+                        <span className="font-medium text-ch">
+                          ${computedReserve.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
+                        {annualOpex === 0 && (
+                          <span className="block mt-0.5 text-ch/50">
+                            Add operating expenses to compute this automatically.
+                          </span>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
 
