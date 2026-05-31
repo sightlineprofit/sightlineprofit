@@ -367,7 +367,7 @@ function Grid({
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
 }) {
-  const projectName = (id: string | null) => projects.find((p) => p.id === id)?.name;
+  const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
   return (
     <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(${days.length}, minmax(0, 1fr))` }}>
@@ -396,7 +396,12 @@ function Grid({
               const top = (toHourFloat(e.start_time) - HOUR_START) * rowH;
               const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
               const isMine = e.user_id === myId;
-              const label = projectName(e.project_id) || agName(e.activity_group_id) || (e.billable ? "Billable" : "Non-billable");
+              const proj = project(e.project_id);
+              const activity = agName(e.activity_group_id);
+              const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
+              const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
+              const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
+              const lineCount = h >= 56 ? 3 : h >= 36 ? 2 : 1;
               return (
                 <button
                   key={e.id}
@@ -413,10 +418,13 @@ function Grid({
                     borderColor: e.billable ? "#4A7158" : "#A85F3D",
                     color: "#fff",
                   }}
-                  title={label}
+                  title={tooltip}
                 >
-                  <div className="font-medium truncate">{label}</div>
-                  <div className="opacity-80 truncate">{e.start_time?.slice(0, 5)}–{e.end_time?.slice(0, 5)}</div>
+                  <div className="font-medium truncate">{clientPart}</div>
+                  {lineCount >= 2 && <div className="opacity-90 truncate">{activity || "—"}</div>}
+                  {lineCount >= 3 && (
+                    <div className="opacity-80 truncate">{dur} · {e.billable ? "Billable" : "Non-Bill"}</div>
+                  )}
                 </button>
               );
             })}
