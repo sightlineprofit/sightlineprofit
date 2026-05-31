@@ -865,7 +865,7 @@ function UpgradeBridge() {
   );
 }
 
-/* ───────── Tile 3: Health ───────── */
+/* ───────── (Legacy Health helpers — kept for /dashboard/health route) ───────── */
 function HealthRing({ score, size = 96 }: { score: number; size?: number }) {
   const r = size / 2 - 6;
   const circ = 2 * Math.PI * r;
@@ -880,6 +880,7 @@ function HealthRing({ score, size = 96 }: { score: number; size?: number }) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function HealthPreview({ c }: { c: ReturnType<typeof calc> }) {
   const score = healthScore(c);
   return (
@@ -951,6 +952,17 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
   const committedRate = base.breakEvenRate;
   const temporaryRate = (overrides.extraOneTimeAnnual ?? 0) / (scenario.annualBillableHrs || 1);
 
+  // Buffer-aware intelligence: does current margin absorb the new aligned-rate increase?
+  const alignedDelta = scenario.alignedRate - base.alignedRate;
+  const bufferCovers = base.marginBuffer >= alignedDelta && alignedDelta > 0;
+  const recovery = ov.oneTime > 0
+    ? cashRecovery({
+        amount: ov.oneTime,
+        marginPerHr: base.perHour.marginAbove,
+        billableHrsPerWeek: base.targetBillableHrsWeek,
+      })
+    : null;
+
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       <div className="space-y-4">
@@ -958,9 +970,29 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
         <FieldRow label="Add a one-time investment ($)">
           <input type="number" min={0} className={inputCls} value={ov.oneTime || ""} onChange={(e) => setOv({ ...ov, oneTime: Number(e.target.value) })} />
         </FieldRow>
-        <FieldRow label="Amortize over (months)">
+        <FieldRow label="Spread cost over (months)">
           <input type="number" min={1} className={inputCls} value={ov.oneTimeMonths} onChange={(e) => setOv({ ...ov, oneTimeMonths: Number(e.target.value) || 1 })} />
         </FieldRow>
+        {ov.oneTime > 0 && (
+          <div className="rounded-md border border-border bg-cream/40 p-3 text-xs text-ch/70 leading-relaxed">
+            You're spending <span className="num text-ch">{fmtUsd(ov.oneTime)}</span> once.
+            Spread over <span className="num text-ch">{ov.oneTimeMonths}</span> months, that's{" "}
+            <span className="num text-ch">{fmtUsd(ov.oneTime / ov.oneTimeMonths)}</span>/month — or
+            about{" "}
+            <span className="num text-ch">
+              {fmtUsd(
+                oneTimePerHr({
+                  amount: ov.oneTime,
+                  months: ov.oneTimeMonths,
+                  annualBillableHrs: base.annualBillableHrs,
+                }),
+                { decimals: 2 },
+              )}
+            </span>
+            /hr of every hour you bill during that time. After {ov.oneTimeMonths} months, this
+            cost disappears from your rate.
+          </div>
+        )}
         <FieldRow label="Add monthly expense ($)">
           <input type="number" min={0} className={inputCls} value={ov.monthly || ""} onChange={(e) => setOv({ ...ov, monthly: Number(e.target.value) })} />
         </FieldRow>
@@ -979,14 +1011,48 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
           <ScenarioCard label="Current" rate={base.alignedRate} margin={base.grossMarginPct} revenue={base.annualRevenue} />
           <ScenarioCard label="Scenario" rate={scenario.alignedRate} margin={scenario.grossMarginPct} revenue={scenario.annualRevenue} accent />
         </div>
+        {alignedDelta > 0 && (
+          <div
+            className={cn(
+              "rounded-lg border p-4 text-sm leading-relaxed",
+              bufferCovers ? "border-success/40 bg-success/5 text-ch/80" : "border-danger/40 bg-danger/5 text-ch/80",
+            )}
+          >
+            {bufferCovers ? (
+              <>
+                Your current margin of{" "}
+                <span className="num text-ch">{fmtUsd(base.marginBuffer, { decimals: 2 })}/hr</span>{" "}
+                covers this. Your aligned floor rises by{" "}
+                <span className="num text-ch">{fmtUsd(alignedDelta, { decimals: 2 })}/hr</span>{" "}
+                but your pricing remains comfortable. No rate change needed.
+              </>
+            ) : (
+              <>
+                This raises your aligned floor above your current rate. To maintain your{" "}
+                {fmtPct(scenario.grossMarginPct, 0)} margin target, either raise your rate by{" "}
+                <span className="num text-ch">
+                  {fmtUsd(scenario.alignedRate - base.billedRate, { decimals: 2 })}/hr
+                </span>{" "}
+                or add hours.
+              </>
+            )}
+          </div>
+        )}
         <div className="rounded-lg border border-border bg-white p-4 text-sm">
           <p className="text-[11px] uppercase tracking-wider text-ch/50 mb-2">Rate floor analysis</p>
           <div className="flex justify-between"><span className="text-ch/70">Committed (recurring)</span><span className="num text-ch">{fmtUsd(committedRate, { decimals: 2 })}/hr</span></div>
-          <div className="flex justify-between mt-1"><span className="text-ch/70">Temporary (amortized)</span><span className="num text-ch">{fmtUsd(temporaryRate, { decimals: 2 })}/hr</span></div>
+          <div className="flex justify-between mt-1"><span className="text-ch/70">Temporary (one-time spread)</span><span className="num text-ch">{fmtUsd(temporaryRate, { decimals: 2 })}/hr</span></div>
         </div>
-        {ov.oneTime > 0 && (
-          <div className="rounded-lg border border-goldp bg-goldp/30 p-4 text-xs text-ch/80">
-            Cash availability: this scenario requires <span className="font-medium text-ch">{fmtUsd(ov.oneTime)}</span> in available cash up front, then <span className="font-medium text-ch">{fmtUsd(ov.oneTime / ov.oneTimeMonths)}</span> recovered per month over {ov.oneTimeMonths} months.
+        {recovery && Number.isFinite(recovery.weeks) && (
+          <div className="rounded-lg border border-goldp bg-goldp/30 p-4 text-xs text-ch/80 leading-relaxed">
+            You're spending <span className="font-medium text-ch">{fmtUsd(ov.oneTime)}</span> once.
+            Upfront: you need that available today. At your current above-floor margin of{" "}
+            <span className="font-medium text-ch">
+              {fmtUsd(base.perHour.marginAbove, { decimals: 2 })}/hr
+            </span>
+            , you recover this in <span className="font-medium text-ch">{recovery.weeks.toFixed(1)}</span>{" "}
+            weeks of billable work. After {ov.oneTimeMonths} months, this cost disappears and your
+            margin returns.
           </div>
         )}
       </div>
