@@ -459,67 +459,125 @@ function FirmTab() {
 
 /* ─────────────── Team ─────────────── */
 const ROLES = ["principal", "admin", "team", "view_only"] as const;
+type MemberForm = {
+  name: string; email: string; role: (typeof ROLES)[number];
+  billable_rate: string; cost_rate: string;
+  expected_hrs_per_week: string; weeks_per_year: string; billable_pct: string;
+  compensation_type: "hourly" | "salaried";
+  annual_base_salary: string; employer_payroll_tax_pct: string;
+  annual_benefits: string; other_annual_costs: string;
+};
+
+const emptyMember: MemberForm = {
+  name: "", email: "", role: "team",
+  billable_rate: "", cost_rate: "",
+  expected_hrs_per_week: "40", weeks_per_year: "48", billable_pct: "70",
+  compensation_type: "hourly",
+  annual_base_salary: "", employer_payroll_tax_pct: "7.65",
+  annual_benefits: "", other_annual_costs: "",
+};
+
 function TeamTab() {
   const qc = useQueryClient();
   const list = useServerFn(listTeam);
   const invite = useServerFn(inviteTeamMember);
+  const update = useServerFn(updateTeamMember);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    role: "team" as (typeof ROLES)[number],
-    billable_rate: "",
-    cost_rate: "",
-    expected_hrs_per_week: "40",
-    weeks_per_year: "48",
-    billable_pct: "70",
-  });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<MemberForm>(emptyMember);
 
-  const cost = Number(form.cost_rate) || 0;
-  const hrs = Number(form.expected_hrs_per_week) || 0;
-  const burdened = cost * hrs;
+  function refresh() { qc.invalidateQueries({ queryKey: ["team"] }); qc.invalidateQueries({ queryKey: ["calendar"] }); }
+
+  function startEdit(m: NonNullable<typeof data>["members"][number]) {
+    setAdding(false);
+    setEditId(m.id);
+    setForm({
+      name: m.name || "",
+      email: m.email,
+      role: m.role as (typeof ROLES)[number],
+      billable_rate: m.billable_rate != null ? String(m.billable_rate) : "",
+      cost_rate: m.cost_rate != null ? String(m.cost_rate) : "",
+      expected_hrs_per_week: m.expected_hrs_per_week != null ? String(m.expected_hrs_per_week) : "40",
+      weeks_per_year: m.weeks_per_year != null ? String(m.weeks_per_year) : "48",
+      billable_pct: m.billable_pct != null ? String(m.billable_pct) : "70",
+      compensation_type: (m.compensation_type as "hourly" | "salaried") || "hourly",
+      annual_base_salary: m.annual_base_salary != null ? String(m.annual_base_salary) : "",
+      employer_payroll_tax_pct: m.employer_payroll_tax_pct != null ? String(m.employer_payroll_tax_pct) : "7.65",
+      annual_benefits: m.annual_benefits != null ? String(m.annual_benefits) : "",
+      other_annual_costs: m.other_annual_costs != null ? String(m.other_annual_costs) : "",
+    });
+  }
+
+  function startAdd() { setEditId(null); setForm(emptyMember); setAdding(true); }
+  function cancel() { setAdding(false); setEditId(null); setForm(emptyMember); }
+
+  const burden = computeBurden({
+    compensation_type: form.compensation_type,
+    cost_rate: Number(form.cost_rate) || 0,
+    annual_base_salary: Number(form.annual_base_salary) || 0,
+    employer_payroll_tax_pct: Number(form.employer_payroll_tax_pct) || 0,
+    annual_benefits: Number(form.annual_benefits) || 0,
+    other_annual_costs: Number(form.other_annual_costs) || 0,
+    expected_hrs_per_week: Number(form.expected_hrs_per_week) || 0,
+    weeks_per_year: Number(form.weeks_per_year) || 0,
+  });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await invite({
-        data: {
-          name: form.name || null,
-          email: form.email,
-          role: form.role,
-          billable_rate: form.billable_rate ? Number(form.billable_rate) : null,
-          cost_rate: form.cost_rate ? Number(form.cost_rate) : null,
-          expected_hrs_per_week: form.expected_hrs_per_week ? Number(form.expected_hrs_per_week) : null,
-          weeks_per_year: form.weeks_per_year ? Number(form.weeks_per_year) : null,
-          billable_pct: form.billable_pct ? Number(form.billable_pct) : null,
-        },
-      });
-      toast.success("Invitation sent");
-      setAdding(false);
-      setForm({ ...form, name: "", email: "" });
-      qc.invalidateQueries({ queryKey: ["team"] });
+      const payload = {
+        name: form.name || null,
+        role: form.role,
+        billable_rate: form.billable_rate ? Number(form.billable_rate) : null,
+        cost_rate: form.compensation_type === "hourly" && form.cost_rate ? Number(form.cost_rate) : null,
+        expected_hrs_per_week: form.expected_hrs_per_week ? Number(form.expected_hrs_per_week) : null,
+        weeks_per_year: form.weeks_per_year ? Number(form.weeks_per_year) : null,
+        billable_pct: form.billable_pct ? Number(form.billable_pct) : null,
+        compensation_type: form.compensation_type,
+        annual_base_salary: form.compensation_type === "salaried" && form.annual_base_salary
+          ? Number(form.annual_base_salary) : null,
+        employer_payroll_tax_pct: form.employer_payroll_tax_pct ? Number(form.employer_payroll_tax_pct) : null,
+        annual_benefits: form.annual_benefits ? Number(form.annual_benefits) : null,
+        other_annual_costs: form.other_annual_costs ? Number(form.other_annual_costs) : null,
+      };
+      if (editId) {
+        await update({ data: { id: editId, ...payload } });
+        toast.success("Member updated");
+      } else {
+        await invite({ data: { ...payload, email: form.email } });
+        toast.success("Invitation sent");
+      }
+      cancel();
+      refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");
     }
   }
+
+  const showForm = adding || editId;
 
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-border bg-white">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h3 className="font-display text-xl">Team members</h3>
-          <button type="button" onClick={() => setAdding((v) => !v)} className={btnCls}>
-            {adding ? "Cancel" : "Add member"}
+          <button type="button" onClick={showForm ? cancel : startAdd} className={btnCls}>
+            {showForm ? "Cancel" : "Add member"}
           </button>
         </div>
-        {adding && (
+        {showForm && (
           <form onSubmit={submit} className="grid grid-cols-2 gap-4 border-b border-border bg-cream/40 p-5">
             <Field label="Name">
               <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
             <Field label="Email">
-              <input type="email" className={inputCls} required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <input
+                type="email" required disabled={!!editId}
+                className={cn(inputCls, editId && "opacity-60")}
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
             </Field>
             <Field label="Role">
               <select className={inputCls} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as (typeof ROLES)[number] })}>
@@ -529,8 +587,41 @@ function TeamTab() {
             <Field label="Billable rate ($/hr)">
               <input type="number" min={0} step="1" className={inputCls} value={form.billable_rate} onChange={(e) => setForm({ ...form, billable_rate: e.target.value })} />
             </Field>
-            <Field label="Cost rate ($/hr)">
-              <input type="number" min={0} step="1" className={inputCls} value={form.cost_rate} onChange={(e) => setForm({ ...form, cost_rate: e.target.value })} />
+
+            <div className="col-span-2">
+              <div className="mb-1.5 block text-xs uppercase tracking-wider text-ch/50">Compensation type</div>
+              <div className="flex gap-4 text-sm">
+                {(["hourly", "salaried"] as const).map((t) => (
+                  <label key={t} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio" name="comp_type" value={t}
+                      checked={form.compensation_type === t}
+                      onChange={() => setForm({ ...form, compensation_type: t })}
+                      className="accent-gold"
+                    />
+                    <span className="capitalize text-ch/80">{t}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {form.compensation_type === "hourly" ? (
+              <Field label="Cost rate ($/hr)">
+                <input type="number" min={0} step="1" className={inputCls} value={form.cost_rate} onChange={(e) => setForm({ ...form, cost_rate: e.target.value })} />
+              </Field>
+            ) : (
+              <Field label="Annual base salary ($)">
+                <input type="number" min={0} step="1000" className={inputCls} value={form.annual_base_salary} onChange={(e) => setForm({ ...form, annual_base_salary: e.target.value })} />
+              </Field>
+            )}
+            <Field label="Payroll tax % (employer share)">
+              <input type="number" min={0} max={100} step="0.01" className={inputCls} value={form.employer_payroll_tax_pct} onChange={(e) => setForm({ ...form, employer_payroll_tax_pct: e.target.value })} />
+            </Field>
+            <Field label="Benefits (annual $)">
+              <input type="number" min={0} step="100" className={inputCls} value={form.annual_benefits} onChange={(e) => setForm({ ...form, annual_benefits: e.target.value })} />
+            </Field>
+            <Field label="Other annual costs ($)">
+              <input type="number" min={0} step="100" className={inputCls} value={form.other_annual_costs} onChange={(e) => setForm({ ...form, other_annual_costs: e.target.value })} />
             </Field>
             <Field label="Expected hrs / week">
               <input type="number" min={0} max={168} className={inputCls} value={form.expected_hrs_per_week} onChange={(e) => setForm({ ...form, expected_hrs_per_week: e.target.value })} />
@@ -541,24 +632,63 @@ function TeamTab() {
             <Field label="Billable % of hours">
               <input type="number" min={0} max={100} className={inputCls} value={form.billable_pct} onChange={(e) => setForm({ ...form, billable_pct: e.target.value })} />
             </Field>
-            <div className="col-span-2 flex items-center justify-between border-t border-border pt-4">
-              <div className="text-sm text-ch/70">
-                Fully burdened weekly cost:{" "}
-                <span className="font-display text-xl text-ch">${burdened.toLocaleString()}</span>
+
+            <div className="col-span-2 rounded-md border border-border bg-white p-3 text-sm">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider text-ch/50">
+                Fully burdened cost
+                <HoverCard openDelay={150}>
+                  <HoverCardTrigger asChild>
+                    <button type="button" aria-label="About fully burdened cost">
+                      <Info className="h-3 w-3 text-ch/40" />
+                    </button>
+                  </HoverCardTrigger>
+                  <HoverCardContent className="text-xs leading-relaxed">
+                    The true cost of this team member including their wages, your share of
+                    payroll taxes, and any benefits or equipment costs. This is the number
+                    used in project profitability calculations — not just their wage.
+                  </HoverCardContent>
+                </HoverCard>
               </div>
-              <button type="submit" className={btnCls}>Send invitation</button>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-ch/70">
+                <span>{form.compensation_type === "salaried" ? "Base salary" : "Base wages"}</span>
+                <span className="num text-right text-ch">${burden.base.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                <span>Payroll tax</span>
+                <span className="num text-right text-ch">${burden.ptax.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                <span>Benefits</span>
+                <span className="num text-right text-ch">${burden.benefits.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                <span>Other costs</span>
+                <span className="num text-right text-ch">${burden.other.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border pt-2 text-center">
+                <div><div className="text-[10px] uppercase tracking-wider text-ch/50">/ year</div><div className="num font-display text-lg text-ch">${burden.yr.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wider text-ch/50">/ week</div><div className="num font-display text-lg text-ch">${burden.wk.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
+                <div><div className="text-[10px] uppercase tracking-wider text-ch/50">/ hour</div><div className="num font-display text-lg text-ch">${burden.hr.toFixed(2)}</div></div>
+              </div>
+            </div>
+
+            <div className="col-span-2 flex items-center justify-end gap-2 border-t border-border pt-4">
+              <button type="button" onClick={cancel} className={ghostBtn}>Cancel</button>
+              <button type="submit" className={btnCls}>{editId ? "Save changes" : "Send invitation"}</button>
             </div>
           </form>
         )}
         <div className="divide-y divide-border">
           {data?.members?.map((m) => (
             <div key={m.id} className="flex items-center justify-between px-5 py-3">
-              <div>
-                <div className="text-sm font-medium text-ch">{m.name || m.email}</div>
+              <button type="button" onClick={() => startEdit(m)} className="text-left">
+                <div className="text-sm font-medium text-ch hover:text-gold">{m.name || m.email}</div>
                 <div className="text-xs text-ch/50">{m.email} · {m.role}</div>
-              </div>
-              <div className="text-xs text-ch/50">
-                {m.billable_rate ? `$${m.billable_rate}/hr` : "—"}
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="text-right text-xs text-ch/60">
+                  <div>{m.billable_rate ? `$${m.billable_rate}/hr billed` : "—"}</div>
+                  <div className="text-ch/50">
+                    {m.burdened_hourly_rate
+                      ? `$${Number(m.burdened_hourly_rate).toFixed(2)}/hr burdened`
+                      : m.cost_rate ? `$${m.cost_rate}/hr cost` : ""}
+                  </div>
+                </div>
+                <button type="button" onClick={() => startEdit(m)} className={ghostBtn + " px-3 py-1.5 text-xs"}>Edit</button>
               </div>
             </div>
           ))}
