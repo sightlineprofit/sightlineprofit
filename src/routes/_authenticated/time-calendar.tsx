@@ -257,7 +257,14 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               onEntryClick={(e) => setModal(e)}
             />
           ) : (
-            <TeamView days={days} entries={entries} team={team} />
+            <TeamView
+              days={days}
+              entries={entries}
+              team={team}
+              projects={projects}
+              ags={ags}
+              onEntryClick={(e) => setModal(e)}
+            />
           )}
         </div>
       </div>
@@ -508,7 +515,18 @@ function DayView({
 }
 
 // ───────── team view ─────────
-function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; team: Member[] }) {
+type TeamMode = "overview" | "calendar";
+
+function TeamView({
+  days, entries, team, projects, ags, onEntryClick,
+}: {
+  days: Date[]; entries: Entry[]; team: Member[];
+  projects: Project[]; ags: Ag[];
+  onEntryClick: (e: Entry) => void;
+}) {
+  const [mode, setMode] = useState<TeamMode>("overview");
+  const [memberFilter, setMemberFilter] = useState<string>("all");
+
   const dayMemberHrs = (d: Date, m: Member) => {
     const iso = isoDate(d);
     return entries
@@ -522,6 +540,50 @@ function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; tea
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-md border border-border bg-white p-0.5">
+          {(["overview", "calendar"] as TeamMode[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setMode(v)}
+              className={cn(
+                "px-3 py-1.5 text-xs uppercase tracking-[0.15em] rounded",
+                mode === v ? "bg-ch text-cream" : "text-ch/60 hover:text-ch",
+              )}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        {mode === "calendar" && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setMemberFilter("all")}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs",
+                memberFilter === "all" ? "bg-ch text-cream border-ch" : "bg-white border-border text-ch/70 hover:bg-creamd",
+              )}
+            >
+              All
+            </button>
+            {team.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMemberFilter(m.id)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
+                  memberFilter === m.id ? "bg-ch text-cream border-ch" : "bg-white border-border text-ch/70 hover:bg-creamd",
+                )}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ background: m.color || "#B8860B" }} />
+                {(m.name || m.email).split(" ")[0]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {mode === "overview" ? (
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {days.map((d) => {
           const total = team.reduce((s, m) => s + dayMemberHrs(d, m), 0);
@@ -556,6 +618,17 @@ function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; tea
           );
         })}
       </div>
+      ) : (
+        <TeamCalendarGrid
+          days={days}
+          entries={entries}
+          team={team}
+          projects={projects}
+          ags={ags}
+          memberFilter={memberFilter}
+          onEntryClick={onEntryClick}
+        />
+      )}
 
       <div className="rounded-lg border border-border bg-white p-5">
         <h3 className="font-display text-xl text-ch">Week summary</h3>
@@ -591,6 +664,107 @@ function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; tea
             })}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ───────── team calendar grid ─────────
+function TeamCalendarGrid({
+  days, entries, team, projects, ags, memberFilter, onEntryClick,
+}: {
+  days: Date[]; entries: Entry[]; team: Member[];
+  projects: Project[]; ags: Ag[];
+  memberFilter: string;
+  onEntryClick: (e: Entry) => void;
+}) {
+  const project = (id: string | null) => projects.find((p) => p.id === id);
+  const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const memberOf = (id: string) => team.find((m) => m.id === id);
+
+  const visibleMembers = memberFilter === "all" ? team : team.filter((m) => m.id === memberFilter);
+  const showDetail = memberFilter !== "all";
+  const rowH = ROW_H;
+
+  return (
+    <div className="rounded-lg border border-border bg-white">
+      <div className="grid" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
+        <div />
+        {days.map((d) => (
+          <div key={d.toISOString()} className="border-l border-border px-2 py-2 text-center">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-ch/50">
+              {d.toLocaleDateString(undefined, { weekday: "short" })}
+            </div>
+            <div className="font-display text-2xl text-ch leading-tight">{d.getDate()}</div>
+          </div>
+        ))}
+      </div>
+      <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(7, minmax(0, 1fr))` }}>
+        <div>
+          {Array.from({ length: HOURS }).map((_, i) => (
+            <div key={i} className="border-t border-border text-right pr-2 pt-1 text-[10px] text-ch/40" style={{ height: rowH }}>
+              {formatHour(HOUR_START + i)}
+            </div>
+          ))}
+        </div>
+        {days.map((d) => {
+          const dayEntries = entries.filter(
+            (e) => e.date === isoDate(d) && visibleMembers.some((m) => m.id === e.user_id),
+          );
+          const subCount = visibleMembers.length;
+          return (
+            <div key={d.toISOString()} className="relative border-l border-border">
+              {Array.from({ length: HOURS }).map((_, i) => (
+                <div key={i} className="border-t border-border" style={{ height: rowH }} />
+              ))}
+              {dayEntries.map((e) => {
+                const top = (toHourFloat(e.start_time) - HOUR_START) * rowH;
+                const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
+                const member = memberOf(e.user_id);
+                const idx = visibleMembers.findIndex((m) => m.id === e.user_id);
+                const widthPct = 100 / subCount;
+                const leftPct = idx * widthPct;
+                const proj = project(e.project_id);
+                const activity = agName(e.activity_group_id);
+                const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
+                const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
+                const memberName = (member?.name || member?.email || "").split(" ")[0];
+                const tooltip = [memberName, clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`].filter(Boolean).join("\n");
+                const bg = member?.color || (e.billable ? "#5C8A6E" : "#C4714A");
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={(ev) => { ev.stopPropagation(); onEntryClick(e); }}
+                    className="absolute rounded px-1.5 py-0.5 text-left text-[10px] leading-tight overflow-hidden border shadow-sm"
+                    style={{
+                      top, height: h,
+                      left: `calc(${leftPct}% + 2px)`,
+                      width: `calc(${widthPct}% - 4px)`,
+                      background: bg,
+                      borderColor: "rgba(0,0,0,0.15)",
+                      color: "#fff",
+                    }}
+                    title={tooltip}
+                  >
+                    {showDetail ? (
+                      <>
+                        <div className="font-medium truncate">{clientPart}</div>
+                        {h >= 36 && <div className="opacity-90 truncate">{activity || "—"}</div>}
+                        {h >= 56 && <div className="opacity-80 truncate">{dur}</div>}
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-medium truncate">{memberName}</div>
+                        {h >= 36 && <div className="opacity-90 truncate num">{dur}</div>}
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
