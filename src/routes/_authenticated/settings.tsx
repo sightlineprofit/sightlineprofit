@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -11,10 +11,17 @@ import {
   listActivityGroups,
   addActivityGroup,
   deleteActivityGroup,
+  upsertFirmConfig,
 } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
-import { Trash2 } from "lucide-react";
+import { Trash2, ChevronDown, ChevronRight, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Sightline" }] }),
@@ -74,17 +81,74 @@ function FirmTab() {
   const qc = useQueryClient();
   const getCtx = useServerFn(getMyContext);
   const upd = useServerFn(updateFirm);
+  const updCfg = useServerFn(upsertFirmConfig);
   const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
   const [name, setName] = useState(data?.firm?.name ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Accounting basis + S-Corp / advanced compensation
+  const cfg = data?.config ?? null;
+  const [basis, setBasis] = useState<"cash" | "accrual">(
+    (cfg?.accounting_basis as "cash" | "accrual") || "cash",
+  );
+  const [structure, setStructure] = useState<"sole_prop" | "s_corp" | "other">(
+    (cfg?.business_structure as "sole_prop" | "s_corp" | "other") || "sole_prop",
+  );
+  const [salary, setSalary] = useState<string>(
+    cfg?.comp_draw_annual != null ? String(cfg.comp_draw_annual) : "",
+  );
+  const [ptaxPct, setPtaxPct] = useState<string>(
+    cfg?.comp_ptax_pct != null ? String(cfg.comp_ptax_pct) : "15.3",
+  );
+  const [distribution, setDistribution] = useState<string>(
+    cfg?.comp_distribution_annual != null ? String(cfg.comp_distribution_annual) : "",
+  );
+  const [reserve, setReserve] = useState<string>(
+    cfg?.comp_reserve_target_annual != null ? String(cfg.comp_reserve_target_annual) : "",
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(structure === "s_corp");
+
+  // Re-sync local state when context loads
+  // (useMemo trick keeps it cheap; runs only on data identity change)
+  useMemo(() => {
+    if (!cfg) return;
+    setBasis((cfg.accounting_basis as "cash" | "accrual") || "cash");
+    setStructure((cfg.business_structure as "sole_prop" | "s_corp" | "other") || "sole_prop");
+    setSalary(cfg.comp_draw_annual != null ? String(cfg.comp_draw_annual) : "");
+    setPtaxPct(cfg.comp_ptax_pct != null ? String(cfg.comp_ptax_pct) : "15.3");
+    setDistribution(
+      cfg.comp_distribution_annual != null ? String(cfg.comp_distribution_annual) : "",
+    );
+    setReserve(
+      cfg.comp_reserve_target_annual != null ? String(cfg.comp_reserve_target_annual) : "",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.config]);
+
+  const salaryNum = Number(salary) || 0;
+  const ptaxOnSalary = (salaryNum * (Number(ptaxPct) || 0)) / 100;
+  const distNum = Number(distribution) || 0;
+  const reserveNum = Number(reserve) || 0;
+  const totalPackage = salaryNum + ptaxOnSalary + distNum + reserveNum;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
       await upd({ data: { name } });
+      await updCfg({
+        data: {
+          accounting_basis: basis,
+          business_structure: structure,
+          comp_draw_annual: salaryNum || null,
+          comp_ptax_pct: Number(ptaxPct) || null,
+          comp_distribution_annual: structure === "s_corp" ? distNum || null : null,
+          comp_reserve_target_annual: structure === "s_corp" ? reserveNum || null : null,
+        },
+      });
       toast.success("Firm updated");
       qc.invalidateQueries({ queryKey: ["me"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed");
     } finally {
@@ -93,22 +157,221 @@ function FirmTab() {
   }
 
   return (
-    <form onSubmit={save} className="max-w-xl space-y-6 rounded-lg border border-border bg-white p-6">
+    <form onSubmit={save} className="max-w-2xl space-y-8 rounded-lg border border-border bg-white p-6">
       <div>
         <label className="mb-1.5 block text-sm text-ch/70">Firm name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} required />
       </div>
-      <div>
-        <label className="mb-1.5 block text-sm text-ch/70">Logo</label>
-        <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-md border border-dashed border-border bg-cream font-display text-2xl text-ch/40">
-            {(name || "S").slice(0, 1).toUpperCase()}
-          </div>
-          <button type="button" className={ghostBtn} disabled>
-            Upload (coming soon)
-          </button>
+
+      {/* ─────────── Accounting basis ─────────── */}
+      <section className="space-y-3 border-t border-border pt-6">
+        <div className="flex items-center gap-2">
+          <h3 className="font-display text-lg text-ch">How does your firm count revenue?</h3>
+          <HoverCard openDelay={150}>
+            <HoverCardTrigger asChild>
+              <button type="button" aria-label="About accounting basis">
+                <Info className="h-3.5 w-3.5 text-ch/40" />
+              </button>
+            </HoverCardTrigger>
+            <HoverCardContent className="text-xs leading-relaxed">
+              Drives how the dashboard counts revenue. Most solo designers and small studios
+              use cash basis. Ask your accountant if you're unsure.
+            </HoverCardContent>
+          </HoverCard>
         </div>
-      </div>
+        <div className="space-y-2">
+          <label className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer">
+            <input
+              type="radio"
+              name="basis"
+              value="cash"
+              checked={basis === "cash"}
+              onChange={() => setBasis("cash")}
+              className="mt-1 accent-gold"
+            />
+            <div className="text-sm">
+              <div className="font-medium text-ch">Cash basis <span className="text-xs text-ch/50 font-normal">(most common for small firms)</span></div>
+              <div className="text-ch/60 mt-0.5">
+                I count revenue when a client pays me. An invoice sent but not yet paid doesn't
+                count as revenue until the money arrives.
+              </div>
+            </div>
+          </label>
+          <label className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer">
+            <input
+              type="radio"
+              name="basis"
+              value="accrual"
+              checked={basis === "accrual"}
+              onChange={() => setBasis("accrual")}
+              className="mt-1 accent-gold"
+            />
+            <div className="text-sm">
+              <div className="font-medium text-ch">Accrual basis</div>
+              <div className="text-ch/60 mt-0.5">
+                I count revenue when I earn it — when work is delivered or invoiced, regardless
+                of when payment arrives.
+              </div>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      {/* ─────────── Owner compensation ─────────── */}
+      <section className="space-y-3 border-t border-border pt-6">
+        <h3 className="font-display text-lg text-ch">Owner compensation</h3>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wider text-ch/50">
+              {structure === "s_corp" ? "W-2 reasonable salary (annual)" : "Annual salary / draw"}
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="1000"
+              value={salary}
+              onChange={(e) => setSalary(e.target.value)}
+              className={inputCls}
+            />
+            {structure === "s_corp" && (
+              <p className="mt-1 text-xs text-ch/50">Subject to payroll/SE tax.</p>
+            )}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs uppercase tracking-wider text-ch/50">
+              Payroll / SE tax %
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="0.1"
+              value={ptaxPct}
+              onChange={(e) => setPtaxPct(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 text-sm text-ch/70 hover:text-ch"
+            >
+              {advancedOpen ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+              <span className="font-medium">S-Corp / Advanced compensation</span>
+              <span className="text-xs text-ch/40">
+                — Operating as an S-Corp? Factor in distributions and business reserve separately.
+              </span>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-4 space-y-4 rounded-md border border-border bg-cream/40 p-4">
+            <div>
+              <div className="mb-2 text-xs uppercase tracking-wider text-ch/50">Business structure</div>
+              <div className="space-y-1.5">
+                {[
+                  { id: "sole_prop", label: "Sole proprietor / Single-member LLC" },
+                  { id: "s_corp", label: "S-Corporation" },
+                  { id: "other", label: "Other" },
+                ].map((opt) => (
+                  <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="structure"
+                      value={opt.id}
+                      checked={structure === opt.id}
+                      onChange={() => setStructure(opt.id as typeof structure)}
+                      className="accent-gold"
+                    />
+                    <span className="text-ch/80">{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {structure === "s_corp" && (
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-ch/50">
+                      S-Corp distribution
+                      <HoverCard openDelay={150}>
+                        <HoverCardTrigger asChild>
+                          <button type="button" aria-label="About distribution">
+                            <Info className="h-3 w-3 text-ch/40" />
+                          </button>
+                        </HoverCardTrigger>
+                        <HoverCardContent className="text-xs leading-relaxed">
+                          S-Corp owners can take profits as distributions rather than salary.
+                          Distributions avoid self-employment tax, which reduces your total tax
+                          burden — but the IRS requires your W-2 salary to be reasonable for
+                          your role.
+                        </HoverCardContent>
+                      </HoverCard>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1000"
+                      value={distribution}
+                      onChange={(e) => setDistribution(e.target.value)}
+                      className={inputCls}
+                    />
+                    <p className="mt-1 text-xs text-ch/50">
+                      Shareholder income. Not subject to self-employment tax.
+                    </p>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs uppercase tracking-wider text-ch/50">
+                      Business reserve target
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      step="1000"
+                      value={reserve}
+                      onChange={(e) => setReserve(e.target.value)}
+                      className={inputCls}
+                    />
+                    <p className="mt-1 text-xs text-ch/50">
+                      What you want to keep in the business for reinvestment or slow periods.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border bg-white p-3 text-sm">
+                  <div className="flex justify-between text-ch/70">
+                    <span>W-2 salary</span>
+                    <span className="num text-ch">${salaryNum.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-ch/70">
+                    <span>SE tax on salary</span>
+                    <span className="num text-ch">${ptaxOnSalary.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className="flex justify-between text-ch/70">
+                    <span>Distribution (no SE tax)</span>
+                    <span className="num text-ch">${distNum.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-ch/70">
+                    <span>Business reserve</span>
+                    <span className="num text-ch">${reserveNum.toLocaleString()}</span>
+                  </div>
+                  <div className="mt-2 flex justify-between border-t border-border pt-2 font-medium">
+                    <span className="text-ch">Total package</span>
+                    <span className="num font-display text-lg text-ch">${totalPackage.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+      </section>
+
       <button type="submit" className={btnCls} disabled={saving}>
         {saving ? "Saving…" : "Save changes"}
       </button>

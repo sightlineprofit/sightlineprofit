@@ -113,39 +113,54 @@ export type Database = {
       }
       firm_config: {
         Row: {
+          accounting_basis: string
           actual_billed_rate: number | null
           available_hrs_per_week: number | null
+          business_structure: string
+          comp_distribution_annual: number | null
           comp_draw_annual: number | null
           comp_health_annual: number | null
           comp_ptax_pct: number | null
+          comp_reserve_target_annual: number | null
           comp_retire_annual: number | null
           firm_id: string
+          planned_activity_allocation: Json
           rate_billed: number | null
           target_billable_hrs_per_week: number | null
           target_gross_margin_pct: number | null
           updated_at: string
         }
         Insert: {
+          accounting_basis?: string
           actual_billed_rate?: number | null
           available_hrs_per_week?: number | null
+          business_structure?: string
+          comp_distribution_annual?: number | null
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
           comp_ptax_pct?: number | null
+          comp_reserve_target_annual?: number | null
           comp_retire_annual?: number | null
           firm_id: string
+          planned_activity_allocation?: Json
           rate_billed?: number | null
           target_billable_hrs_per_week?: number | null
           target_gross_margin_pct?: number | null
           updated_at?: string
         }
         Update: {
+          accounting_basis?: string
           actual_billed_rate?: number | null
           available_hrs_per_week?: number | null
+          business_structure?: string
+          comp_distribution_annual?: number | null
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
           comp_ptax_pct?: number | null
+          comp_reserve_target_annual?: number | null
           comp_retire_annual?: number | null
           firm_id?: string
+          planned_activity_allocation?: Json
           rate_billed?: number | null
           target_billable_hrs_per_week?: number | null
           target_gross_margin_pct?: number | null
@@ -1086,7 +1101,14 @@ export type Database = {
       kb_kind: "article" | "video"
       kb_status: "draft" | "published"
       manual_hour_period: "week" | "month"
-      project_status: "active" | "pipeline" | "completed" | "on_hold"
+      project_status:
+        | "active"
+        | "pipeline"
+        | "completed"
+        | "on_hold"
+        | "pursuit"
+        | "invoiced"
+        | "collected"
       scope_risk: "low" | "medium" | "high"
       subscription_status:
         | "trialing"
@@ -1234,7 +1256,15 @@ export const Constants = {
       kb_kind: ["article", "video"],
       kb_status: ["draft", "published"],
       manual_hour_period: ["week", "month"],
-      project_status: ["active", "pipeline", "completed", "on_hold"],
+      project_status: [
+        "active",
+        "pipeline",
+        "completed",
+        "on_hold",
+        "pursuit",
+        "invoiced",
+        "collected",
+      ],
       scope_risk: ["low", "medium", "high"],
       subscription_status: [
         "trialing",

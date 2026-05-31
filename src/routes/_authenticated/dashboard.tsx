@@ -3,7 +3,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getDashboardData, updateMetricPrefs, listKnowledge } from "@/lib/dashboard.functions";
-import { calc, fmtUsd, fmtPct, healthScore, type RateOverrides } from "@/lib/finance";
+import {
+  calc,
+  fmtUsd,
+  fmtPct,
+  healthScore,
+  cashRecovery,
+  oneTimePerHr,
+  marginBreakdown,
+  type RateOverrides,
+} from "@/lib/finance";
 import { Tile } from "@/components/dashboard/Tile";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,7 +37,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-type TileId = "rate" | "bva" | "health" | "scenario" | "growth" | "kb" | null;
+type TileId = "rate" | "bva" | "allocation" | "scenario" | "capacity" | "kb" | null;
 
 function greeting() {
   const h = new Date().getHours();
@@ -80,16 +89,22 @@ function Dashboard() {
           <RatePreview c={c} />
         </Tile>
         <Tile eyebrow="Budget vs Actual" title="This week" onOpen={() => setOpen("bva")}>
-          <BvAPreview c={c} weekHours={data?.weekHours ?? 0} />
+          <BvAPreview
+            c={c}
+            weekHours={data?.weekHours ?? 0}
+            committed={data?.committedRevenue ?? 0}
+            collected={data?.collectedRevenue ?? 0}
+            basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
+          />
         </Tile>
-        <Tile eyebrow="Health" title="Cost Architecture" onOpen={() => setOpen("health")}>
-          <HealthPreview c={c} />
+        <Tile eyebrow="Rate" title="Where Your Rate Goes" onOpen={() => setOpen("allocation")}>
+          <AllocationPreview c={c} />
         </Tile>
         <Tile eyebrow="Scenarios" title="Model a decision" onOpen={() => setOpen("scenario")}>
           <ScenarioPreview lastName={data?.scenarios?.[0]?.name} />
         </Tile>
-        <Tile eyebrow="Roadmap" title="Growth projection" onOpen={() => setOpen("growth")}>
-          <GrowthPreview c={c} />
+        <Tile eyebrow="Capacity" title="Firm capacity this week" onOpen={() => setOpen("capacity")}>
+          <CapacityPreview c={c} weekHours={data?.weekHours ?? 0} bdHours={data?.bdWeekHours ?? 0} />
         </Tile>
         <Tile eyebrow="Learn" title="Knowledge Base" onOpen={() => setOpen("kb")}>
           <KnowledgePreview />
@@ -105,11 +120,18 @@ function Dashboard() {
           prefs={data?.prefs.hidden_metrics ?? []}
           tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
           firmId={firmId}
+          committed={data?.committedRevenue ?? 0}
+          collected={data?.collectedRevenue ?? 0}
+          basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
         />
       </FullViewDialog>
-      <FullViewDialog open={open === "health"} onClose={() => setOpen(null)} title="Cost Architecture Health"><HealthFull c={c} /></FullViewDialog>
+      <FullViewDialog open={open === "allocation"} onClose={() => setOpen(null)} title="Where Your Rate Goes" wide>
+        <AllocationFull c={c} expenses={data?.expenses ?? []} />
+      </FullViewDialog>
       <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
-      <FullViewDialog open={open === "growth"} onClose={() => setOpen(null)} title="Growth Roadmap"><GrowthFull c={c} /></FullViewDialog>
+      <FullViewDialog open={open === "capacity"} onClose={() => setOpen(null)} title="Firm Capacity" wide>
+        <CapacityFull c={c} weekHours={data?.weekHours ?? 0} bdHours={data?.bdWeekHours ?? 0} />
+      </FullViewDialog>
       <FullViewDialog open={open === "kb"} onClose={() => setOpen(null)} title="Knowledge Base" wide><KnowledgeFull /></FullViewDialog>
     </div>
   );
@@ -200,11 +222,21 @@ export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
 }
 
 /* ───────── Tile 2: Budget vs Actual ───────── */
-function BvAPreview({ c, weekHours }: { c: ReturnType<typeof calc>; weekHours: number }) {
+function BvAPreview({
+  c,
+  weekHours,
+  committed,
+  collected,
+  basis,
+}: {
+  c: ReturnType<typeof calc>;
+  weekHours: number;
+  committed: number;
+  collected: number;
+  basis: "cash" | "accrual";
+}) {
   const target = c.targetBillableHrsWeek;
   const pct = target > 0 ? Math.min(100, (weekHours / target) * 100) : 0;
-  const revActual = weekHours * c.billedRate;
-  const revTarget = target * c.billedRate;
   return (
     <div className="space-y-4">
       <div>
@@ -216,9 +248,33 @@ function BvAPreview({ c, weekHours }: { c: ReturnType<typeof calc>; weekHours: n
           <div className="h-full bg-gold transition-all" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <div className="flex items-baseline justify-between text-sm">
-        <span className="text-ch/60">Revenue this week</span>
-        <span className="num text-ch">{fmtUsd(revActual)}<span className="text-ch/40"> / {fmtUsd(revTarget)}</span></span>
+      <div className="space-y-1.5 text-sm">
+        <div className="flex items-baseline justify-between">
+          <span className="flex items-center gap-1 text-ch/60">
+            Committed
+            <InfoTip
+              term="Committed revenue"
+              definition="Scoped revenue from Active and Invoiced projects."
+            />
+          </span>
+          <span className="num text-ch">{fmtUsd(committed)}</span>
+        </div>
+        <div className="flex items-baseline justify-between">
+          <span className="flex items-center gap-1 text-ch/60">
+            {basis === "cash" ? "Revenue collected" : "Revenue earned (accrual)"}
+            <InfoTip
+              term={basis === "cash" ? "Cash basis" : "Accrual basis"}
+              definition={
+                basis === "cash"
+                  ? "Counted when payment is received. Invoices sent but unpaid are shown separately as committed revenue."
+                  : "Counted when work is delivered or invoiced, whether or not payment has arrived yet."
+              }
+            />
+          </span>
+          <span className="num text-ch">
+            {fmtUsd(basis === "cash" ? collected : collected + committed)}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -239,12 +295,18 @@ export function BvAFull({
   prefs,
   tier = "foundation",
   firmId,
+  committed = 0,
+  collected = 0,
+  basis = "cash",
 }: {
   c: ReturnType<typeof calc>;
   weekHours: number;
   prefs: string[];
   tier?: "foundation" | "studio" | "practice";
   firmId?: string;
+  committed?: number;
+  collected?: number;
+  basis?: "cash" | "accrual";
 }) {
   const [span, setSpan] = useState<"day" | "week" | "month" | "quarter" | "year">("week");
   const [customize, setCustomize] = useState(false);
@@ -803,7 +865,7 @@ function UpgradeBridge() {
   );
 }
 
-/* ───────── Tile 3: Health ───────── */
+/* ───────── (Legacy Health helpers — kept for /dashboard/health route) ───────── */
 function HealthRing({ score, size = 96 }: { score: number; size?: number }) {
   const r = size / 2 - 6;
   const circ = 2 * Math.PI * r;
@@ -818,6 +880,7 @@ function HealthRing({ score, size = 96 }: { score: number; size?: number }) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function HealthPreview({ c }: { c: ReturnType<typeof calc> }) {
   const score = healthScore(c);
   return (
@@ -889,6 +952,17 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
   const committedRate = base.breakEvenRate;
   const temporaryRate = (overrides.extraOneTimeAnnual ?? 0) / (scenario.annualBillableHrs || 1);
 
+  // Buffer-aware intelligence: does current margin absorb the new aligned-rate increase?
+  const alignedDelta = scenario.alignedRate - base.alignedRate;
+  const bufferCovers = base.marginBuffer >= alignedDelta && alignedDelta > 0;
+  const recovery = ov.oneTime > 0
+    ? cashRecovery({
+        amount: ov.oneTime,
+        marginPerHr: base.perHour.marginAbove,
+        billableHrsPerWeek: base.targetBillableHrsWeek,
+      })
+    : null;
+
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       <div className="space-y-4">
@@ -896,9 +970,29 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
         <FieldRow label="Add a one-time investment ($)">
           <input type="number" min={0} className={inputCls} value={ov.oneTime || ""} onChange={(e) => setOv({ ...ov, oneTime: Number(e.target.value) })} />
         </FieldRow>
-        <FieldRow label="Amortize over (months)">
+        <FieldRow label="Spread cost over (months)">
           <input type="number" min={1} className={inputCls} value={ov.oneTimeMonths} onChange={(e) => setOv({ ...ov, oneTimeMonths: Number(e.target.value) || 1 })} />
         </FieldRow>
+        {ov.oneTime > 0 && (
+          <div className="rounded-md border border-border bg-cream/40 p-3 text-xs text-ch/70 leading-relaxed">
+            You're spending <span className="num text-ch">{fmtUsd(ov.oneTime)}</span> once.
+            Spread over <span className="num text-ch">{ov.oneTimeMonths}</span> months, that's{" "}
+            <span className="num text-ch">{fmtUsd(ov.oneTime / ov.oneTimeMonths)}</span>/month — or
+            about{" "}
+            <span className="num text-ch">
+              {fmtUsd(
+                oneTimePerHr({
+                  amount: ov.oneTime,
+                  months: ov.oneTimeMonths,
+                  annualBillableHrs: base.annualBillableHrs,
+                }),
+                { decimals: 2 },
+              )}
+            </span>
+            /hr of every hour you bill during that time. After {ov.oneTimeMonths} months, this
+            cost disappears from your rate.
+          </div>
+        )}
         <FieldRow label="Add monthly expense ($)">
           <input type="number" min={0} className={inputCls} value={ov.monthly || ""} onChange={(e) => setOv({ ...ov, monthly: Number(e.target.value) })} />
         </FieldRow>
@@ -917,14 +1011,48 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
           <ScenarioCard label="Current" rate={base.alignedRate} margin={base.grossMarginPct} revenue={base.annualRevenue} />
           <ScenarioCard label="Scenario" rate={scenario.alignedRate} margin={scenario.grossMarginPct} revenue={scenario.annualRevenue} accent />
         </div>
+        {alignedDelta > 0 && (
+          <div
+            className={cn(
+              "rounded-lg border p-4 text-sm leading-relaxed",
+              bufferCovers ? "border-success/40 bg-success/5 text-ch/80" : "border-danger/40 bg-danger/5 text-ch/80",
+            )}
+          >
+            {bufferCovers ? (
+              <>
+                Your current margin of{" "}
+                <span className="num text-ch">{fmtUsd(base.marginBuffer, { decimals: 2 })}/hr</span>{" "}
+                covers this. Your aligned floor rises by{" "}
+                <span className="num text-ch">{fmtUsd(alignedDelta, { decimals: 2 })}/hr</span>{" "}
+                but your pricing remains comfortable. No rate change needed.
+              </>
+            ) : (
+              <>
+                This raises your aligned floor above your current rate. To maintain your{" "}
+                {fmtPct(scenario.grossMarginPct, 0)} margin target, either raise your rate by{" "}
+                <span className="num text-ch">
+                  {fmtUsd(scenario.alignedRate - base.billedRate, { decimals: 2 })}/hr
+                </span>{" "}
+                or add hours.
+              </>
+            )}
+          </div>
+        )}
         <div className="rounded-lg border border-border bg-white p-4 text-sm">
           <p className="text-[11px] uppercase tracking-wider text-ch/50 mb-2">Rate floor analysis</p>
           <div className="flex justify-between"><span className="text-ch/70">Committed (recurring)</span><span className="num text-ch">{fmtUsd(committedRate, { decimals: 2 })}/hr</span></div>
-          <div className="flex justify-between mt-1"><span className="text-ch/70">Temporary (amortized)</span><span className="num text-ch">{fmtUsd(temporaryRate, { decimals: 2 })}/hr</span></div>
+          <div className="flex justify-between mt-1"><span className="text-ch/70">Temporary (one-time spread)</span><span className="num text-ch">{fmtUsd(temporaryRate, { decimals: 2 })}/hr</span></div>
         </div>
-        {ov.oneTime > 0 && (
-          <div className="rounded-lg border border-goldp bg-goldp/30 p-4 text-xs text-ch/80">
-            Cash availability: this scenario requires <span className="font-medium text-ch">{fmtUsd(ov.oneTime)}</span> in available cash up front, then <span className="font-medium text-ch">{fmtUsd(ov.oneTime / ov.oneTimeMonths)}</span> recovered per month over {ov.oneTimeMonths} months.
+        {recovery && Number.isFinite(recovery.weeks) && (
+          <div className="rounded-lg border border-goldp bg-goldp/30 p-4 text-xs text-ch/80 leading-relaxed">
+            You're spending <span className="font-medium text-ch">{fmtUsd(ov.oneTime)}</span> once.
+            Upfront: you need that available today. At your current above-floor margin of{" "}
+            <span className="font-medium text-ch">
+              {fmtUsd(base.perHour.marginAbove, { decimals: 2 })}/hr
+            </span>
+            , you recover this in <span className="font-medium text-ch">{recovery.weeks.toFixed(1)}</span>{" "}
+            weeks of billable work. After {ov.oneTimeMonths} months, this cost disappears and your
+            margin returns.
           </div>
         )}
       </div>
@@ -953,19 +1081,296 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 const inputCls = "w-full rounded-md border border-input bg-white px-3 py-1.5 text-sm text-ch focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20";
 
-/* ───────── Tile 5: Growth ───────── */
-function GrowthPreview({ c }: { c: ReturnType<typeof calc> }) {
-  const y1 = c.annualRevenue * 1.15;
+/* ───────── Tile: Capacity (replaces Growth Roadmap) ───────── */
+function CapacityPreview({
+  c,
+  weekHours,
+  bdHours,
+}: {
+  c: ReturnType<typeof calc>;
+  weekHours: number;
+  bdHours: number;
+}) {
+  const target = c.targetBillableHrsWeek || 0;
+  const committed = weekHours;
+  const pct = target > 0 ? Math.min(100, (committed / target) * 100) : 0;
+  const remaining = Math.max(0, target - committed);
+  const over = committed > target;
   return (
-    <div className="space-y-2">
-      <div className="flex justify-between text-xs"><span className="text-ch/60">Today</span><span className="num text-ch">{fmtUsd(c.annualRevenue)}</span></div>
-      <div className="flex justify-between text-xs"><span className="text-ch/60">Year 1 projection</span><span className="num text-ch font-medium">{fmtUsd(y1)}</span></div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-creamd">
-        <div className="h-full bg-gold" style={{ width: "60%" }} />
+    <div className="space-y-3">
+      <div>
+        <div className="flex items-baseline justify-between text-xs text-ch/60">
+          <span>{Math.round(pct)}% committed</span>
+          <span className="num text-ch">{remaining.toFixed(1)} hrs free</span>
+        </div>
+        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-creamd">
+          <div
+            className={cn("h-full transition-all", over ? "bg-danger" : "bg-gold")}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-[11px]">
+        <div>
+          <div className="uppercase tracking-wider text-ch/50">Available</div>
+          <div className="num text-ch">{target.toFixed(0)} hrs</div>
+        </div>
+        <div>
+          <div className="uppercase tracking-wider text-ch/50">Committed</div>
+          <div className="num text-ch">{committed.toFixed(1)} hrs</div>
+        </div>
+        <div>
+          <div className="uppercase tracking-wider text-ch/50">BD time</div>
+          <div className="num text-ch">{bdHours.toFixed(1)} hrs</div>
+        </div>
+      </div>
+      {over && (
+        <div className="text-xs text-danger">● Over capacity by {(committed - target).toFixed(1)} hrs</div>
+      )}
+    </div>
+  );
+}
+
+export function CapacityFull({
+  c,
+  weekHours,
+  bdHours,
+}: {
+  c: ReturnType<typeof calc>;
+  weekHours: number;
+  bdHours: number;
+}) {
+  const target = c.targetBillableHrsWeek || 0;
+  const annualTarget = target * (c.weeksPerYear || 48);
+  const remaining = Math.max(0, target - weekHours);
+  const annualRevenue = c.annualRevenue;
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-border bg-white p-5">
+        <div className="flex items-baseline justify-between">
+          <h3 className="font-display text-lg text-ch">Planned capacity</h3>
+          <span className="text-xs text-ch/50">{(c.weeksPerYear || 48)} weeks / year</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Stat label="Target hrs / week" value={target.toFixed(1)} />
+          <Stat label="Target hrs / year" value={annualTarget.toFixed(0)} />
+          <Stat label="Logged this week" value={weekHours.toFixed(1)} />
+          <Stat label="BD time this week" value={bdHours.toFixed(1)} />
+        </div>
+      </div>
+      <div className="rounded-xl border border-border bg-white p-5">
+        <h3 className="font-display text-lg text-ch">Billable vs non-billable</h3>
+        <p className="mt-1 text-sm text-ch/60">
+          Business development (Pursuit / Pipeline) time is shown separately. It's the cost of
+          winning new work — not counted against your billable utilization.
+        </p>
+        <div className="mt-3 flex justify-between text-sm">
+          <span className="text-ch/70">Billable this week</span>
+          <span className="num text-ch">{weekHours.toFixed(1)} hrs</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-ch/70">Business development this week</span>
+          <span className="num text-ch">{bdHours.toFixed(1)} hrs</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-ch/70">Remaining capacity this week</span>
+          <span className="num text-ch">{remaining.toFixed(1)} hrs</span>
+        </div>
+      </div>
+      <div className="rounded-xl border border-border bg-white p-5">
+        <h3 className="font-display text-lg text-ch">Revenue picture</h3>
+        <div className="mt-3 grid grid-cols-2 gap-4">
+          <Stat label="Annual revenue at billed rate" value={fmtUsd(annualRevenue)} />
+          <Stat label="Annual revenue at aligned rate" value={fmtUsd(c.alignedRate * c.annualBillableHrs)} />
+        </div>
+        <p className="mt-3 text-xs text-ch/50">
+          Multi-tab Team / What-if / Project Commitment views are coming next. For now this
+          shows planned vs logged at the firm level.
+        </p>
       </div>
     </div>
   );
 }
+
+/* ───────── Tile: Where Your Rate Goes (Rate Allocation) ───────── */
+function AllocationPreview({ c }: { c: ReturnType<typeof calc> }) {
+  const total =
+    c.perHour.comp +
+    c.perHour.opexRecurring +
+    c.perHour.opexOneTime +
+    c.perHour.marginAbove;
+  const segs = [
+    { label: "Comp", val: c.perHour.comp, color: "#B8860B" },
+    { label: "Recurring", val: c.perHour.opexRecurring, color: "#5C8A6E" },
+    { label: "One-time", val: c.perHour.opexOneTime, color: "#C4714A" },
+    { label: "Margin", val: c.perHour.marginAbove, color: "#D4A017" },
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between">
+        <span className="text-xs text-ch/60">Every dollar of {fmtUsd(c.billedRate)}/hr</span>
+        <span className="num font-display text-2xl text-ch">{fmtUsd(total)}<span className="text-xs text-ch/40">/hr</span></span>
+      </div>
+      <div className="flex h-2.5 overflow-hidden rounded-full border border-border">
+        {segs.map((s) => (
+          <div
+            key={s.label}
+            title={`${s.label}: ${fmtUsd(s.val, { decimals: 2 })}/hr`}
+            style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 text-[10px]">
+        {segs.map((s) => (
+          <span key={s.label} className="inline-flex items-center gap-1 text-ch/70">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function AllocationFull({
+  c,
+  expenses,
+}: {
+  c: ReturnType<typeof calc>;
+  expenses: any[];
+}) {
+  const segs = [
+    { label: "Owner Compensation", val: c.perHour.comp, color: "#B8860B" },
+    { label: "Recurring Expenses", val: c.perHour.opexRecurring, color: "#5C8A6E" },
+    { label: "One-Time Purchases", val: c.perHour.opexOneTime, color: "#C4714A" },
+    { label: "Above-Floor Margin", val: c.perHour.marginAbove, color: "#D4A017" },
+  ].filter((s) => s.val > 0);
+  const total = segs.reduce((s, x) => s + x.val, 0);
+  const oneTimeExpenses = (expenses ?? []).filter((e) => e.frequency === "onetime");
+  const breakdown = marginBreakdown(c.perHour.marginAbove);
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border border-border bg-white p-6">
+        <div className="flex items-baseline justify-between">
+          <h3 className="font-display text-xl text-ch">
+            Every {fmtUsd(c.billedRate)} you bill goes to
+          </h3>
+          <span className="num text-sm text-ch/60">{fmtUsd(total, { decimals: 2 })}/hr accounted</span>
+        </div>
+        <div className="mt-4 flex h-4 overflow-hidden rounded-full border border-border">
+          {segs.map((s) => (
+            <div
+              key={s.label}
+              title={`${s.label}: ${fmtUsd(s.val, { decimals: 2 })}/hr`}
+              style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }}
+            />
+          ))}
+        </div>
+        <ul className="mt-5 space-y-2.5 text-sm">
+          {segs.map((s) => (
+            <li key={s.label} className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-ch/80">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                {s.label}
+              </span>
+              <span className="num text-ch">
+                {fmtUsd(s.val, { decimals: 2 })}/hr
+                <span className="ml-2 text-xs text-ch/50">{((s.val / total) * 100).toFixed(0)}%</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+        {oneTimeExpenses.length > 0 && (
+          <div className="mt-5 space-y-1 border-t border-border pt-4 text-xs text-ch/60">
+            {oneTimeExpenses.map((e) => {
+              const months = e.amort_months ?? 12;
+              const perHr = oneTimePerHr({
+                amount: Number(e.amount),
+                months,
+                annualBillableHrs: c.annualBillableHrs,
+              });
+              return (
+                <div key={e.id}>
+                  When <span className="text-ch">{e.name}</span> is fully recovered in{" "}
+                  <span className="num text-ch">{months}</span> months, your margin increases by{" "}
+                  <span className="num text-ch">{fmtUsd(perHr, { decimals: 2 })}/hr</span>.
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-white p-6">
+        <h3 className="font-display text-lg text-ch">What your margin can do</h3>
+        <div className="mt-3 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-ch/70">Above-floor margin</span>
+            <span className="num text-ch">{fmtUsd(c.perHour.marginAbove, { decimals: 2 })}/hr</span>
+          </div>
+          <div className="border-t border-border pt-2 text-xs uppercase tracking-wider text-ch/50">
+            Suggested use of margin
+          </div>
+          <BreakdownRow
+            label="Tax on profit (est. 25%)"
+            value={breakdown.tax}
+            tip={{
+              term: "Tax on profit",
+              definition:
+                "A rough estimate for taxes on business profit. Your actual rate depends on your structure and tax bracket. Confirm with your accountant.",
+            }}
+          />
+          <BreakdownRow
+            label="Business reserve (10%)"
+            value={breakdown.reserve}
+            tip={{
+              term: "Business reserve",
+              definition:
+                "Money kept in the business for slow periods, equipment, or unexpected costs. A common target is 3–6 months of operating expenses.",
+            }}
+          />
+          <BreakdownRow
+            label="Growth / discretionary"
+            value={breakdown.growth}
+            tip={{
+              term: "Growth / discretionary",
+              definition:
+                "What's left for one-time investments, growth spending, or additional owner draw. Check this number before committing to a new expense.",
+            }}
+          />
+          <div className="flex justify-between border-t border-border pt-2 font-medium">
+            <span className="text-ch">True available profit</span>
+            <span className="num font-display text-lg text-ch">
+              {fmtUsd(breakdown.available, { decimals: 2 })}/hr
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BreakdownRow({
+  label,
+  value,
+  tip,
+}: {
+  label: string;
+  value: number;
+  tip: { term: string; definition: string };
+}) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="flex items-center gap-1 text-ch/70">
+        {label} <InfoTip {...tip} />
+      </span>
+      <span className="num text-ch">{fmtUsd(value, { decimals: 2 })}/hr</span>
+    </div>
+  );
+}
+
+/* ───────── (Legacy Growth — kept exported for /dashboard/growth route compatibility) ───────── */
 export function GrowthFull({ c }: { c: ReturnType<typeof calc> }) {
   const years = [0, 0.15, 0.32, 0.51];
   return (

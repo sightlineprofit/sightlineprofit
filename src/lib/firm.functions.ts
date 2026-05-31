@@ -89,6 +89,11 @@ const configSchema = z.object({
   target_gross_margin_pct: z.number().min(0).max(100).nullable().optional(),
   rate_billed: z.number().min(0).max(100000).nullable().optional(),
   actual_billed_rate: z.number().min(0).max(100000).nullable().optional(),
+  accounting_basis: z.enum(["cash", "accrual"]).optional(),
+  business_structure: z.enum(["sole_prop", "s_corp", "other"]).optional(),
+  comp_distribution_annual: z.number().min(0).max(1e9).nullable().optional(),
+  comp_reserve_target_annual: z.number().min(0).max(1e9).nullable().optional(),
+  planned_activity_allocation: z.record(z.string(), z.number().min(0).max(100)).optional(),
 });
 
 export const upsertFirmConfig = createServerFn({ method: "POST" })
