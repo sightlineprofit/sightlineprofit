@@ -10,11 +10,11 @@ export type FirmConfig = {
   target_gross_margin_pct: number | null;
   rate_billed: number | null;
   actual_billed_rate: number | null;
-  accounting_basis?: "cash" | "accrual" | null;
-  business_structure?: "sole_prop" | "s_corp" | "other" | null;
+  accounting_basis?: string | null;
+  business_structure?: string | null;
   comp_distribution_annual?: number | null;
   comp_reserve_target_annual?: number | null;
-  planned_activity_allocation?: Record<string, number> | null;
+  planned_activity_allocation?: Record<string, number> | unknown | null;
 };
 
 export type Expense = {
