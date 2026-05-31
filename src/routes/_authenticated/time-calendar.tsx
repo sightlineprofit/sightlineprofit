@@ -257,7 +257,14 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               onEntryClick={(e) => setModal(e)}
             />
           ) : (
-            <TeamView days={days} entries={entries} team={team} />
+            <TeamView
+              days={days}
+              entries={entries}
+              team={team}
+              projects={projects}
+              ags={ags}
+              onEntryClick={(e) => setModal(e)}
+            />
           )}
         </div>
       </div>
