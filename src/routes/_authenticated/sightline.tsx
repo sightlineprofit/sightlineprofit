@@ -691,17 +691,21 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
           )}
 
           <ProfitabilitySummary
-            scopedRevenue={scopedRevenue}
-            scopedCost={scopedCost}
-            scopedMargin={scopedMargin}
-            actualRevenue={actualRevenue}
-            actualCost={actualCost}
-            actualMargin={actualMargin}
-            marginVariance={marginVariance}
-            marginVariancePct={marginVariancePct}
-            nonBillableCostAbsorbed={nonBillableCostAbsorbed}
-            hasRate={hasExplicitRate}
+            projectFee={isFixedFee ? fixedFee : (hasExplicitRate ? billableScopedHrs * projectRate : 0)}
             isFixedFee={isFixedFee}
+            budgetedBillableHrs={billableScopedHrs}
+            actualHrs={actualHrs}
+            billableHrs={billableHrs}
+            nonBillableHrs={nonBillableHrs}
+            rate={projectRate}
+            rateIsProject={hasExplicitRate}
+            firmBilledRate={Number(config?.rate_billed) || 0}
+            phaseRows={phaseRows}
+            startDate={project.start_date}
+            endDate={project.end_date}
+            hasOwnerSalary={Number(config?.comp_draw_annual ?? 0) > 0}
+            alignedRate={calcFinance(config ?? null, []).alignedRate}
+            onOpenSettings={openMetaEdit}
           />
 
           <HoursSummary
