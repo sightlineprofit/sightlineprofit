@@ -15,6 +15,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
 import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets } from "@/lib/time.functions";
 import { fmtUsd } from "@/lib/finance";
@@ -87,6 +91,7 @@ type Ag = { id: string; name: string; color: string };
 type Member = {
   id: string; name: string | null; email: string; role: string;
   billable_rate: number | null; expected_hrs_per_week: number | null; billable_pct: number | null;
+  color?: string | null;
 };
 
 type View = "week" | "day" | "team";
