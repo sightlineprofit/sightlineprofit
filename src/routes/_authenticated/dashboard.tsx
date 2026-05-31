@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-type TileId = "rate" | "bva" | "allocation" | "scenario" | "capacity" | "kb" | null;
+type TileId = "bva" | "allocation" | "scenario" | "capacity" | "kb" | null;
 
 function greeting() {
   const h = new Date().getHours();
@@ -86,9 +86,6 @@ function Dashboard() {
 
       {/* 3x2 grid */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        <Tile eyebrow="Rate" title="Rate Allocation" onOpen={() => setOpen("rate")} accent>
-          <RatePreview c={c} />
-        </Tile>
         <Tile eyebrow="Budget vs Actual" title="This week" onOpen={() => setOpen("bva")}>
           <BvAPreview
             c={c}
@@ -98,7 +95,7 @@ function Dashboard() {
             basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
           />
         </Tile>
-        <Tile eyebrow="Rate" title="Where Your Rate Goes" onOpen={() => setOpen("allocation")}>
+        <Tile eyebrow="Rate" title="Rate Allocation" onOpen={() => setOpen("allocation")} accent>
           <AllocationPreview c={c} />
         </Tile>
         <Tile eyebrow="Scenarios" title="Model a decision" onOpen={() => setOpen("scenario")}>
@@ -113,7 +110,6 @@ function Dashboard() {
       </div>
 
       {/* Full views */}
-      <FullViewDialog open={open === "rate"} onClose={() => setOpen(null)} title="Rate Allocation"><RateFull c={c} /></FullViewDialog>
       <FullViewDialog open={open === "bva"} onClose={() => setOpen(null)} title="Budget vs Actual" wide>
         <BvAFull
           c={c}
@@ -126,7 +122,7 @@ function Dashboard() {
           basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
         />
       </FullViewDialog>
-      <FullViewDialog open={open === "allocation"} onClose={() => setOpen(null)} title="Where Your Rate Goes" wide>
+      <FullViewDialog open={open === "allocation"} onClose={() => setOpen(null)} title="Rate Allocation" wide>
         <AllocationFull c={c} expenses={data?.expenses ?? []} />
       </FullViewDialog>
       <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
