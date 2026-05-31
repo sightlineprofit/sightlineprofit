@@ -693,6 +693,59 @@ function Row({ label, value, accent }: { label: string; value: string; accent?: 
   );
 }
 
+function ProjectTaskPicker({
+  phases, phaseId, onChange,
+}: { phases: Phase[]; phaseId: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(!!phaseId);
+  const [q, setQ] = useState("");
+  const selected = phases.find((p) => p.id === phaseId);
+  const filtered = q
+    ? phases.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))
+    : phases;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button type="button" className="flex w-full items-center justify-between rounded-md border border-border bg-white px-3 py-2 text-left text-xs text-ch/70 hover:bg-creamd">
+          <span className="flex items-center gap-2">
+            <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
+            Link to project task (optional)
+          </span>
+          {selected && <span className="rounded bg-goldp/40 px-2 py-0.5 text-[10px] text-ch">Linked: {selected.name}</span>}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 rounded-md border border-border bg-cream/40 p-2">
+        {phases.length > 8 && (
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search tasks…"
+            className="mb-2 h-8 text-xs"
+          />
+        )}
+        <div className="max-h-48 overflow-y-auto space-y-0.5">
+          <button type="button" onClick={() => onChange("")} className={cn("block w-full rounded px-2 py-1 text-left text-xs hover:bg-white", !phaseId && "bg-white font-medium")}>— None —</button>
+          {filtered.map((p) => {
+            const over = p.actual_hrs > p.expected_hrs && p.expected_hrs > 0;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onChange(p.id)}
+                className={cn(
+                  "block w-full rounded px-2 py-1 text-left text-xs hover:bg-white",
+                  phaseId === p.id && "bg-white font-medium text-gold",
+                )}
+              >
+                {p.name} <span className="text-ch/50">({p.actual_hrs.toFixed(1)}/{p.expected_hrs.toFixed(0)}h){over ? " ⚠" : ""}</span>
+              </button>
+            );
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 // ───────── entry form ─────────
 function EntryForm({
   compact = false, projects, phases, ags, team, isAdmin, meId, initial, onSaved, onDeleted,
