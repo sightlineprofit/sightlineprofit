@@ -515,7 +515,18 @@ function DayView({
 }
 
 // ───────── team view ─────────
-function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; team: Member[] }) {
+type TeamMode = "overview" | "calendar";
+
+function TeamView({
+  days, entries, team, projects, ags, onEntryClick,
+}: {
+  days: Date[]; entries: Entry[]; team: Member[];
+  projects: Project[]; ags: Ag[];
+  onEntryClick: (e: Entry) => void;
+}) {
+  const [mode, setMode] = useState<TeamMode>("overview");
+  const [memberFilter, setMemberFilter] = useState<string>("all");
+
   const dayMemberHrs = (d: Date, m: Member) => {
     const iso = isoDate(d);
     return entries
@@ -529,6 +540,50 @@ function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; tea
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-md border border-border bg-white p-0.5">
+          {(["overview", "calendar"] as TeamMode[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setMode(v)}
+              className={cn(
+                "px-3 py-1.5 text-xs uppercase tracking-[0.15em] rounded",
+                mode === v ? "bg-ch text-cream" : "text-ch/60 hover:text-ch",
+              )}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        {mode === "calendar" && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setMemberFilter("all")}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs",
+                memberFilter === "all" ? "bg-ch text-cream border-ch" : "bg-white border-border text-ch/70 hover:bg-creamd",
+              )}
+            >
+              All
+            </button>
+            {team.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMemberFilter(m.id)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
+                  memberFilter === m.id ? "bg-ch text-cream border-ch" : "bg-white border-border text-ch/70 hover:bg-creamd",
+                )}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ background: m.color || "#B8860B" }} />
+                {(m.name || m.email).split(" ")[0]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {mode === "overview" ? (
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {days.map((d) => {
           const total = team.reduce((s, m) => s + dayMemberHrs(d, m), 0);
@@ -563,6 +618,17 @@ function TeamView({ days, entries, team }: { days: Date[]; entries: Entry[]; tea
           );
         })}
       </div>
+      ) : (
+        <TeamCalendarGrid
+          days={days}
+          entries={entries}
+          team={team}
+          projects={projects}
+          ags={ags}
+          memberFilter={memberFilter}
+          onEntryClick={onEntryClick}
+        />
+      )}
 
       <div className="rounded-lg border border-border bg-white p-5">
         <h3 className="font-display text-xl text-ch">Week summary</h3>
