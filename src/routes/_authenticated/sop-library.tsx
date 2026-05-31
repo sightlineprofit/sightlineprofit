@@ -208,9 +208,18 @@ function Library() {
       title="SOP Library"
       description="The way your studio works — codified, priced, and reusable."
       actions={
-        <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
-          <Plus className="mr-2 h-4 w-4" /> New template
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => backfillMut.mutate()}
+            disabled={backfillMut.isPending}
+          >
+            {backfillMut.isPending ? "Restoring…" : "Restore starter templates"}
+          </Button>
+          <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
+            <Plus className="mr-2 h-4 w-4" /> New template
+          </Button>
+        </div>
       }
     >
       <div className="mb-6 flex flex-wrap items-center gap-3">
