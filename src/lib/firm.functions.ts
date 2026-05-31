@@ -305,11 +305,12 @@ export const updateTeamMember = createServerFn({ method: "POST" })
       weeks_per_year: data.weeks_per_year,
     });
 
-    const { id, ...rest } = data;
+    const { id, name, ...rest } = data;
     const { error } = await supabase
       .from("profiles")
       .update({
         ...rest,
+        ...(name !== undefined ? { name: name ?? "" } : {}),
         burdened_hourly_rate: burden.hr || null,
         burdened_weekly_cost: burden.wk || null,
       })
