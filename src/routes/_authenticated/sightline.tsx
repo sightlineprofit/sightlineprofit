@@ -1439,7 +1439,7 @@ function SummarySection({ label, children }: { label: string; children: React.Re
 
 function ProfitRow({ label, value, bold, accent, tip }: {
   label: string; value: string; bold?: boolean;
-  accent?: "success" | "danger"; tip: string;
+  accent?: "success" | "danger" | "gold"; tip: string;
 }) {
   return (
     <tr>
@@ -1461,6 +1461,7 @@ function ProfitRow({ label, value, bold, accent, tip }: {
         bold && "text-xl",
         accent === "danger" && "text-terra",
         accent === "success" && "text-success",
+        accent === "gold" && "text-gold",
         !accent && "text-ch",
       )}>{value}</td>
     </tr>
