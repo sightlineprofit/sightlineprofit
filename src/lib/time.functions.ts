@@ -50,7 +50,7 @@ export const getCalendarData = createServerFn({ method: "GET" })
         supabase.from("activity_groups").select("*").eq("firm_id", profile.firm_id).order("name"),
         supabase
           .from("profiles")
-          .select("id, name, email, role, billable_rate, expected_hrs_per_week, billable_pct")
+          .select("id, name, email, role, color, billable_rate, expected_hrs_per_week, billable_pct, burdened_hourly_rate")
           .eq("firm_id", profile.firm_id)
           .order("name"),
         supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),

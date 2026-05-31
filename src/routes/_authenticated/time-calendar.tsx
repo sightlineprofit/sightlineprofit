@@ -15,6 +15,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
 import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets } from "@/lib/time.functions";
 import { fmtUsd } from "@/lib/finance";
@@ -87,6 +91,7 @@ type Ag = { id: string; name: string; color: string };
 type Member = {
   id: string; name: string | null; email: string; role: string;
   billable_rate: number | null; expected_hrs_per_week: number | null; billable_pct: number | null;
+  color?: string | null;
 };
 
 type View = "week" | "day" | "team";
@@ -362,7 +367,7 @@ function Grid({
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
 }) {
-  const projectName = (id: string | null) => projects.find((p) => p.id === id)?.name;
+  const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
   return (
     <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(${days.length}, minmax(0, 1fr))` }}>
@@ -391,7 +396,12 @@ function Grid({
               const top = (toHourFloat(e.start_time) - HOUR_START) * rowH;
               const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
               const isMine = e.user_id === myId;
-              const label = projectName(e.project_id) || agName(e.activity_group_id) || (e.billable ? "Billable" : "Non-billable");
+              const proj = project(e.project_id);
+              const activity = agName(e.activity_group_id);
+              const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
+              const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
+              const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
+              const lineCount = h >= 56 ? 3 : h >= 36 ? 2 : 1;
               return (
                 <button
                   key={e.id}
@@ -408,10 +418,13 @@ function Grid({
                     borderColor: e.billable ? "#4A7158" : "#A85F3D",
                     color: "#fff",
                   }}
-                  title={label}
+                  title={tooltip}
                 >
-                  <div className="font-medium truncate">{label}</div>
-                  <div className="opacity-80 truncate">{e.start_time?.slice(0, 5)}–{e.end_time?.slice(0, 5)}</div>
+                  <div className="font-medium truncate">{clientPart}</div>
+                  {lineCount >= 2 && <div className="opacity-90 truncate">{activity || "—"}</div>}
+                  {lineCount >= 3 && (
+                    <div className="opacity-80 truncate">{dur} · {e.billable ? "Billable" : "Non-Bill"}</div>
+                  )}
                 </button>
               );
             })}
@@ -680,6 +693,59 @@ function Row({ label, value, accent }: { label: string; value: string; accent?: 
   );
 }
 
+function ProjectTaskPicker({
+  phases, phaseId, onChange,
+}: { phases: Phase[]; phaseId: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(!!phaseId);
+  const [q, setQ] = useState("");
+  const selected = phases.find((p) => p.id === phaseId);
+  const filtered = q
+    ? phases.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))
+    : phases;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button type="button" className="flex w-full items-center justify-between rounded-md border border-border bg-white px-3 py-2 text-left text-xs text-ch/70 hover:bg-creamd">
+          <span className="flex items-center gap-2">
+            <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
+            Link to project task (optional)
+          </span>
+          {selected && <span className="rounded bg-goldp/40 px-2 py-0.5 text-[10px] text-ch">Linked: {selected.name}</span>}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2 rounded-md border border-border bg-cream/40 p-2">
+        {phases.length > 8 && (
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search tasks…"
+            className="mb-2 h-8 text-xs"
+          />
+        )}
+        <div className="max-h-48 overflow-y-auto space-y-0.5">
+          <button type="button" onClick={() => onChange("")} className={cn("block w-full rounded px-2 py-1 text-left text-xs hover:bg-white", !phaseId && "bg-white font-medium")}>— None —</button>
+          {filtered.map((p) => {
+            const over = p.actual_hrs > p.expected_hrs && p.expected_hrs > 0;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onChange(p.id)}
+                className={cn(
+                  "block w-full rounded px-2 py-1 text-left text-xs hover:bg-white",
+                  phaseId === p.id && "bg-white font-medium text-gold",
+                )}
+              >
+                {p.name} <span className="text-ch/50">({p.actual_hrs.toFixed(1)}/{p.expected_hrs.toFixed(0)}h){over ? " ⚠" : ""}</span>
+              </button>
+            );
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 // ───────── entry form ─────────
 function EntryForm({
   compact = false, projects, phases, ags, team, isAdmin, meId, initial, onSaved, onDeleted,
@@ -757,10 +823,37 @@ function EntryForm({
 
       <div>
         <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Project</Label>
-        <Select value={projectId || "_none"} onValueChange={(v) => { setProjectId(v === "_none" ? "" : v); setPhaseId(""); }}>
+        <Select
+          value={projectId ? projectId : agId ? `_firm:${agId}` : "_none"}
+          onValueChange={(v) => {
+            if (v === "_none") { setProjectId(""); setPhaseId(""); return; }
+            if (v.startsWith("_firm:")) {
+              setProjectId("");
+              setPhaseId("");
+              setAgId(v.slice(6));
+              setBillable(false);
+              return;
+            }
+            setProjectId(v); setPhaseId("");
+          }}
+        >
           <SelectTrigger className="h-9"><SelectValue placeholder="Choose project" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_none">— None —</SelectItem>
+            {ags.length > 0 && (
+              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ch/40">── Firm ──</div>
+            )}
+            {ags.map((a) => (
+              <SelectItem key={`_firm:${a.id}`} value={`_firm:${a.id}`}>
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
+                  {a.name}
+                </span>
+              </SelectItem>
+            ))}
+            {projects.length > 0 && (
+              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ch/40">── Client projects ──</div>
+            )}
             {projects.map((p) => (
               <SelectItem key={p.id} value={p.id}>{p.name}{p.client_name ? ` · ${p.client_name}` : ""}</SelectItem>
             ))}
@@ -768,44 +861,30 @@ function EntryForm({
         </Select>
       </div>
 
-      {projectId && projectPhases.length > 0 && (
-        <div>
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Phase</Label>
-          <Select value={phaseId || "_none"} onValueChange={(v) => setPhaseId(v === "_none" ? "" : v)}>
-            <SelectTrigger className="h-9"><SelectValue placeholder="Choose phase" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_none">— None —</SelectItem>
-              {projectPhases.map((p) => {
-                const over = p.actual_hrs > p.expected_hrs && p.expected_hrs > 0;
-                return (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} ({p.actual_hrs.toFixed(1)}/{p.expected_hrs.toFixed(0)}h){over ? " ⚠" : ""}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div>
+        <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Activity</Label>
+        <Select value={agId || "_none"} onValueChange={(v) => setAgId(v === "_none" ? "" : v)}>
+          <SelectTrigger className="h-9"><SelectValue placeholder="Choose activity" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_none">— None —</SelectItem>
+            {ags.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
+                  {a.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      {(!projectId || projectPhases.length === 0) && (
-        <div>
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Activity</Label>
-          <Select value={agId || "_none"} onValueChange={(v) => setAgId(v === "_none" ? "" : v)}>
-            <SelectTrigger className="h-9"><SelectValue placeholder="Choose activity" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_none">— None —</SelectItem>
-              {ags.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  <span className="inline-flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
-                    {a.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      {projectId && projectPhases.length > 0 && (
+        <ProjectTaskPicker
+          phases={projectPhases}
+          phaseId={phaseId}
+          onChange={setPhaseId}
+        />
       )}
 
       {isAdmin && team.length > 1 && (

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { computeBurden } from "@/lib/cost";
 
 const tierEnum = z.enum(["foundation", "studio", "practice"]);
 
@@ -93,6 +94,9 @@ const configSchema = z.object({
   business_structure: z.enum(["sole_prop", "s_corp", "other"]).optional(),
   comp_distribution_annual: z.number().min(0).max(1e9).nullable().optional(),
   comp_reserve_target_annual: z.number().min(0).max(1e9).nullable().optional(),
+  comp_reserve_mode: z
+    .enum(["months_1", "months_2", "months_3", "months_6", "months_12", "custom"])
+    .optional(),
   planned_activity_allocation: z.record(z.string(), z.number().min(0).max(100)).optional(),
 });
 
@@ -183,6 +187,11 @@ const inviteSchema = z.object({
   expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
   weeks_per_year: z.number().min(0).max(60).optional().nullable(),
   billable_pct: z.number().min(0).max(100).optional().nullable(),
+  compensation_type: z.enum(["hourly", "salaried"]).optional(),
+  annual_base_salary: z.number().min(0).max(1e9).optional().nullable(),
+  employer_payroll_tax_pct: z.number().min(0).max(100).optional().nullable(),
+  annual_benefits: z.number().min(0).max(1e9).optional().nullable(),
+  other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
 });
 
 export const inviteTeamMember = createServerFn({ method: "POST" })
@@ -240,7 +249,9 @@ export const listTeam = createServerFn({ method: "GET" })
     const [{ data: members }, { data: invites }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("id, name, email, role, billable_rate, cost_rate, accepted_at")
+        .select(
+          "id, name, email, role, billable_rate, cost_rate, accepted_at, expected_hrs_per_week, weeks_per_year, billable_pct, compensation_type, annual_base_salary, employer_payroll_tax_pct, annual_benefits, other_annual_costs, burdened_hourly_rate, burdened_weekly_cost",
+        )
         .eq("firm_id", profile.firm_id)
         .order("created_at", { ascending: true }),
       supabase
@@ -251,6 +262,62 @@ export const listTeam = createServerFn({ method: "GET" })
         .order("invited_at", { ascending: false }),
     ]);
     return { members: members ?? [], invites: invites ?? [] };
+  });
+
+const memberUpdateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().max(120).optional().nullable(),
+  role: z.enum(["principal", "admin", "team", "view_only"]).optional(),
+  billable_rate: z.number().min(0).max(100000).optional().nullable(),
+  cost_rate: z.number().min(0).max(100000).optional().nullable(),
+  expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
+  weeks_per_year: z.number().min(0).max(60).optional().nullable(),
+  billable_pct: z.number().min(0).max(100).optional().nullable(),
+  compensation_type: z.enum(["hourly", "salaried"]).optional(),
+  annual_base_salary: z.number().min(0).max(1e9).optional().nullable(),
+  employer_payroll_tax_pct: z.number().min(0).max(100).optional().nullable(),
+  annual_benefits: z.number().min(0).max(1e9).optional().nullable(),
+  other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
+});
+
+export const updateTeamMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => memberUpdateSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+
+    // recompute burdened rates
+    const burden = computeBurden({
+      compensation_type: data.compensation_type,
+      cost_rate: data.cost_rate,
+      annual_base_salary: data.annual_base_salary,
+      employer_payroll_tax_pct: data.employer_payroll_tax_pct,
+      annual_benefits: data.annual_benefits,
+      other_annual_costs: data.other_annual_costs,
+      expected_hrs_per_week: data.expected_hrs_per_week,
+      weeks_per_year: data.weeks_per_year,
+    });
+
+    const { id, name, ...rest } = data;
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        ...rest,
+        ...(name !== undefined ? { name: name ?? "" } : {}),
+        burdened_hourly_rate: burden.hr || null,
+        burdened_weekly_cost: burden.wk || null,
+      })
+      .eq("id", id)
+      .eq("firm_id", me.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const listActivityGroups = createServerFn({ method: "GET" })

@@ -121,6 +121,7 @@ export type Database = {
           comp_draw_annual: number | null
           comp_health_annual: number | null
           comp_ptax_pct: number | null
+          comp_reserve_mode: string
           comp_reserve_target_annual: number | null
           comp_retire_annual: number | null
           firm_id: string
@@ -139,6 +140,7 @@ export type Database = {
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
           comp_ptax_pct?: number | null
+          comp_reserve_mode?: string
           comp_reserve_target_annual?: number | null
           comp_retire_annual?: number | null
           firm_id: string
@@ -157,6 +159,7 @@ export type Database = {
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
           comp_ptax_pct?: number | null
+          comp_reserve_mode?: string
           comp_reserve_target_annual?: number | null
           comp_retire_annual?: number | null
           firm_id?: string
@@ -406,12 +409,18 @@ export type Database = {
       profiles: {
         Row: {
           accepted_at: string | null
+          annual_base_salary: number | null
+          annual_benefits: number | null
           billable_pct: number | null
           billable_rate: number | null
+          burdened_hourly_rate: number | null
+          burdened_weekly_cost: number | null
           color: string
+          compensation_type: string
           cost_rate: number | null
           created_at: string
           email: string
+          employer_payroll_tax_pct: number | null
           expected_hrs_per_week: number | null
           firm_id: string | null
           id: string
@@ -419,17 +428,24 @@ export type Database = {
           invited_at: string | null
           is_super_admin: boolean
           name: string
+          other_annual_costs: number | null
           role: Database["public"]["Enums"]["user_role"]
           weeks_per_year: number | null
         }
         Insert: {
           accepted_at?: string | null
+          annual_base_salary?: number | null
+          annual_benefits?: number | null
           billable_pct?: number | null
           billable_rate?: number | null
+          burdened_hourly_rate?: number | null
+          burdened_weekly_cost?: number | null
           color?: string
+          compensation_type?: string
           cost_rate?: number | null
           created_at?: string
           email: string
+          employer_payroll_tax_pct?: number | null
           expected_hrs_per_week?: number | null
           firm_id?: string | null
           id: string
@@ -437,17 +453,24 @@ export type Database = {
           invited_at?: string | null
           is_super_admin?: boolean
           name?: string
+          other_annual_costs?: number | null
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
         }
         Update: {
           accepted_at?: string | null
+          annual_base_salary?: number | null
+          annual_benefits?: number | null
           billable_pct?: number | null
           billable_rate?: number | null
+          burdened_hourly_rate?: number | null
+          burdened_weekly_cost?: number | null
           color?: string
+          compensation_type?: string
           cost_rate?: number | null
           created_at?: string
           email?: string
+          employer_payroll_tax_pct?: number | null
           expected_hrs_per_week?: number | null
           firm_id?: string | null
           id?: string
@@ -455,6 +478,7 @@ export type Database = {
           invited_at?: string | null
           is_super_admin?: boolean
           name?: string
+          other_annual_costs?: number | null
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
         }
