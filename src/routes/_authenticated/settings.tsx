@@ -12,7 +12,10 @@ import {
   addActivityGroup,
   deleteActivityGroup,
   upsertFirmConfig,
+  listExpenses,
+  updateTeamMember,
 } from "@/lib/firm.functions";
+import { computeBurden } from "@/lib/cost";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { Trash2, ChevronDown, ChevronRight, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
