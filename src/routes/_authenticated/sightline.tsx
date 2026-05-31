@@ -18,7 +18,7 @@ import {
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
 import { toast } from "sonner";
-import { fmtUsd, fmtPct, formatHours } from "@/lib/finance";
+import { fmtUsd, fmtPct, formatHours, calc as calcFinance } from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
