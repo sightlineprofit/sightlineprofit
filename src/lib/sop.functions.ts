@@ -44,16 +44,19 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) {
-      return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {} };
+      return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {}, usageCounts: {}, activeUsageCounts: {}, hiddenIds: [], role: profile?.role ?? "team" };
     }
-    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }] = await Promise.all([
-      supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }),
+    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }, { data: prefs }] = await Promise.all([
+      supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).is("deleted_at", null).order("created_at", { ascending: false }),
       supabase.from("sop_phases").select("*").eq("firm_id", profile.firm_id).order("sort_order"),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
       supabase.from("projects")
         .select("id, name, client_name, status, sop_template_id, created_at")
         .eq("firm_id", profile.firm_id)
         .order("created_at", { ascending: false }),
+      (supabase.from("user_sop_preferences" as never) as never as { select: (s: string) => { eq: (k: string, v: string) => Promise<{ data: Array<{ template_id: string; hidden: boolean }> | null }> } })
+        .select("template_id, hidden")
+        .eq("user_id", userId),
     ]);
     const projects = projectsRaw ?? [];
     const phaseIds = (phases ?? []).map((p) => p.id);
@@ -62,11 +65,19 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       : { data: [] as never[] };
 
     const lastUsed: Record<string, string> = {};
+    const usageCounts: Record<string, number> = {};
+    const activeUsageCounts: Record<string, number> = {};
     for (const p of projects) {
-      if (p.sop_template_id && (!lastUsed[p.sop_template_id] || p.created_at > lastUsed[p.sop_template_id])) {
+      if (!p.sop_template_id) continue;
+      usageCounts[p.sop_template_id] = (usageCounts[p.sop_template_id] ?? 0) + 1;
+      if (p.status === "active") {
+        activeUsageCounts[p.sop_template_id] = (activeUsageCounts[p.sop_template_id] ?? 0) + 1;
+      }
+      if (!lastUsed[p.sop_template_id] || p.created_at > lastUsed[p.sop_template_id]) {
         lastUsed[p.sop_template_id] = p.created_at;
       }
     }
+    const hiddenIds = (prefs ?? []).filter((p) => p.hidden).map((p) => p.template_id);
     return {
       templates: templates ?? [],
       phases: phases ?? [],
@@ -74,6 +85,10 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       projects: projects.map((p) => ({ id: p.id, name: p.name, client_name: p.client_name, status: p.status })),
       config,
       lastUsed,
+      usageCounts,
+      activeUsageCounts,
+      hiddenIds,
+      role: profile.role as string,
     };
   });
 
