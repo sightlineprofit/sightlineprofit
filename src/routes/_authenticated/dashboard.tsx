@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getDashboardData, updateMetricPrefs, listKnowledge } from "@/lib/dashboard.functions";
+import { addExpense, upsertFirmConfig } from "@/lib/firm.functions";
 import {
   calc,
   fmtUsd,
@@ -934,6 +935,10 @@ function ScenarioPreview({ lastName }: { lastName?: string }) {
 }
 
 export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expenses: any[] }) {
+  const qc = useQueryClient();
+  const addExp = useServerFn(addExpense);
+  const saveCfg = useServerFn(upsertFirmConfig);
+  const [committing, setCommitting] = useState(false);
   const [ov, setOv] = useState<{
     oneTime: number; oneTimeMonths: number; monthly: number; quarterly: number; annual: number;
     rateOverride: string; hrsOverride: string; payIncrease: number; name: string;
@@ -962,6 +967,37 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
         billableHrsPerWeek: base.targetBillableHrsWeek,
       })
     : null;
+
+  const canCommit =
+    ov.oneTime > 0 || ov.monthly > 0 || ov.quarterly > 0 || ov.annual > 0 || ov.payIncrease > 0;
+
+  async function commitToCostArchitecture() {
+    setCommitting(true);
+    try {
+      const tasks: Promise<unknown>[] = [];
+      const label = ov.name?.trim() || "Scenario expense";
+      if (ov.monthly > 0)
+        tasks.push(addExp({ data: { name: `${label} (monthly)`, amount: ov.monthly, frequency: "monthly", recurring: true } as any }));
+      if (ov.quarterly > 0)
+        tasks.push(addExp({ data: { name: `${label} (quarterly)`, amount: ov.quarterly, frequency: "quarterly", recurring: true } as any }));
+      if (ov.annual > 0)
+        tasks.push(addExp({ data: { name: `${label} (annual)`, amount: ov.annual, frequency: "annual", recurring: true } as any }));
+      if (ov.oneTime > 0)
+        tasks.push(addExp({ data: { name: `${label} (one-time)`, amount: ov.oneTime, frequency: "onetime", recurring: false, amort_months: ov.oneTimeMonths } as any }));
+      if (ov.payIncrease > 0 && baseConfig) {
+        const nextDraw = Number(baseConfig.comp_draw_annual || 0) + ov.payIncrease;
+        tasks.push(saveCfg({ data: { comp_draw_annual: nextDraw } as any }));
+      }
+      await Promise.all(tasks);
+      toast.success("Added to your cost architecture");
+      setOv({ oneTime: 0, oneTimeMonths: 12, monthly: 0, quarterly: 0, annual: 0, rateOverride: "", hrsOverride: "", payIncrease: 0, name: "" });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    } catch (e: any) {
+      toast.error(e?.message ?? "Could not save");
+    } finally {
+      setCommitting(false);
+    }
+  }
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -1053,6 +1089,30 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
             , you recover this in <span className="font-medium text-ch">{recovery.weeks.toFixed(1)}</span>{" "}
             weeks of billable work. After {ov.oneTimeMonths} months, this cost disappears and your
             margin returns.
+          </div>
+        )}
+        {canCommit && (
+          <div className="rounded-lg border border-border bg-white p-4 space-y-3">
+            <p className="text-[11px] uppercase tracking-wider text-ch/50">Make it real</p>
+            <input
+              className={inputCls}
+              placeholder="Label (e.g. New laptop, Raise)"
+              value={ov.name}
+              onChange={(e) => setOv({ ...ov, name: e.target.value })}
+            />
+            <button
+              type="button"
+              disabled={committing}
+              onClick={commitToCostArchitecture}
+              className="w-full rounded-md bg-ch px-3 py-2 text-sm text-cream hover:bg-ch/90 disabled:opacity-50"
+            >
+              {committing ? "Adding…" : "Add to cost architecture"}
+            </button>
+            <p className="text-[11px] text-ch/50 leading-relaxed">
+              This commits the expense or pay change to your firm. Your aligned floor and rate
+              recommendations update everywhere — Sightline projects already below the new floor
+              will be flagged.
+            </p>
           </div>
         )}
       </div>
