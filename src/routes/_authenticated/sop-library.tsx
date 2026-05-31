@@ -167,6 +167,18 @@ function Library() {
     },
   });
 
+  const backfillFn = useServerFn(backfillStarterSops);
+  const backfillMut = useMutation({
+    mutationFn: () => backfillFn({ data: {} as never }),
+    onSuccess: (res: { inserted: number; skipped: number }) => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      toast.success(
+        `Starter templates restored — ${res.inserted} added, ${res.skipped} already existed`,
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Backfill failed"),
+  });
+
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
