@@ -248,7 +248,14 @@ function Library() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-display text-xl tracking-tight text-ch">{tpl.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-display text-xl tracking-tight text-ch">{tpl.name}</h3>
+                      {(tpl as { is_default?: boolean }).is_default && (
+                        <span className="shrink-0 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-gold">
+                          Starter
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-0.5 text-xs uppercase tracking-[0.16em] text-ch/50">
                       {tpl.category || "Uncategorized"}
                     </p>

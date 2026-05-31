@@ -830,6 +830,7 @@ export type Database = {
           done_when: string | null
           firm_id: string
           id: string
+          is_default: boolean
           name: string
           scope_risk_level: Database["public"]["Enums"]["scope_risk"] | null
           tags: string[] | null
@@ -844,6 +845,7 @@ export type Database = {
           done_when?: string | null
           firm_id: string
           id?: string
+          is_default?: boolean
           name: string
           scope_risk_level?: Database["public"]["Enums"]["scope_risk"] | null
           tags?: string[] | null
@@ -858,6 +860,7 @@ export type Database = {
           done_when?: string | null
           firm_id?: string
           id?: string
+          is_default?: boolean
           name?: string
           scope_risk_level?: Database["public"]["Enums"]["scope_risk"] | null
           tags?: string[] | null

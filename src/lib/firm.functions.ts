@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { computeBurden } from "@/lib/cost";
+import { seedDefaultSops } from "@/lib/sop-seed.server";
 
 const tierEnum = z.enum(["foundation", "studio", "practice"]);
 
@@ -58,6 +59,13 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
     if (profErr) throw new Error(profErr.message);
 
     await supabaseAdmin.from("firm_config").insert({ firm_id: firm.id });
+
+    // Seed the 10 starter SOP templates for this firm (idempotent by name).
+    try {
+      await seedDefaultSops(firm.id);
+    } catch (e) {
+      console.error("[createFirmForCurrentUser] seedDefaultSops failed:", e);
+    }
 
     return { firmId: firm.id, alreadyExists: false };
   });
