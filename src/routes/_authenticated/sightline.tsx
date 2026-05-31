@@ -365,6 +365,22 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     enabled: tplPickerOpen,
   });
 
+  const entriesForMemo = data?.entries ?? [];
+  // Per-phase billable/non-bill hour split (for stacked bars).
+  // Must be declared before any early return so hook order is stable
+  // between the loading render and the data-ready render.
+  const phaseHoursByPhase = useMemo(() => {
+    const map = new Map<string, { billable: number; nonBill: number }>();
+    for (const e of entriesForMemo) {
+      if (!e.project_phase_id) continue;
+      const cur = map.get(e.project_phase_id) ?? { billable: 0, nonBill: 0 };
+      const h = Number(e.hrs || 0);
+      if (e.billable) cur.billable += h; else cur.nonBill += h;
+      map.set(e.project_phase_id, cur);
+    }
+    return map;
+  }, [entriesForMemo]);
+
   if (isLoading || !data) {
     return (
       <div className="mx-auto max-w-6xl px-8 py-12">
@@ -383,19 +399,6 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const avgCostRate = teamCostRates.length
     ? teamCostRates.reduce((s, n) => s + n, 0) / teamCostRates.length
     : (Number(config?.rate_billed) || 0) * 0.6;
-
-  // Per-phase billable/non-bill hour split (for stacked bars)
-  const phaseHoursByPhase = useMemo(() => {
-    const map = new Map<string, { billable: number; nonBill: number }>();
-    for (const e of entries) {
-      if (!e.project_phase_id) continue;
-      const cur = map.get(e.project_phase_id) ?? { billable: 0, nonBill: 0 };
-      const h = Number(e.hrs || 0);
-      if (e.billable) cur.billable += h; else cur.nonBill += h;
-      map.set(e.project_phase_id, cur);
-    }
-    return map;
-  }, [entries]);
 
   const phaseRows: PhaseRow[] = phases.map((p) => {
     const sc = Number(p.expected_hrs || 0);

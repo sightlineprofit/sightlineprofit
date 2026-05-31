@@ -1,70 +1,40 @@
-# Implementation Plan
+## What's happening
 
-Large 4-part change. Will ship in one batch with one migration, but listed in sequence so progress is clear.
+The fallback "This page didn't load" screen you're hitting is the root error boundary in `src/routes/__root.tsx`. The underlying runtime error captured by the preview is:
 
-## Part 1 — Business Reserve Target dropdown (Settings → S-Corp/Advanced comp)
+> `Failed to fetch dynamically imported module: …/virtual:tanstack-start-client-entry`
 
-- Replace single `comp_reserve_target_annual` number input with:
-  - Mode select: 1 / 2 / 3 / 6 / 12 months of OpEx, or Custom amount
-  - When months mode: compute `annual_opex_total / 12 * months` from `expenses` (normalize each row to annual based on `frequency`/`amort_months`, then divide). Show "3 mo × $X/mo = $Y".
-  - When custom: number input as today.
-- Persist as: keep `comp_reserve_target_annual` as the resolved dollar value (so finance.ts is unaffected). Add new `comp_reserve_mode` (text: `months_1|months_2|months_3|months_6|months_12|custom`) on `firm_config` so the UI can re-render the right control and auto-recompute on save when OpEx changes.
-- Add InfoTip with the requested copy.
+This is a known Vite / TanStack Start behavior, not a bug in the Sightline page itself:
 
-## Part 2 — Team setup: editable, hourly vs salaried, true burdened cost
+- Vite code-splits each route into its own chunk with a hashed filename.
+- When the dev server rebuilds (you saved a file, the preview rebuilt, or HMR reconnected), the chunk hash changes.
+- The browser is still holding the old hash. The first time it tries to load a new chunk (e.g. opening a project triggers a hover/dialog/code path whose module hadn't been fetched yet), the request 404s and React throws.
+- Hitting Back navigates within already-loaded code, then re-entering re-runs the import — by then Vite has served the new chunk, so it works. That's why "going back fixes it."
 
-Schema additions on `profiles`:
-- `compensation_type` text default `'hourly'` (`'hourly'|'salaried'`)
-- `annual_base_salary` numeric
-- `employer_payroll_tax_pct` numeric default 7.65
-- `annual_benefits` numeric
-- `other_annual_costs` numeric
-- `burdened_hourly_rate` numeric (stored)
-- `burdened_weekly_cost` numeric (stored)
+It will also occasionally happen in production right after a redeploy, for the same reason (old client + new chunk hashes).
 
-UI in `settings.tsx` Team section:
-- Each member row gets an Edit button → inline/dialog form pre-filled with current values; Save/Cancel.
-- Comp type radio. Hourly → existing `cost_rate`. Salaried → hide cost rate, show salary/ptax/benefits/other inputs.
-- Live "Fully burdened" breakdown panel (yr / wk / hr) using formulas in spec.
-- InfoTip on burdened cost.
-- On save: server fn recomputes burdened fields and stores them. Same recompute when `expected_hrs_per_week` / `weeks_per_year` change.
+## Fix
 
-Wire-through:
-- Capacity tile, calendar team selector, dashboard utilization already read from `profiles` — confirmed they pick up updates via React Query invalidation. Pending invites: include `team_invitations` rows that haven't accepted in the team-pickers so they appear immediately (planned-hours only, no time entries).
+Make the app auto-recover from stale-chunk errors instead of showing the fallback.
 
-## Part 3 — Time Calendar entry improvements (`time-calendar.tsx`)
+1. **In `src/routes/__root.tsx` `ErrorComponent`:**
+   - Detect the dynamic-import / chunk-load error message family:
+     - `Failed to fetch dynamically imported module`
+     - `Importing a module script failed`
+     - `error loading dynamically imported module`
+   - When matched, do a one-shot `window.location.reload()` (guarded by a `sessionStorage` flag like `__chunk_reload_at` with a 10 s window) so we never loop if the reload also fails. On a successful reload the flag is cleared.
+   - On non-matching errors, keep the current fallback UI.
 
-Calendar blocks:
-- Render 3 lines (client · project / activity / duration · billable). Truncate by available height. Tooltip with full details including phase + notes.
+2. **Add a global `vite:preloadError` listener** (Vite fires this event when a preload fails) in the same root component's `RootComponent` `useEffect`:
+   - Call `event.preventDefault()` and the same guarded `window.location.reload()`.
+   - This catches the case where the failure happens during preload (link hover) before React renders anything.
 
-Entry modal:
-- Rename "Phase" field to "Activity"; bind to `activity_group_id` dropdown (already exists — re-label and reorder).
-- New collapsible "Link to project task (optional)" below activity. Expanded shows phase list grouped by phase; search input when >8 phases. Selecting writes `project_phase_id`. Tag chip shows selection when collapsed.
-- Project dropdown: prepend a `── Firm ──` group with one item per activity group (BD, Internal, Training, etc.). Selecting one sets `project_id=null`, `activity_group_id=<that group>`, `billable=false` by default.
+3. **No changes to Sightline / ProjectDetail.** The page itself is fine — the symptom only looked Sightline-specific because that's where the first uncached chunk happened to load.
 
-No schema changes; uses existing columns.
+## Files touched
 
-## Part 4 — Team Calendar view redesign
+- `src/routes/__root.tsx` — extend `ErrorComponent` with stale-chunk detection + guarded reload; add a `vite:preloadError` listener in `RootComponent`.
 
-In `time-calendar.tsx` team view (admins only):
-- Add `[Overview] [Calendar]` sub-toggle.
-- Overview = current behavior (kept as-is).
-- Calendar mode:
-  - Member filter pills row (All + each member, with color dot).
-  - When multiple selected: shared week grid; each day column subdivides into per-member sub-columns; blocks use the member's color. Vertical stack on time overlap within a member column.
-  - When exactly one selected: full-width per-member week (mirrors solo view) with full block detail.
-- Week summary table always rendered below.
+## Why not just "tell users to refresh"
 
-## Technical notes
-
-- One migration: `firm_config.comp_reserve_mode` + `profiles` burdened-cost columns.
-- `firm.functions.ts`: extend `upsertFirmConfig` payload schema; add `updateTeamMember` server fn that accepts all comp fields, computes burdened values, and writes them.
-- `finance.ts`: `calc()` continues to read `comp_reserve_target_annual` directly (resolved value), so no math change needed. Capacity / utilization use `burdened_weekly_cost` when present, falling back to `cost_rate * expected_hrs_per_week`.
-- `time.functions.ts`: include `activity_groups` (already done) and `team_invitations` pending list in `getCalendarData` so unaccepted invites show up.
-- Strict frontend-only for view changes; schema + server fns required only for the parts above.
-
-## Out of scope
-
-- No changes to billing flow, RLS posture, or scoped/actual hour math.
-- No changes to phase-card UI on Sightline.
-- No new tables.
+The error is recoverable and deterministic — the second attempt always works. Forcing a single silent reload turns a confusing fallback page into an invisible 200 ms blip, and the same fix protects every route after a deploy, not just Sightline.
