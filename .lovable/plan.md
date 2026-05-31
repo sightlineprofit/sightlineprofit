@@ -1,80 +1,117 @@
-## Sightline project detail — combined rebuild
+## Sightline — Capacity, Accounting Basis, Project Status, Comp, Allocation, Scenarios, Plain Language
 
-Touches one page (`src/routes/_authenticated/sightline.tsx`) and adds a few supporting files. Project list, creation form, and SOP-library template builder are left alone.
+This is a large interconnected change spanning schema, dashboard, scenario planning, rate architecture, and copy. Splitting into ordered phases; each phase ships together.
 
-### 1. Database — financial audit log
+### Phase 1 — Schema & settings (one migration)
 
-New migration:
-- Table `project_financial_audit` (project_id, firm_id, changed_by, changed_at, field_changed text, old_value text, new_value text, reason text).
-- GRANT select/insert to authenticated; ALL to service_role.
-- RLS: SELECT only when caller is firm principal and row's firm matches `current_firm_id()`. INSERT only when caller is principal of the firm. No UPDATE/DELETE policies (immutable).
+`supabase/migrations/<ts>_capacity_basis_status_comp.sql`:
 
-### 2. Server functions (`src/lib/sightline.functions.ts`)
+- `firm_config`:
+  - `accounting_basis text not null default 'cash'` (check `in ('cash','accrual')`)
+  - `business_structure text not null default 'sole_prop'` (`sole_prop|s_corp|other`)
+  - `comp_distribution_annual numeric` (S-Corp distribution, no SE tax)
+  - `comp_reserve_target_annual numeric` (business reserve target)
+  - `planned_activity_allocation jsonb default '{}'` (`{ activity_group_id: pct }`)
+- `projects.status` enum extension: add `pursuit`, `invoiced`, `collected`. Keep `active`, `completed`. Migrate existing values where needed (leave as-is; new values just added).
+  - Postgres enum: `ALTER TYPE project_status ADD VALUE IF NOT EXISTS 'pursuit'`, same for `invoiced`, `collected`.
+- New `knowledge_articles` row: featured article "Why every spending decision has a per-hour cost — and what to do with that". Inserted via `supabase--insert`, not migration.
 
-- Extend `getProjectDetail` to also return `audit` rows (principal only — empty array otherwise) and `isPrincipal` flag.
-- Add `updateProjectFinancial({ project_id, patch: { scoped_rate? }, reason? })` — principal only, writes audit row(s) for each changed field.
-- Add `updateProjectPhaseFinancial({ id, patch: { expected_hrs?, billable? }, reason? })` — principal only, writes audit rows tagged `phase_expected_hrs:<name>` / `phase_billable:<name>`.
-- Existing `upsertProjectPhase` keeps handling new-phase creation and name edits (non-financial).
-- Existing `updateProjectMeta` continues to handle operational edits (name, client, dates).
+### Phase 2 — Finance math (`src/lib/finance.ts`)
 
-### 3. Project header (above tabs, always visible)
+- Extend `FirmConfig` with new fields.
+- `calc()`:
+  - `compTotal` honors business structure:
+    - sole_prop/other: `draw + ptax + health + retire` (today's behavior).
+    - s_corp: `w2_salary + ptax(on salary only) + health + retire + distribution + reserve_target`. SE tax NOT applied to distribution or reserve. Salary field reuses `comp_draw_annual`.
+  - Returns `marginBuffer = billedRate - alignedRate`.
+- New helpers:
+  - `cashRecovery({ amount, marginPerHr, billableHrsPerWeek })` → weeks/months.
+  - `oneTimePerHr({ amount, months, annualBillableHrs })` → $/hr while active.
+  - `marginBreakdown(grossProfitPerHr)` → tax 25%, reserve 10%, growth remainder.
 
-- Editable inline name (principal), client name, status dropdown.
-- Template label: "Template: X" / "Custom phases" / "No phases yet" using the corrected rule.
-- Project rate `$X/hr` + date range.
-- Health pill computed from per-phase `actual/expected`:
-  - Over Budget (terra) if any phase > 100% → "X.XX hrs over on {phase}  –$X actual margin"
-  - Heads Up (gold) if any phase 80–99% → "{phase} at X% of budget  $X margin remaining"
-  - On Track (green) otherwise → "$X margin remaining  X.XX hrs budget remaining"
+### Phase 3 — Project status semantics
 
-### 4. Tabs (`Tabs` from shadcn) — Overview / Phases / Time Log
+Server-side (`sightline.functions.ts`, `dashboard.functions.ts`, `time.functions.ts`):
 
-**Overview**
-- Inline prompt if `scoped_rate` null/0 linking to edit panel.
-- Profitability summary in three grouped sections (Plan / Reality / Gap) with `Info` HoverCards on every row. Margin variance + Non-billable cost absorbed in Gap. Cormorant Garamond for values (use existing `font-display`), negatives terra, positives success.
-- Hours summary stacked bar (full width, 3 segments: billable green, non-bill terra, remaining cream). Overflow segment in darker terra with "+X.XX hrs over budget" label. Labeled values below + total.
-- Project details card (client, rate, date range, template, team, notes) with Edit button (operational fields, principal+admin).
-- Financial change history (principal only, collapsible, hidden if no audit rows).
+- Status buckets:
+  - `pursuit` → BD hours, excluded from billable utilization & revenue.
+  - `active` → counts toward committed revenue + utilization + capacity.
+  - `invoiced` → committed revenue; hours no longer load active capacity.
+  - `collected` → revenue collected.
+  - `completed` → archived; excluded from active capacity.
+- Dashboard payload exposes:
+  - `committed_revenue` (active + invoiced scoped/fixed)
+  - `collected_revenue` (collected)
+  - `actual_revenue_for_basis` (cash → collected only; accrual → invoiced+collected)
+  - `bd_hours_week`
+- Calendar/time-log row labels "BD time" for pursuit projects (UI-only badge).
 
-**Phases**
-- Summary line: "N phases · X.XX hrs scoped · $X potential revenue".
-- Collapsible phase cards (Collapsible from shadcn):
-  - Collapsed: name, optional category, actual/scoped hrs, status badge (On Track / Heads Up / Over / Non-Bill, sentence case), 4px mini progress bar (segments billable/non-bill/remaining; overflow in darker terra), "Hrs over/under", "Over/Under" $, "In SOP library" badge when `sop_phase_id` set.
-  - Expanded: triggered by / done when (from template if available, else empty hint), process steps with estimated hrs muted right-aligned, phase total, time-log entries for this phase, LOG TIME button (links to time calendar pre-filtered).
-- Add Phase / Add from SOP Library buttons (Add from SOP Library opens existing template attach flow already present).
-- Lock icon on financial inputs when admin (not principal); principal edits open a confirm dialog with optional reason → calls `updateProjectPhaseFinancial`.
-- No revenue/margin numbers on this tab.
+### Phase 4 — Capacity tile (replaces Growth Roadmap on dashboard)
 
-**Time Log**
-- Summary bar: Total / Billable / Non-billable / Revenue earned.
-- Filters: Assignee, Phase, Date range, Type.
-- Editable rows (date, phase, activity, role, hours, billable, notes). "No phase" terra badge when unassigned. Delete (principal/admin) with inline confirm.
-- Empty state copy as spec'd.
+- Remove Growth Roadmap dashboard tile entry; route untouched.
+- New `src/components/dashboard/CapacityTile.tsx`:
+  - Collapsed: firm planned vs committed bar, available/committed/remaining hrs, over-capacity & over-commit warnings.
+  - Full view via dialog/sheet: 4 tabs.
+- New `src/lib/capacity.functions.ts`:
+  - `getCapacityData()` returns members (target hrs, weeks), planned activity allocation, actual allocation aggregated from `time_entries.activity_group_id`, per-member week/month/quarter/YTD totals, active project commitments with implied hrs/week, comparisons to prior period, BD hours.
+  - `simulateProjectFit({ hours, start, end, member_ids })` → outcome bucket + message data.
+  - `savePlannedActivityAllocation({ map })`.
+- 4 tabs implemented inline within `CapacityTile` (or in `src/components/capacity/*.tsx` for readability).
 
-### 5. Warnings panel logic
+### Phase 5 — "Where Your Rate Goes" tile (replaces Cost Architecture Health)
 
-- Show only when at least one condition fires; hidden otherwise.
-- Over: per-phase over with hrs + $.
-- Approaching: per-phase 80–99%.
-- Non-billable dominance: only when `total_hrs ≥ 2 AND billable_hrs = 0`.
+- Remove health-ring/cost-architecture-health tile from dashboard grid.
+- New `src/components/dashboard/RateAllocationTile.tsx`:
+  - Collapsed: compact stacked bar (Owner Comp, Payroll/SE, Recurring, One-Time, Team Labor, Above-Floor Margin).
+  - Full: full-width bar, labeled list, expiry notes per one-time expense, margin breakdown panel (Tax 25%, Reserve 10%, Growth/Disc, True available profit) with InfoTips.
+- Team Labor segment computed from team members' fully-burdened cost averaged across billable hours; hidden if no team beyond owner.
 
-### 6. Remove `% consumed` everywhere on this page; replace with plain "X hrs logged · Y hrs budgeted" where context demands a comparison.
+### Phase 6 — Rate & Cost Architecture: Advanced compensation
 
-### Out of scope (untouched)
+- In `dashboard.rate.tsx` (rate architecture editor): add collapsible "S-Corp / Advanced compensation" `<Collapsible>` block.
+  - Business structure radios.
+  - Relabel salary field when S-Corp selected.
+  - Distribution + reserve inputs.
+  - Running total displayed; replaces draw figure in formula.
+- Persist via existing `upsertFirmConfig` (extend schema).
 
-- SOP Library template builder, project list, project creation form, dashboard tiles.
-- Adding category/role to project_phases (spec mentions "category tag" and "role" on time entries — will render only if data already exists; no schema changes for these).
-- Editing project name inline persistence is wired through existing `updateProjectMeta`.
+### Phase 7 — Accounting basis
 
-### Files
+- Onboarding: insert new step after capacity, before completion, in `onboarding.tsx`.
+- Settings → Firm Settings: add radio to existing settings form.
+- All dashboard revenue figures use `accounting_basis` to choose actual revenue source & label.
+- Add InfoTips on every revenue label (Committed / Collected / Earned).
 
-- New migration `supabase/migrations/<ts>_project_financial_audit.sql`.
-- Edit `src/lib/sightline.functions.ts` (add audit + 2 financial mutations, extend detail).
-- Edit `src/routes/_authenticated/sightline.tsx` (project detail only).
-- Possibly small helper file `src/components/sightline/HoursBar.tsx` to keep the route file readable.
+### Phase 8 — Scenario planning intelligence
 
-### Risk / notes
+- In `dashboard.scenarios.tsx` (`ScenarioFull`):
+  - Compute `marginBuffer` against current billed_rate.
+  - Branch messages per scenario type (new expense, pay increase, rate override, hours override, one-time purchase with cash recovery framing).
+  - "Add this to my cost architecture" commit button → writes to `expenses` (or `firm_config` for pay), then recalculates and lists active projects priced below new floor (link to projects page with filter).
 
-- Audit-log RLS uses `is_firm_principal()` which already exists.
-- Cost rate uses team average (same as today) — kept consistent across Plan/Reality/Gap.
-- This rewrites ~450 lines of the project-detail view; project-list code remains intact.
+### Phase 9 — Plain language for amortization
+
+Global string replacement across UI (NOT data):
+- finance.ts comments + UI labels in: scenarios page, expenses settings, rate architecture, expense forms, allocation bar.
+- Inline always-visible explanation for one-time expenses (not tooltip).
+- "Spread cost over (months)" replaces "Amortize over (months)".
+
+### Phase 10 — Knowledge base article
+
+- Insert one `knowledge_articles` row: `featured`-style (use `kb_kind='article'`, `published_at=now()`). Link from `dashboard.rate.tsx`.
+
+### Out of scope
+
+- Project list filter UI updates beyond the new status options (badge color + dropdown). No batch status migration of existing rows.
+- Invoicing/payment tracking: only the status field drives recognition — no Stripe/AR integration.
+- Real S-Corp tax calculation engine (estimates only, with InfoTips noting "confirm with your accountant").
+
+### Risk / size
+
+This is roughly:
+- 1 migration, 1 KB-article insert
+- 4 new files (CapacityTile, RateAllocationTile, capacity.functions.ts, capacity sub-components)
+- Heavy edits to: dashboard.tsx, dashboard.rate.tsx, dashboard.scenarios.tsx, onboarding.tsx, settings.tsx, sightline.tsx, time-calendar.tsx, finance.ts, dashboard.functions.ts, firm.functions.ts, sightline.functions.ts
+- Likely ~1500–2000 LOC changed/added across ~15 files.
+
+Given the size, I'll execute phases in order and verify builds between major phases.
