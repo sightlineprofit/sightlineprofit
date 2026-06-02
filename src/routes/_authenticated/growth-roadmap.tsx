@@ -206,6 +206,7 @@ function GrowthRoadmap() {
     billablePct: 70,
     billableRate: 125,
     expectedHrsPerWeek: 40,
+    rampWeeks: 12,
   });
 
   const baseCalc = useMemo(() => calc(config, expenses, {}), [config, expenses]);
