@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Trash2 } from "lucide-react";
+import { Trash2, Check, AlertTriangle, X } from "lucide-react";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import {
   getGrowthData,
   saveGrowthScenario,
   deleteScenario,
+  saveCapacityIndicator,
 } from "@/lib/growth.functions";
 import { toast } from "sonner";
 
@@ -51,6 +52,7 @@ type Hire = {
   billablePct: number;
   billableRate: number;
   expectedHrsPerWeek: number;
+  rampWeeks: number;
 };
 
 type ProjectionInputs = {
