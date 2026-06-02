@@ -221,12 +221,82 @@ function GrowthRoadmap() {
   );
   const monthsRunway = baseCalc.grossProfit > 0 ? (baseCalc.grossProfit / hireAnnualCost) * 12 : 0;
   const revenueNeeded = hireAnnualCost / Math.max(0.0001, (Number(config?.target_gross_margin_pct) || 50) / 100);
-  // Months until hire: simple model based on pipeline horizon
-  const monthlyTeamCapacity = teamTotals.target * 4.33;
-  const monthlyPipelineLoad = monthlyTeamCapacity > 0 ? (pipelineWeightedTotal / monthlyTeamCapacity) : 0;
-  const monthsToCapacity = teamUtil < 85
-    ? Math.max(1, Math.round(((85 - teamUtil) / Math.max(1, monthlyPipelineLoad * 10)) * 6))
+
+  // ── Hiring threshold signal computations ──────────────────────────────
+  const weeklyBuckets = (data?.weeklyBuckets ?? []) as Array<{
+    weekStart: string; billable: number; total: number;
+  }>;
+  const weeksWithData = weeklyBuckets.length;
+  const hasEnoughTimeData = weeksWithData >= 4;
+  const hasActiveProject = pipeline.length > 0 || teamTotals.actual > 0;
+  const dataSufficient = hasEnoughTimeData && hasActiveProject && teamUtil > 0;
+
+  // Signal 2 — capacity pressure: last 8 weeks above 85% util
+  const last8 = weeklyBuckets.slice(-8);
+  const weeklyTargetTeam = teamTotals.target; // hrs/week firm-wide billable target
+  const weeksOver85 = weeklyTargetTeam > 0
+    ? last8.filter((w) => w.billable / weeklyTargetTeam > 0.85).length
     : 0;
+
+  // Signal 3 — committed workload: weeks until crunch
+  const weeklySlack = Math.max(0, weeklyTargetTeam - teamTotals.actual);
+  const crunchWeeks = pipelineWeightedTotal > 0 && weeklyTargetTeam > 0
+    ? (weeklySlack > 0 ? pipelineWeightedTotal / weeklySlack : 0)
+    : Infinity;
+  const hasCrunchData = pipelineWeightedTotal > 0 && weeklyTargetTeam > 0;
+
+  // Signal 4 — revenue trajectory: compare first vs second half of last 12 weeks
+  const billedRateForTrend = Number(config?.actual_billed_rate) || Number(config?.rate_billed) || 0;
+  const trendWeeks = weeklyBuckets.slice(-12);
+  let revenueTrendPct = 0;
+  let hasTrendData = false;
+  if (trendWeeks.length >= 8 && billedRateForTrend > 0) {
+    const half = Math.floor(trendWeeks.length / 2);
+    const a = trendWeeks.slice(0, half).reduce((s, w) => s + w.billable, 0) / Math.max(1, half);
+    const b = trendWeeks.slice(half).reduce((s, w) => s + w.billable, 0) / Math.max(1, trendWeeks.length - half);
+    if (a > 0) {
+      revenueTrendPct = ((b - a) / a) * 100;
+      hasTrendData = true;
+    }
+  }
+
+  // Signal 5 — manual indicator from firm_config
+  const indicatorFromConfig =
+    ((config as unknown as { capacity_constrained_indicator?: string } | null)
+      ?.capacity_constrained_indicator ?? "unset") as "yes" | "no" | "unsure" | "unset";
+  const [indicator, setIndicator] = useState<"yes" | "no" | "unsure" | "unset">(indicatorFromConfig);
+  const [syncedIndicator, setSyncedIndicator] = useState(false);
+  if (!syncedIndicator && config) {
+    setIndicator(indicatorFromConfig);
+    setSyncedIndicator(true);
+  }
+  const saveIndicatorFn = useServerFn(saveCapacityIndicator);
+  const indicatorMut = useMutation({
+    mutationFn: (v: "yes" | "no" | "unsure") => saveIndicatorFn({ data: { value: v } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["growth"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Status helpers
+  type SignalStatus = "ready" | "watch" | "no" | "na";
+  const sig1Status: SignalStatus =
+    monthsRunway >= 6 ? "ready" : monthsRunway >= 3 ? "watch" : "no";
+  const sig2Status: SignalStatus = !hasEnoughTimeData || weeklyTargetTeam <= 0
+    ? "na"
+    : weeksOver85 >= 4 ? "ready" : weeksOver85 >= 2 ? "watch" : "no";
+  const sig3Status: SignalStatus = !hasCrunchData
+    ? "na"
+    : crunchWeeks <= 8 ? "ready" : crunchWeeks <= 16 ? "watch" : "no";
+  const sig4Status: SignalStatus = !hasTrendData
+    ? "na"
+    : revenueTrendPct >= 5 ? "ready" : revenueTrendPct > -5 ? "watch" : "no";
+  const sig5Status: SignalStatus = indicator === "yes" ? "ready" : indicator === "unsure" ? "watch" : "no";
+
+  const activeSignals = [sig1Status, sig2Status, sig3Status, sig4Status, sig5Status]
+    .filter((s) => s === "ready").length;
+  const operationalActive = [sig2Status, sig3Status, sig4Status, sig5Status]
+    .filter((s) => s === "ready").length;
+  const financiallyReady = sig1Status === "ready";
 
   // Projection inputs
   const [proj, setProj] = useState<ProjectionInputs>({
