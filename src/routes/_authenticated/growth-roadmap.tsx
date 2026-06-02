@@ -424,31 +424,151 @@ function GrowthRoadmap() {
       {/* SECTION 2 */}
       <Section eyebrow="Section 02" title="Hiring Threshold">
         <Card className="mb-6">
-          <p className="font-display text-2xl text-ch">
-            At current trajectory you are approximately{" "}
-            <span className="text-gold">{monthsToCapacity || "—"}</span> months from needing an additional hire.
-          </p>
-          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+          {!dataSufficient ? (
             <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">Billable capacity used</div>
-              <div className="mt-1 num text-2xl text-ch">{fmtPct(teamUtil, 0)}</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">Weighted pipeline</div>
-              <div className="mt-1 num text-2xl text-ch">{pipelineWeightedTotal.toFixed(0)} hrs</div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">
-                <span className="inline-flex items-center gap-1">
-                  Margin runway <InfoTip term="Margin Runway" definition="How many months your current gross margin could cover a new hire's fully burdened cost." />
-                </span>
+              <p className="font-display text-2xl text-ch">
+                Not enough data to project a hiring timeline.
+              </p>
+              <p className="mt-2 text-sm text-ch/65 max-w-2xl">
+                The hiring threshold calculation needs at least 4 weeks of time entries
+                and at least one active project to produce a meaningful estimate.
+              </p>
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">
+                    <span className="inline-flex items-center gap-1">
+                      Margin runway
+                      <InfoTip term="Margin Runway" definition="How many months your current gross margin could cover a new hire's fully burdened cost." />
+                    </span>
+                  </div>
+                  <div className="mt-1 num text-2xl text-ch">
+                    {baseCalc.grossProfit > 0 ? `${monthsRunway.toFixed(1)} mo` : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">Weeks of time entry data</div>
+                  <div className="mt-1 num text-2xl text-ch">{weeksWithData}</div>
+                </div>
               </div>
-              <div className="mt-1 num text-2xl text-ch">{monthsRunway.toFixed(1)} mo</div>
+              <p className="mt-5 text-xs text-ch/55 italic">
+                Sustainable hire threshold: gross margin covers fully burdened hire cost for 6+ months,
+                supported by sustained operational pressure.
+              </p>
             </div>
-          </div>
-          <p className="mt-5 text-xs text-ch/55 italic">
-            Sustainable hire threshold: gross margin covers fully burdened hire cost for 6+ months.
-          </p>
+          ) : (
+            <div>
+              <div className="flex items-baseline justify-between gap-4 flex-wrap">
+                <h3 className="font-display text-2xl text-ch">Hire readiness signals</h3>
+                <div className="text-sm text-ch/60">
+                  <span className="num text-gold text-2xl mr-2">{activeSignals}</span>
+                  of 5 signals active
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Signal
+                  status={sig1Status}
+                  label="Can you afford it?"
+                  primary={`${monthsRunway.toFixed(1)} mo of margin runway`}
+                  detail={
+                    hire
+                      ? `At est. ${fmtUsd(hireWeeklyCost, { decimals: 0 })}/wk for a ${hire.role}`
+                      : "Add a hire scenario below to see the financial readiness signal."
+                  }
+                />
+                <Signal
+                  status={sig2Status}
+                  label="Are you running out of hours?"
+                  primary={
+                    sig2Status === "na"
+                      ? "Need 4+ weeks of time entries"
+                      : `${weeksOver85} of last 8 weeks above 85%`
+                  }
+                  detail="Billable utilization across the team"
+                />
+                <Signal
+                  status={sig3Status}
+                  label="Is work piling up?"
+                  primary={
+                    sig3Status === "na"
+                      ? "No pipeline projects assigned"
+                      : Number.isFinite(crunchWeeks) && crunchWeeks > 0
+                      ? `Capacity crunch projected in ${Math.round(crunchWeeks)} weeks`
+                      : "No capacity crunch projected at current workload"
+                  }
+                  detail="Based on active and pipeline projects, weighted by probability"
+                />
+                <Signal
+                  status={sig4Status}
+                  label="Is revenue growing?"
+                  primary={
+                    sig4Status === "na"
+                      ? "Insufficient data"
+                      : `${revenueTrendPct >= 0 ? "+" : ""}${revenueTrendPct.toFixed(1)}% revenue change over last ${trendWeeks.length} weeks`
+                  }
+                  detail="Billable hours × rate, first half vs second half of window"
+                />
+              </div>
+
+              {/* Signal 5 — manual toggle */}
+              <div className="mt-4 rounded-md border border-border bg-cream/30 p-5">
+                <div className="flex items-start gap-3">
+                  <StatusBadge status={sig5Status} />
+                  <div className="flex-1">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">
+                      Are you turning work away?
+                    </div>
+                    <div className="mt-1 text-sm text-ch">
+                      Are you currently turning down projects or delaying client starts because
+                      your team doesn't have capacity?
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                      {(["yes", "no", "unsure"] as const).map((v) => (
+                        <label key={v} className="inline-flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="cap-indicator"
+                            checked={indicator === v}
+                            onChange={() => {
+                              setIndicator(v);
+                              indicatorMut.mutate(v);
+                            }}
+                          />
+                          <span className="text-ch/80">
+                            {v === "yes" ? "Yes — this is happening now"
+                              : v === "no" ? "No — capacity isn't the constraint"
+                              : "Not sure"}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    {indicator === "yes" && (
+                      <p className="mt-3 text-xs text-ch/65 italic">
+                        You've indicated capacity is limiting your ability to take on work. This is
+                        the strongest operational signal for a hire regardless of other metrics.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Composite */}
+              <div className="mt-6 border-t border-border pt-5">
+                <CompositeSummary
+                  active={activeSignals}
+                  financiallyReady={financiallyReady}
+                  operationalActive={operationalActive}
+                  strongest={
+                    sig5Status === "ready" ? "capacity work being turned away"
+                    : sig2Status === "ready" ? "sustained high utilization"
+                    : sig3Status === "ready" ? "committed workload exceeding capacity"
+                    : sig4Status === "ready" ? "revenue growth"
+                    : "financial runway"
+                  }
+                />
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card>
@@ -464,6 +584,18 @@ function GrowthRoadmap() {
             <NumberField label="Billable" value={hire.billablePct} onChange={(n) => setHire({ ...hire, billablePct: n })} suffix="%" />
             <NumberField label="Billed rate" value={hire.billableRate} onChange={(n) => setHire({ ...hire, billableRate: n })} prefix="$" />
           </div>
+          <div className="mt-4">
+            <NumberField
+              label="Ramp time to full productivity (weeks)"
+              value={hire.rampWeeks}
+              onChange={(n) => setHire({ ...hire, rampWeeks: Math.max(0, n) })}
+            />
+            <p className="mt-1 text-xs text-ch/55">
+              How long before this person is independently billable? New hires typically take 8–16
+              weeks to be fully productive. This affects how long you carry the cost before seeing
+              revenue return.
+            </p>
+          </div>
 
           <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-y-5 gap-x-8 border-t border-border pt-5">
             <Consequence label="Fully burdened weekly cost" value={fmtUsd(hireWeeklyCost)} />
@@ -471,14 +603,7 @@ function GrowthRoadmap() {
             <Consequence label="Added billable capacity" value={`${hireBillableHrsAnnual.toFixed(0)} hrs/yr`} />
             <Consequence label="Revenue needed to sustain" value={fmtUsd(revenueNeeded)} />
             <Consequence label="Months of margin runway" value={`${monthsRunway.toFixed(1)} mo`} />
-            <Consequence
-              label="Break-even after hire"
-              value={
-                hireBillableHrsAnnual * hire.billableRate >= hireAnnualCost
-                  ? `${(hireAnnualCost / (hireBillableHrsAnnual * hire.billableRate || 1) * 12).toFixed(1)} mo`
-                  : "Doesn't break even"
-              }
-            />
+            <RampConsequences hire={hire} hireWeeklyCost={hireWeeklyCost} />
           </div>
         </Card>
       </Section>
