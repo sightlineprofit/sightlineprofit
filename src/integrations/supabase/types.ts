@@ -117,6 +117,7 @@ export type Database = {
           actual_billed_rate: number | null
           available_hrs_per_week: number | null
           business_structure: string
+          capacity_constrained_indicator: string
           comp_distribution_annual: number | null
           comp_draw_annual: number | null
           comp_health_annual: number | null
@@ -136,6 +137,7 @@ export type Database = {
           actual_billed_rate?: number | null
           available_hrs_per_week?: number | null
           business_structure?: string
+          capacity_constrained_indicator?: string
           comp_distribution_annual?: number | null
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
@@ -155,6 +157,7 @@ export type Database = {
           actual_billed_rate?: number | null
           available_hrs_per_week?: number | null
           business_structure?: string
+          capacity_constrained_indicator?: string
           comp_distribution_annual?: number | null
           comp_draw_annual?: number | null
           comp_health_annual?: number | null

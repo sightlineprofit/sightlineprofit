@@ -1,0 +1,1 @@
+ALTER TABLE public.firm_config ADD COLUMN IF NOT EXISTS capacity_constrained_indicator text NOT NULL DEFAULT 'unset' CHECK (capacity_constrained_indicator IN ('yes','no','unsure','unset'));
