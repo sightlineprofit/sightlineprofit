@@ -706,6 +706,118 @@ function Consequence({ label, value, delta }: { label: string; value: string; de
   );
 }
 
+type SigStatus = "ready" | "watch" | "no" | "na";
+
+function StatusBadge({ status }: { status: SigStatus }) {
+  if (status === "ready") {
+    return (
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-success/15 text-success shrink-0">
+        <Check className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  if (status === "watch") {
+    return (
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-gold/15 text-gold shrink-0">
+        <AlertTriangle className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  if (status === "no") {
+    return (
+      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-ch/10 text-ch/40 shrink-0">
+        <X className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-ch/5 text-ch/30 shrink-0 text-xs">
+      —
+    </span>
+  );
+}
+
+function Signal({
+  status, label, primary, detail,
+}: { status: SigStatus; label: string; primary: string; detail?: string }) {
+  return (
+    <div className="rounded-md border border-border bg-white p-4">
+      <div className="flex items-start gap-3">
+        <StatusBadge status={status} />
+        <div className="flex-1">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">{label}</div>
+          <div className="mt-1 text-ch num text-base">{primary}</div>
+          {detail && <div className="mt-1 text-xs text-ch/55">{detail}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompositeSummary({
+  active, financiallyReady, operationalActive, strongest,
+}: { active: number; financiallyReady: boolean; operationalActive: number; strongest: string }) {
+  let body: React.ReactNode = null;
+  if (!financiallyReady && operationalActive >= 3) {
+    body = (
+      <>
+        Operationally you need support but the margin runway isn't there yet. Options:
+        raise your rate to accelerate runway, bring in a contractor while you build margin,
+        or review whether any current projects can be restructured to improve margin.
+      </>
+    );
+  } else if (active <= 1) {
+    body = (
+      <>No strong hire signal yet. Monitor utilization and pipeline — revisit when 2 or more signals are active.</>
+    );
+  } else if (active <= 3) {
+    body = (
+      <>
+        Growing case for a hire. Financially {financiallyReady ? "ready" : "not yet ready"}.
+        The strongest signal is {strongest}. Start defining the role so you're ready when the
+        remaining signals align.
+      </>
+    );
+  } else {
+    body = (
+      <>
+        Strong hire signal across multiple dimensions. If financially ready, this is the right
+        window. Waiting longer risks burnout and lost revenue.
+      </>
+    );
+  }
+  return <p className="text-sm text-ch/75 max-w-3xl">{body}</p>;
+}
+
+function RampConsequences({
+  hire, hireWeeklyCost,
+}: { hire: Hire; hireWeeklyCost: number }) {
+  const ramp = Math.max(0, hire.rampWeeks);
+  const costDuringRamp = hireWeeklyCost * ramp;
+  const weeklyRevenue = hire.expectedHrsPerWeek * (hire.billablePct / 100) * hire.billableRate;
+  const weeklyNet = weeklyRevenue - hireWeeklyCost;
+  const firstBillable = new Date();
+  firstBillable.setDate(firstBillable.getDate() + ramp * 7);
+  const breakEvenWeeks = weeklyNet > 0 ? ramp + costDuringRamp / weeklyNet : Infinity;
+  const productiveWeeks6 = Math.max(0, 26 - ramp);
+  const productiveWeeks12 = Math.max(0, 52 - ramp);
+  const net6 = productiveWeeks6 * weeklyRevenue - 26 * hireWeeklyCost;
+  const net12 = productiveWeeks12 * weeklyRevenue - 52 * hireWeeklyCost;
+  return (
+    <>
+      <Consequence label="Non-productive carry (weeks)" value={`${ramp}`} />
+      <Consequence label="Cost during ramp" value={fmtUsd(costDuringRamp)} />
+      <Consequence label="First billable week" value={firstBillable.toLocaleDateString()} />
+      <Consequence
+        label="Break-even after hire"
+        value={Number.isFinite(breakEvenWeeks) ? `${(breakEvenWeeks / 4.33).toFixed(1)} mo` : "Doesn't break even"}
+      />
+      <Consequence label="Net margin at 6 months" value={fmtUsd(net6)} />
+      <Consequence label="Net margin at 12 months" value={fmtUsd(net12)} />
+    </>
+  );
+}
+
 type ProjRow = ReturnType<typeof projectYear> & { year: number };
 
 function ProjectionTable({ rows }: { rows: ProjRow[] }) {
