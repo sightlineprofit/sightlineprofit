@@ -10,11 +10,20 @@ import { getMyContext, upsertFirmConfig, addExpense, deleteExpense, listExpenses
 import { calc, fmtUsd, fmtPct, type Expense } from "@/lib/finance";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { cn } from "@/lib/utils";
+import { RoleGuard } from "@/lib/role";
 
 export const Route = createFileRoute("/_authenticated/setup")({
   head: () => ({ meta: [{ title: "Rate & Cost Architecture — Sightline" }] }),
-  component: SetupPage,
+  component: GuardedSetup,
 });
+
+function GuardedSetup() {
+  return (
+    <RoleGuard allow={["principal", "admin"]}>
+      <SetupPage />
+    </RoleGuard>
+  );
+}
 
 type Section = "comp" | "opex" | "rate";
 type Frequency = "annual" | "monthly" | "quarterly" | "onetime";

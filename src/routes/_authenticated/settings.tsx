@@ -14,7 +14,9 @@ import {
   upsertFirmConfig,
   listExpenses,
   updateTeamMember,
+  setPreferredHome,
 } from "@/lib/firm.functions";
+import { useMe, effectiveRole } from "@/lib/role";
 import { computeBurden } from "@/lib/cost";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { Trash2, ChevronDown, ChevronRight, Info } from "lucide-react";
@@ -31,14 +33,19 @@ export const Route = createFileRoute("/_authenticated/settings")({
   component: SettingsPage,
 });
 
-const TABS = [
+const TABS_FULL = [
   { id: "firm", label: "Firm" },
   { id: "team", label: "Team" },
   { id: "activities", label: "Activity Groups" },
   { id: "billing", label: "Billing" },
   { id: "notifications", label: "Notifications" },
 ] as const;
-type TabId = (typeof TABS)[number]["id"];
+const TABS_LIMITED = [
+  { id: "profile", label: "Profile" },
+] as const;
+type TabId =
+  | (typeof TABS_FULL)[number]["id"]
+  | (typeof TABS_LIMITED)[number]["id"];
 
 const inputCls =
   "w-full rounded-md border border-input bg-white px-3 py-2 text-sm text-ch placeholder:text-ch/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20";
@@ -48,11 +55,22 @@ const ghostBtn =
   "inline-flex items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-medium text-ch transition-colors hover:bg-creamd";
 
 function SettingsPage() {
-  const [tab, setTab] = useState<TabId>("firm");
+  const { data, isLoading } = useMe();
+  const role = effectiveRole(data?.profile);
+  const isAdmin = role === "principal" || role === "admin";
+  const tabs = isAdmin ? TABS_FULL : TABS_LIMITED;
+  const [tab, setTab] = useState<TabId>(isAdmin ? "firm" : "profile");
+  if (isLoading) {
+    return (
+      <ModulePage title="Settings">
+        <p className="text-sm text-ch/50">Loading…</p>
+      </ModulePage>
+    );
+  }
   return (
     <ModulePage eyebrow="Studio" title="Settings" description="Configure your firm, team, and account.">
       <div className="flex flex-wrap gap-1 border-b border-border">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -69,13 +87,39 @@ function SettingsPage() {
         ))}
       </div>
       <div className="pt-8">
-        {tab === "firm" && <FirmTab />}
-        {tab === "team" && <TeamTab />}
-        {tab === "activities" && <ActivityGroupsTab />}
-        {tab === "billing" && <BillingTab />}
-        {tab === "notifications" && <NotificationsTab />}
+        {isAdmin && tab === "firm" && <FirmTab />}
+        {isAdmin && tab === "team" && <TeamTab />}
+        {isAdmin && tab === "activities" && <ActivityGroupsTab />}
+        {isAdmin && tab === "billing" && <BillingTab />}
+        {isAdmin && tab === "notifications" && <NotificationsTab />}
+        {!isAdmin && tab === "profile" && <ProfileTab />}
       </div>
     </ModulePage>
+  );
+}
+
+/* ─────────────── Profile (team / view_only) ─────────────── */
+function ProfileTab() {
+  const { data } = useMe();
+  const p = data?.profile;
+  return (
+    <div className="max-w-xl rounded-lg border border-border bg-white p-6 space-y-4">
+      <div>
+        <label className="mb-1.5 block text-sm text-ch/70">Name</label>
+        <input className={inputCls} value={p?.name ?? ""} readOnly />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-sm text-ch/70">Email</label>
+        <input className={inputCls} value={p?.email ?? ""} readOnly />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-sm text-ch/70">Role</label>
+        <input className={inputCls} value={p?.role ?? ""} readOnly />
+      </div>
+      <p className="text-xs text-ch/50">
+        Your firm principal manages financial settings, the team roster, and billing.
+      </p>
+    </div>
   );
 }
 
@@ -453,7 +497,73 @@ function FirmTab() {
       <button type="submit" className={btnCls} disabled={saving}>
         {saving ? "Saving…" : "Save changes"}
       </button>
+
+      <DefaultHomeSection />
     </form>
+  );
+}
+
+/* ─────────────── Default home (principal/admin) ─────────────── */
+function DefaultHomeSection() {
+  const qc = useQueryClient();
+  const { data } = useMe();
+  const saveHome = useServerFn(setPreferredHome);
+  const current = (data?.profile?.preferred_home as
+    | "dashboard"
+    | "calendar"
+    | "sightline"
+    | null
+    | undefined) ?? "dashboard";
+  const [val, setVal] = useState<"dashboard" | "calendar" | "sightline">(current);
+
+  // Resync when profile loads
+  useMemo(() => {
+    setVal(current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.profile?.preferred_home]);
+
+  async function pick(next: "dashboard" | "calendar" | "sightline") {
+    setVal(next);
+    try {
+      await saveHome({ data: { preferred_home: next } });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      toast.success("Home screen updated.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save");
+    }
+  }
+
+  const options: { id: "dashboard" | "calendar" | "sightline"; label: string }[] = [
+    { id: "dashboard", label: "Dashboard" },
+    { id: "calendar", label: "Time Calendar" },
+    { id: "sightline", label: "Projects (Sightline)" },
+  ];
+
+  return (
+    <section className="space-y-3 border-t border-border pt-6">
+      <h3 className="font-display text-lg text-ch">Default home screen</h3>
+      <p className="text-xs text-ch/60">
+        Where you land after signing in. Takes effect on next login.
+      </p>
+      <div className="space-y-2">
+        {options.map((o) => (
+          <label
+            key={o.id}
+            className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer"
+          >
+            <input
+              type="radio"
+              name="preferred_home"
+              value={o.id}
+              checked={val === o.id}
+              onChange={() => pick(o.id)}
+              className="mt-1 accent-gold"
+            />
+            <div className="text-sm font-medium text-ch">{o.label}</div>
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 

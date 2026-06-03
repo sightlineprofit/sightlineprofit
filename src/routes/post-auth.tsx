@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { createFirmForCurrentUser, getMyContext } from "@/lib/firm.functions";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { landingPathFor } from "@/lib/role";
 
 export const Route = createFileRoute("/post-auth")({
   head: () => ({ meta: [{ title: "Setting up — Sightline" }] }),
@@ -49,7 +50,8 @@ function PostAuth() {
           sessionStorage.removeItem("sightline_pending_firm");
           nav({ to: "/onboarding" });
         } else {
-          nav({ to: "/dashboard" });
+          const target = landingPathFor(ctx.profile);
+          nav({ to: target as any });
         }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Setup failed");

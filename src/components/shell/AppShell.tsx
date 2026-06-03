@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 
 type Tier = "foundation" | "studio" | "practice";
 const TIER_RANK: Record<Tier, number> = { foundation: 0, studio: 1, practice: 2 };
+type Role = "principal" | "admin" | "team" | "view_only";
 
 type NavItem = {
   to: string;
@@ -36,15 +37,16 @@ type NavItem = {
   icon: typeof LayoutDashboard;
   tier: Tier;
   group: "foundation" | "studio" | "practice" | "general";
+  allowRoles?: Role[];
 };
 
 const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "foundation", group: "foundation" },
-  { to: "/setup", label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
+  { to: "/setup", label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
   { to: "/time-calendar", label: "Time Calendar", icon: Calendar, tier: "studio", group: "studio" },
   { to: "/sightline", label: "Sightline", icon: LineChart, tier: "practice", group: "practice" },
   { to: "/sop-library", label: "SOP Library", icon: BookOpen, tier: "practice", group: "practice" },
-  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, tier: "foundation", group: "general" },
+  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, tier: "foundation", group: "general", allowRoles: ["principal", "admin"] },
   { to: "/settings", label: "Settings", icon: Settings, tier: "foundation", group: "general" },
   { to: "/knowledge-base", label: "Knowledge Base", icon: HelpCircle, tier: "foundation", group: "general" },
 ];
@@ -76,6 +78,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     : ((data?.firm?.subscription_tier as Tier) ?? "foundation");
   const currentTierRank = TIER_RANK[currentTier];
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const currentRole: Role = isSuper
+    ? "principal"
+    : ((data?.profile?.role as Role) ?? "team");
 
   const groups: NavItem["group"][] = ["foundation", "studio", "practice", "general"];
 
@@ -110,7 +115,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 pb-4">
           {groups.map((g, gi) => {
-            const items = NAV.filter((n) => n.group === g);
+            const items = NAV.filter(
+              (n) => n.group === g && (!n.allowRoles || n.allowRoles.includes(currentRole)),
+            );
             if (items.length === 0) return null;
             const showDivider = g === "general" && gi > 0;
             return (

@@ -14,6 +14,7 @@ import { Route as PostAuthRouteImport } from './routes/post-auth'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedWelcomeRouteImport } from './routes/_authenticated/welcome'
 import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
 import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
 import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
@@ -60,6 +61,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedWelcomeRoute = AuthenticatedWelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedTimeCalendarRoute =
   AuthenticatedTimeCalendarRouteImport.update({
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/welcome': typeof AuthenticatedWelcomeRoute
   '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
   '/dashboard/health': typeof AuthenticatedDashboardHealthRoute
@@ -229,6 +236,7 @@ export interface FileRoutesByTo {
   '/sightline': typeof AuthenticatedSightlineRoute
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/welcome': typeof AuthenticatedWelcomeRoute
   '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
   '/dashboard/health': typeof AuthenticatedDashboardHealthRoute
@@ -259,6 +267,7 @@ export interface FileRoutesById {
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
+  '/_authenticated/welcome': typeof AuthenticatedWelcomeRoute
   '/_authenticated/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/_authenticated/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
   '/_authenticated/dashboard/health': typeof AuthenticatedDashboardHealthRoute
@@ -289,6 +298,7 @@ export interface FileRouteTypes {
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
+    | '/welcome'
     | '/dashboard/bva'
     | '/dashboard/growth'
     | '/dashboard/health'
@@ -317,6 +327,7 @@ export interface FileRouteTypes {
     | '/sightline'
     | '/sop-library'
     | '/time-calendar'
+    | '/welcome'
     | '/dashboard/bva'
     | '/dashboard/growth'
     | '/dashboard/health'
@@ -346,6 +357,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sightline'
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
+    | '/_authenticated/welcome'
     | '/_authenticated/dashboard/bva'
     | '/_authenticated/dashboard/growth'
     | '/_authenticated/dashboard/health'
@@ -401,6 +413,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/welcome': {
+      id: '/_authenticated/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof AuthenticatedWelcomeRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/time-calendar': {
       id: '/_authenticated/time-calendar'
@@ -626,6 +645,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
   AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRouteWithChildren
   AuthenticatedTimeCalendarRoute: typeof AuthenticatedTimeCalendarRoute
+  AuthenticatedWelcomeRoute: typeof AuthenticatedWelcomeRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -642,6 +662,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
   AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRouteWithChildren,
   AuthenticatedTimeCalendarRoute: AuthenticatedTimeCalendarRoute,
+  AuthenticatedWelcomeRoute: AuthenticatedWelcomeRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

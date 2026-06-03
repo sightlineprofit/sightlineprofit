@@ -84,6 +84,11 @@ function RegisterPage() {
           <h1 className="mt-3 font-display text-4xl leading-tight tracking-tight">Begin Sightline.</h1>
           <p className="mt-2 text-sm text-ch/70">No card required during trial. Billing activates only if you continue.</p>
 
+          <div className="mt-4 rounded-md border border-border bg-cream/60 p-3 text-xs leading-relaxed text-ch/70">
+            Creating a firm account. To join an existing firm as a team member,
+            use the invitation link sent to your email.
+          </div>
+
           <div className="mt-8">
             <GoogleButton label="Sign up with Google" />
             <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-ch/40">

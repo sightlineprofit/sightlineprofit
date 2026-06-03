@@ -18,11 +18,20 @@ import {
   saveGrowthSignals,
 } from "@/lib/growth.functions";
 import { toast } from "sonner";
+import { RoleGuard } from "@/lib/role";
 
 export const Route = createFileRoute("/_authenticated/growth-roadmap")({
   head: () => ({ meta: [{ title: "Growth Roadmap — Sightline" }] }),
-  component: GrowthRoadmap,
+  component: GuardedGrowthRoadmap,
 });
+
+function GuardedGrowthRoadmap() {
+  return (
+    <RoleGuard allow={["principal", "admin"]}>
+      <GrowthRoadmap />
+    </RoleGuard>
+  );
+}
 
 const WEEKS_DEFAULT = 48;
 
