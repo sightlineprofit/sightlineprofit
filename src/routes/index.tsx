@@ -715,7 +715,7 @@ function Tiers() {
             margin: "0 auto 64px",
           }}
         >
-          Each tier includes everything below it. You upgrade when your business
+          Each tier includes everything above it. You upgrade when your business
           complexity earns it — not because you hit a feature wall.
         </p>
 
