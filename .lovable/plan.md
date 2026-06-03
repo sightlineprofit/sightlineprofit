@@ -1,40 +1,74 @@
-## What's happening
+## Growth Roadmap restructure + Growth Signals
 
-The fallback "This page didn't load" screen you're hitting is the root error boundary in `src/routes/__root.tsx`. The underlying runtime error captured by the preview is:
+### Scope
+Restructure `/growth-roadmap` into a 2-tab layout and add a comprehensive "Growth Signals Assessment" section (12 signals) plus a hire-type recommendation. Extend the financial projection to 3/5/7 year horizons.
 
-> `Failed to fetch dynamically imported module: …/virtual:tanstack-start-client-entry`
+### Tab 1 — Hiring & Growth
+Sections in order:
+1. **Capacity & Utilization Snapshot** — unchanged
+2. **Hiring Threshold — Financial Gate** — existing content, header relabeled only
+3. **Growth Signals Assessment** — NEW (see below)
+4. **Hire Scenario Builder** — existing downstream-consequences block, moved here
 
-This is a known Vite / TanStack Start behavior, not a bug in the Sightline page itself:
+### Tab 2 — Financial Projection
+- Existing 3-year projection table moved here
+- Horizon toggle: [3 / 5 / 7 Years], default 3 (current behavior unchanged)
+- For 5 & 7 yr: add rows **Cumulative revenue** and **Indicative firm value (2× revenue)** with InfoTip caveat
+- 7-yr: directional-uncertainty footnote
+- All compounding logic re-uses existing per-year math
 
-- Vite code-splits each route into its own chunk with a hashed filename.
-- When the dev server rebuilds (you saved a file, the preview rebuilt, or HMR reconnected), the chunk hash changes.
-- The browser is still holding the old hash. The first time it tries to load a new chunk (e.g. opening a project triggers a hover/dialog/code path whose module hadn't been fetched yet), the request 404s and React throws.
-- Hitting Back navigates within already-loaded code, then re-entering re-runs the import — by then Vite has served the new chunk, so it works. That's why "going back fixes it."
+### Section 3 — Growth Signals Assessment
 
-It will also occasionally happen in production right after a redeploy, for the same reason (old client + new chunk hashes).
+**Composite header**: "N of 12 signals active" + progress bar + tiered interpretation (0–2 / 3–4 / 5–7 / 8+).
 
-## Fix
+**Status badge component** (4 states): Active (terracotta), Watch (gold), No signal (cream/muted), Needs input (slate).
 
-Make the app auto-recover from stale-chunk errors instead of showing the fallback.
+**Auto-calculated signals (A–G)** — 2-col grid:
+- **A. Capacity Pressure** — count weeks in last 8 above 85% util. Reuse `weeklyBuckets` from `getGrowthData` (already present); thresholds: 4+/2–3/0–1, <4wk → needs-input.
+- **B. Committed Workload Horizon** — weeks until projected crunch using active `project_phases.expected_hrs` minus actuals + weighted pipeline hrs, against team weekly capacity. Server-side calc.
+- **C. Project Profit Trend** — completed projects last 12 months grouped by quarter, fee − time_cost. Declining 2+ quarters → active.
+- **D. Scope Creep Rate** — completed phases sum(actual)/sum(expected) last 6 months. >125% active (flagged as discipline issue), 110–125% watch.
+- **E. Revenue per Available Hour** — (collected+committed) / (team × target_hrs × weeks), 12-wk trend. Declining 8+ weeks AND util >75% → active.
+- **F. Start vs Close Rate** — projects created vs marked Completed/Archived last 90d.
+- **G. Time from Contract to Kickoff** — avg days between `projects.created_at` and `min(time_entries.date)`, last 6 months.
 
-1. **In `src/routes/__root.tsx` `ErrorComponent`:**
-   - Detect the dynamic-import / chunk-load error message family:
-     - `Failed to fetch dynamically imported module`
-     - `Importing a module script failed`
-     - `error loading dynamically imported module`
-   - When matched, do a one-shot `window.location.reload()` (guarded by a `sessionStorage` flag like `__chunk_reload_at` with a 10 s window) so we never loop if the reload also fails. On a successful reload the flag is cleared.
-   - On non-matching errors, keep the current fallback UI.
+**Principal-input signals (H–L)** — sub-section "The signals only you can see":
+- **H. Owner Hours Beyond Target** — number input → compared to target+20% admin.
+- **I. Client Experience Under Load** — 3 sub-questions Yes/No/Sometimes.
+- **J. Owner Role Split** — production hrs + leadership hrs inputs.
+- **K. Pipeline Realism** — radio of last-reviewed bucket; injects current weighted pipeline count/hrs.
+- **L. Market Timing** — radio: durable/growing/seasonal/uncertain (seasonal shows contractor warning).
 
-2. **Add a global `vite:preloadError` listener** (Vite fires this event when a preload fails) in the same root component's `RootComponent` `useEffect`:
-   - Call `event.preventDefault()` and the same guarded `window.location.reload()`.
-   - This catches the case where the failure happens during preload (link hover) before React renders anything.
+All manual answers stored in `firm_config.growth_signals` (jsonb) and surfaced with "Last updated [date]" stamp. New server fn `saveGrowthSignals` (single jsonb upsert).
 
-3. **No changes to Sightline / ProjectDetail.** The page itself is fine — the symptom only looked Sightline-specific because that's where the first uncached chunk happened to load.
+**Type-of-hire recommendation card** at bottom — applies the 5 conditional rules in spec against active signal set; renders headline + 2-sentence body + "Run a hire scenario →" button that scrolls to Section 4.
 
-## Files touched
+### Data layer changes
 
-- `src/routes/__root.tsx` — extend `ErrorComponent` with stale-chunk detection + guarded reload; add a `vite:preloadError` listener in `RootComponent`.
+- **Migration**: add `growth_signals jsonb` column to `firm_config` (default `{}`).
+- **`getGrowthData`** server fn extended to return:
+  - `completedProjects`: id, fee, completed_at, time_cost (computed)
+  - `completedPhases`: expected_hrs, actual_hrs, completed_at (last 6 mo)
+  - `projectStartLag`: per-project days from created → first time entry (last 6 mo)
+  - `projectFlow`: started/completed counts last 90d
+  - `revenuePerHourSeries`: 12 weekly points
+  - `growthSignals`: current jsonb value from firm_config
+  - `weightedPipelineHrs`: sum(estimated_hrs × probability)
+- **New server fn `saveGrowthSignals`** — merges into `firm_config.growth_signals`.
 
-## Why not just "tell users to refresh"
+### UI structure
 
-The error is recoverable and deterministic — the second attempt always works. Forcing a single silent reload turns a confusing fallback page into an invisible 200 ms blip, and the same fix protects every route after a deploy, not just Sightline.
+- Add `Tabs` (shadcn) wrapper at top of `GrowthRoadmap` component.
+- Extract existing JSX into `<HiringGrowthTab>` and `<FinancialProjectionTab>` local components in the same file to keep diff manageable.
+- New `<GrowthSignalsSection>` component lives in the same file (large but cohesive). Uses `<SignalCard>` and `<StatusBadge>` helpers.
+- Horizon toggle is local `useState`; projection rendering loops to N years.
+
+### Out of scope (not touched)
+- Existing capacity snapshot, financial gate calculation, hire scenario builder math, existing 5-signal readiness panel (kept inside Section 2 as before).
+- Dashboard, Sightline, SOP library.
+
+### Files touched
+- `supabase/migrations/<new>.sql` — add jsonb column
+- `src/lib/growth.functions.ts` — extend getGrowthData, add saveGrowthSignals
+- `src/routes/_authenticated/growth-roadmap.tsx` — tabs + Section 3 + horizon toggle
+- `src/integrations/supabase/types.ts` — regenerated after migration

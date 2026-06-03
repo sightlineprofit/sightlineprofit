@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Trash2, Check, AlertTriangle, X } from "lucide-react";
@@ -7,6 +7,7 @@ import { ModulePage } from "@/components/shell/ModulePage";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { calc, fmtPct, fmtUsd, type FirmConfig, type Expense } from "@/lib/finance";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import {
@@ -14,6 +15,7 @@ import {
   saveGrowthScenario,
   deleteScenario,
   saveCapacityIndicator,
+  saveGrowthSignals,
 } from "@/lib/growth.functions";
 import { toast } from "sonner";
 
@@ -63,6 +65,44 @@ type ProjectionInputs = {
   billedRate: number;
   hire?: Hire | null;
 };
+
+type YesNoSometimes = "yes" | "no" | "sometimes" | null;
+type PipelineRecency = "lt2" | "lt6" | "gt6" | "unset" | null;
+type MarketTiming = "durable" | "growing" | "seasonal" | "uncertain" | null;
+
+type ManualSignals = {
+  owner_actual_hrs: number | null;
+  client_missing_responses: YesNoSometimes;
+  client_milestone_delays: YesNoSometimes;
+  client_below_standard: YesNoSometimes;
+  owner_production_hrs: number | null;
+  owner_leadership_hrs: number | null;
+  pipeline_recency: PipelineRecency;
+  market_timing: MarketTiming;
+  updated_at?: string | null;
+};
+
+function normaliseManualSignals(raw: Record<string, unknown>): ManualSignals {
+  const num = (k: string): number | null => {
+    const v = raw[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
+  };
+  const str = <T extends string>(k: string, allowed: readonly T[]): T | null => {
+    const v = raw[k];
+    return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+  };
+  return {
+    owner_actual_hrs: num("owner_actual_hrs"),
+    client_missing_responses: str("client_missing_responses", ["yes", "no", "sometimes"] as const),
+    client_milestone_delays: str("client_milestone_delays", ["yes", "no", "sometimes"] as const),
+    client_below_standard: str("client_below_standard", ["yes", "no", "sometimes"] as const),
+    owner_production_hrs: num("owner_production_hrs"),
+    owner_leadership_hrs: num("owner_leadership_hrs"),
+    pipeline_recency: str("pipeline_recency", ["lt2", "lt6", "gt6", "unset"] as const),
+    market_timing: str("market_timing", ["durable", "growing", "seasonal", "uncertain"] as const),
+    updated_at: typeof raw.updated_at === "string" ? raw.updated_at : null,
+  };
+}
 
 function Section({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
   return (
@@ -319,11 +359,40 @@ function GrowthRoadmap() {
   }
 
   const projection = useMemo(() => {
-    return [0, 1, 2, 3].map((y) => ({
+    return Array.from({ length: 8 }, (_, y) => ({
       year: y,
       ...projectYear(y, proj, config, expenses, team),
     }));
   }, [proj, config, expenses, team]);
+
+  // Horizon toggle for the financial projection tab
+  const [horizonYears, setHorizonYears] = useState<3 | 5 | 7>(3);
+
+  // Refs to scroll to Hire Scenario Builder when recommendation CTA is clicked
+  const hireBuilderRef = useRef<HTMLDivElement | null>(null);
+
+  // Growth signals (manual) — persisted in firm_config.growth_signals jsonb
+  const persistedSignals =
+    ((config as unknown as { growth_signals?: Record<string, unknown> } | null)
+      ?.growth_signals ?? {}) as Record<string, unknown>;
+  const [manualSignals, setManualSignals] = useState<ManualSignals>(() =>
+    normaliseManualSignals(persistedSignals),
+  );
+  const [syncedManual, setSyncedManual] = useState(false);
+  if (!syncedManual && config) {
+    setManualSignals(normaliseManualSignals(persistedSignals));
+    setSyncedManual(true);
+  }
+  const saveSignalsFn = useServerFn(saveGrowthSignals);
+  const signalsMut = useMutation({
+    mutationFn: (patch: Record<string, unknown>) => saveSignalsFn({ data: { patch } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["growth"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const persistSignals = (patch: Partial<ManualSignals>) => {
+    setManualSignals((s) => ({ ...s, ...patch }));
+    signalsMut.mutate(patch as Record<string, unknown>);
+  };
 
   // Scenarios
   type ScenarioRow = { id: string; name: string; payload: ProjectionInputs & { kind?: string } };
@@ -361,6 +430,13 @@ function GrowthRoadmap() {
       title="Growth Roadmap"
       description="Should we grow — and if so, when, and what does it cost?"
     >
+      <Tabs defaultValue="hiring" className="mt-4">
+        <TabsList className="bg-cream/40">
+          <TabsTrigger value="hiring">Hiring & Growth</TabsTrigger>
+          <TabsTrigger value="projection">Financial Projection</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="hiring">
       {/* SECTION 1 */}
       <Section eyebrow="Section 01" title="Capacity & Utilization">
         <Card>
@@ -570,8 +646,38 @@ function GrowthRoadmap() {
             </div>
           )}
         </Card>
+      </Section>
 
+      {/* SECTION 3 — Growth Signals */}
+      <GrowthSignalsSection
+        weeklyBuckets={weeklyBuckets}
+        weeklyTargetTeam={weeklyTargetTeam}
+        weeksWithData={weeksWithData}
+        pipelineWeightedTotal={pipelineWeightedTotal}
+        pipelineCount={pipeline.length}
+        teamActual={teamTotals.actual}
+        completedProjects={(data?.completedProjects ?? []) as CompletedProject[]}
+        completedPhases={(data?.completedPhases ?? []) as { expectedHrs: number; actualHrs: number }[]}
+        projectFlow={(data?.projectFlow ?? { started: 0, completed: 0 }) as { started: number; completed: number }}
+        projectStartLag={(data?.projectStartLag ?? []) as { id: string; days: number }[]}
+        teamUtil={teamUtil}
+        nonBillablePctEstimate={
+          teamTotals.expected > 0
+            ? Math.max(0, 1 - teamTotals.actual / teamTotals.expected) * 100
+            : 0
+        }
+        targetHrsPerWeek={Number(config?.target_billable_hrs_per_week) || 32}
+        manualSignals={manualSignals}
+        onPersist={persistSignals}
+        onJumpToBuilder={() =>
+          hireBuilderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      />
+
+      {/* SECTION 4 — Hire Scenario Builder */}
+      <Section eyebrow="Section 04" title="Hire Scenario Builder">
         <Card>
+          <div ref={hireBuilderRef} />
           <h3 className="font-display text-xl text-ch mb-4">Model a hypothetical hire</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div>
@@ -607,9 +713,25 @@ function GrowthRoadmap() {
           </div>
         </Card>
       </Section>
+        </TabsContent>
 
-      {/* SECTION 3 */}
-      <Section eyebrow="Section 03" title="3-Year Projection">
+        <TabsContent value="projection">
+      {/* Financial Projection */}
+      <Section eyebrow="Section 01" title="Financial Projection">
+        <div className="mb-4 inline-flex rounded-md border border-border bg-white p-1 text-sm">
+          {([3, 5, 7] as const).map((y) => (
+            <button
+              key={y}
+              type="button"
+              onClick={() => setHorizonYears(y)}
+              className={`px-3 py-1.5 rounded ${
+                horizonYears === y ? "bg-gold text-white" : "text-ch/70 hover:text-ch"
+              }`}
+            >
+              {y} Years
+            </button>
+          ))}
+        </div>
         <Card className="mb-6">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <NumberField label="Revenue goal" value={proj.revenueGoal} onChange={(n) => setProj({ ...proj, revenueGoal: n })} prefix="$" step={10000} />
@@ -628,11 +750,19 @@ function GrowthRoadmap() {
           </label>
         </Card>
 
-        <ProjectionTable rows={projection} />
+        <ProjectionTable
+          rows={projection.slice(0, horizonYears + 1)}
+          horizonYears={horizonYears}
+        />
+        {horizonYears === 7 && (
+          <p className="mt-3 text-xs text-ch/55 italic max-w-2xl">
+            7-year projections carry significant uncertainty. Treat as directional, not
+            predictive. Review and recalibrate annually.
+          </p>
+        )}
       </Section>
 
-      {/* SECTION 4 */}
-      <Section eyebrow="Section 04" title="Scenario Comparison">
+      <Section eyebrow="Section 02" title="Scenario Comparison">
         <Card className="mb-6">
           <div className="flex items-end gap-3">
             <div className="flex-1">
@@ -688,6 +818,8 @@ function GrowthRoadmap() {
           </div>
         )}
       </Section>
+        </TabsContent>
+      </Tabs>
     </ModulePage>
   );
 }
@@ -820,9 +952,20 @@ function RampConsequences({
 
 type ProjRow = ReturnType<typeof projectYear> & { year: number };
 
-function ProjectionTable({ rows }: { rows: ProjRow[] }) {
-  const labels = ["Current", "Year 1", "Year 2", "Year 3"];
-  const metrics: { key: keyof ProjRow; label: string; fmt: (v: number) => string; tip?: keyof typeof GLOSSARY }[] = [
+function ProjectionTable({ rows, horizonYears = 3 }: { rows: ProjRow[]; horizonYears?: 3 | 5 | 7 }) {
+  const labels = ["Current", ...Array.from({ length: rows.length - 1 }, (_, i) => `Year ${i + 1}`)];
+  const extended = horizonYears >= 5;
+  let cumRev = 0;
+  const cumulative = rows.map((r) => (cumRev += r.annualRevenue));
+  const valuation = cumulative.map((c) => c * 2);
+  type Metric = {
+    key: keyof ProjRow | "cumulative" | "valuation";
+    label: string;
+    fmt: (v: number) => string;
+    tip?: keyof typeof GLOSSARY;
+    info?: { term: string; definition: string; why?: string };
+  };
+  const metrics: Metric[] = [
     { key: "alignedRate", label: "Aligned rate (floor)", fmt: (v) => fmtUsd(v, { decimals: 0 }), tip: "alignedRate" },
     { key: "billedRate", label: "Billed rate", fmt: (v) => fmtUsd(v, { decimals: 0 }) },
     { key: "weeklyBillable", label: "Billable hrs / week", fmt: (v) => v.toFixed(0) },
@@ -832,6 +975,19 @@ function ProjectionTable({ rows }: { rows: ProjRow[] }) {
     { key: "marginPct", label: "Margin %", fmt: (v) => fmtPct(v, 1) },
     { key: "headcount", label: "Team headcount", fmt: (v) => v.toFixed(0) },
   ];
+  if (extended) {
+    metrics.push({ key: "cumulative", label: "Cumulative revenue", fmt: (v) => fmtUsd(v) });
+    metrics.push({
+      key: "valuation",
+      label: "Indicative firm value (2× revenue)",
+      fmt: (v) => fmtUsd(v),
+      info: {
+        term: "Indicative firm value",
+        definition: "A rough valuation reference using a common service-business multiple (2× revenue).",
+        why: "Actual valuation depends on profitability, client concentration, team stability, and other factors. Not a formal appraisal.",
+      },
+    });
+  }
   return (
     <Card>
       <div className="overflow-x-auto">
@@ -851,21 +1007,30 @@ function ProjectionTable({ rows }: { rows: ProjRow[] }) {
           </thead>
           <tbody className="divide-y divide-border">
             {metrics.map((m) => (
-              <tr key={m.key as string}>
+              <tr key={m.key}>
                 <td className="py-3.5 text-sm text-ch/75">
                   <span className="inline-flex items-center gap-1.5">
                     {m.label}
                     {m.tip && <InfoTip {...GLOSSARY[m.tip]} />}
+                    {m.info && <InfoTip {...m.info} />}
                   </span>
                 </td>
-                {rows.map((r, i) => (
-                  <td
-                    key={r.year}
-                    className={`py-3.5 text-right num text-2xl ${i === 0 ? "text-ch/55" : "text-ch"}`}
-                  >
-                    {m.fmt(Number(r[m.key]) || 0)}
-                  </td>
-                ))}
+                {rows.map((r, i) => {
+                  const v =
+                    m.key === "cumulative"
+                      ? cumulative[i]
+                      : m.key === "valuation"
+                      ? valuation[i]
+                      : (Number(r[m.key as keyof ProjRow]) || 0);
+                  return (
+                    <td
+                      key={r.year}
+                      className={`py-3.5 text-right num text-2xl ${i === 0 ? "text-ch/55" : "text-ch"}`}
+                    >
+                      {m.fmt(v)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -889,6 +1054,587 @@ function ScenarioMini({ rows }: { rows: ProjRow[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Growth Signals Assessment ───────────────────────────────────────────
+
+type CompletedProject = {
+  id: string;
+  name: string;
+  fee: number;
+  timeCost: number;
+  margin: number;
+  expectedHrs: number;
+  actualHrs: number;
+  closedAt: string;
+};
+
+type SignalLevel = "active" | "watch" | "no" | "na";
+
+function signalChrome(level: SignalLevel) {
+  if (level === "active") return { bg: "bg-terra/15", text: "text-terra", label: "✓ Active signal" };
+  if (level === "watch") return { bg: "bg-gold/15", text: "text-gold", label: "◎ Watch this" };
+  if (level === "no") return { bg: "bg-cream/60", text: "text-ch/60", label: "— No signal" };
+  return { bg: "bg-ch/10", text: "text-ch/60", label: "? Needs input" };
+}
+
+function SignalCardUI({
+  letter, title, measures, level, primary, insight, children,
+}: {
+  letter: string;
+  title: string;
+  measures: string;
+  level: SignalLevel;
+  primary?: string;
+  insight?: string;
+  children?: React.ReactNode;
+}) {
+  const c = signalChrome(level);
+  return (
+    <div className="rounded-md border border-border bg-white p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-ch/40">Signal {letter}</div>
+          <h4 className="mt-0.5 font-display text-lg text-ch">{title}</h4>
+          <p className="text-xs text-ch/55 mt-1">{measures}</p>
+        </div>
+        <span className={`text-[11px] px-2 py-1 rounded ${c.bg} ${c.text} whitespace-nowrap`}>{c.label}</span>
+      </div>
+      {primary && <div className="mt-3 text-ch num text-base">{primary}</div>}
+      {children && <div className="mt-3">{children}</div>}
+      {insight && <p className="mt-3 text-xs text-ch/65 italic leading-relaxed">{insight}</p>}
+    </div>
+  );
+}
+
+function GrowthSignalsSection(props: {
+  weeklyBuckets: { weekStart: string; billable: number; total: number }[];
+  weeklyTargetTeam: number;
+  weeksWithData: number;
+  pipelineWeightedTotal: number;
+  pipelineCount: number;
+  teamActual: number;
+  completedProjects: CompletedProject[];
+  completedPhases: { expectedHrs: number; actualHrs: number }[];
+  projectFlow: { started: number; completed: number };
+  projectStartLag: { id: string; days: number }[];
+  teamUtil: number;
+  nonBillablePctEstimate: number;
+  targetHrsPerWeek: number;
+  manualSignals: ManualSignals;
+  onPersist: (patch: Partial<ManualSignals>) => void;
+  onJumpToBuilder: () => void;
+}) {
+  const {
+    weeklyBuckets, weeklyTargetTeam, weeksWithData,
+    pipelineWeightedTotal, pipelineCount, teamActual,
+    completedProjects, completedPhases, projectFlow, projectStartLag,
+    teamUtil, nonBillablePctEstimate, targetHrsPerWeek,
+    manualSignals, onPersist, onJumpToBuilder,
+  } = props;
+
+  // A — Capacity Pressure
+  const last8 = weeklyBuckets.slice(-8);
+  const weeksOver85 = weeklyTargetTeam > 0
+    ? last8.filter((w) => w.billable / weeklyTargetTeam > 0.85).length
+    : 0;
+  const aLevel: SignalLevel = weeksWithData < 4 || weeklyTargetTeam <= 0
+    ? "na" : weeksOver85 >= 4 ? "active" : weeksOver85 >= 2 ? "watch" : "no";
+
+  // B — Committed Workload Horizon
+  const weeklySlack = Math.max(0, weeklyTargetTeam - teamActual);
+  const crunchWeeks = pipelineWeightedTotal > 0 && weeklyTargetTeam > 0 && weeklySlack > 0
+    ? pipelineWeightedTotal / weeklySlack : Infinity;
+  const bLevel: SignalLevel = pipelineWeightedTotal <= 0 || weeklyTargetTeam <= 0
+    ? "na"
+    : crunchWeeks <= 8 ? "active" : crunchWeeks <= 16 ? "watch" : "no";
+
+  // C — Project Profit Trend (by quarter)
+  const byQuarter: Record<string, { fee: number; margin: number; n: number }> = {};
+  for (const p of completedProjects) {
+    if (!p.closedAt) continue;
+    const d = new Date(p.closedAt + "T00:00:00Z");
+    const q = `${d.getUTCFullYear()}Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+    if (!byQuarter[q]) byQuarter[q] = { fee: 0, margin: 0, n: 0 };
+    byQuarter[q].fee += p.fee;
+    byQuarter[q].margin += p.margin;
+    byQuarter[q].n += 1;
+  }
+  const qSeries = Object.entries(byQuarter).sort(([a], [b]) => (a < b ? -1 : 1));
+  let cTrend: "improving" | "stable" | "declining" = "stable";
+  if (qSeries.length >= 2) {
+    const margins = qSeries.map(([, v]) => (v.n > 0 ? v.margin / v.n : 0));
+    const last = margins[margins.length - 1];
+    const prev = margins[margins.length - 2];
+    const prevPrev = margins[margins.length - 3] ?? null;
+    if (last < prev && (prevPrev === null || prev < prevPrev)) cTrend = "declining";
+    else if (last > prev) cTrend = "improving";
+  }
+  const avgMargin = completedProjects.length > 0
+    ? completedProjects.reduce((s, p) => s + p.margin, 0) / completedProjects.length
+    : 0;
+  const avgFee = completedProjects.length > 0
+    ? completedProjects.reduce((s, p) => s + p.fee, 0) / completedProjects.length
+    : 0;
+  const avgMarginPct = avgFee > 0 ? (avgMargin / avgFee) * 100 : 0;
+  const cLevel: SignalLevel = completedProjects.length < 3
+    ? "na" : cTrend === "declining" ? "active" : "no";
+
+  // D — Scope creep
+  const phaseExpected = completedPhases.reduce((s, p) => s + p.expectedHrs, 0);
+  const phaseActual = completedPhases.reduce((s, p) => s + p.actualHrs, 0);
+  const creepPct = phaseExpected > 0 ? (phaseActual / phaseExpected) * 100 : 0;
+  const dLevel: SignalLevel = completedProjects.length < 3 || phaseExpected <= 0
+    ? "na" : creepPct > 125 ? "active" : creepPct >= 110 ? "watch" : "no";
+
+  // E — Revenue per available hour (12-week series)
+  // Available hrs/week (firm-wide) = weeklyTargetTeam / (target_billable/total) — but we only have target. Approximate available = team weekly target / 0.65.
+  const availableWeekly = weeklyTargetTeam > 0 ? weeklyTargetTeam / 0.65 : 0;
+  const rphSeries: number[] = [];
+  const billedRateApprox = avgFee > 0 && completedProjects.length > 0
+    ? completedProjects.reduce((s, p) => s + (p.expectedHrs > 0 ? p.fee / p.expectedHrs : 0), 0) / completedProjects.length
+    : 0;
+  for (const w of weeklyBuckets.slice(-12)) {
+    const rev = w.billable * billedRateApprox;
+    rphSeries.push(availableWeekly > 0 ? rev / availableWeekly : 0);
+  }
+  let eTrend: "improving" | "stable" | "declining" = "stable";
+  if (rphSeries.length >= 8) {
+    const half = Math.floor(rphSeries.length / 2);
+    const a = rphSeries.slice(0, half).reduce((s, v) => s + v, 0) / half;
+    const b = rphSeries.slice(half).reduce((s, v) => s + v, 0) / (rphSeries.length - half);
+    if (a > 0 && b < a * 0.95) eTrend = "declining";
+    else if (a > 0 && b > a * 1.05) eTrend = "improving";
+  }
+  const rphLatest = rphSeries.length ? rphSeries[rphSeries.length - 1] : 0;
+  const eLevel: SignalLevel = rphSeries.length < 8 || availableWeekly <= 0 || billedRateApprox <= 0
+    ? "na" : eTrend === "declining" && teamUtil > 75 ? "active" : "no";
+
+  // F — Project flow
+  const flowDelta = projectFlow.started - projectFlow.completed;
+  const fLevel: SignalLevel = weeksWithData < 12
+    ? "na" : flowDelta >= 2 ? "active" : flowDelta === 1 ? "watch" : "no";
+
+  // G — Contract → kickoff lag
+  const avgLag = projectStartLag.length > 0
+    ? projectStartLag.reduce((s, p) => s + p.days, 0) / projectStartLag.length
+    : 0;
+  const gLevel: SignalLevel = projectStartLag.length < 5
+    ? "na" : avgLag > 28 ? "active" : avgLag >= 14 ? "watch" : "no";
+
+  // H — Owner hours
+  const ownerActual = manualSignals.owner_actual_hrs ?? 0;
+  const totalTarget = targetHrsPerWeek * 1.2; // billable + 20% admin
+  const ownerDelta = ownerActual - totalTarget;
+  const ownerDeltaPct = totalTarget > 0 ? (ownerDelta / totalTarget) * 100 : 0;
+  const hLevel: SignalLevel = ownerActual <= 0
+    ? "na" : ownerDeltaPct >= 20 ? "active" : ownerDeltaPct >= 10 ? "watch" : "no";
+
+  // I — Client experience
+  const ce = [manualSignals.client_missing_responses, manualSignals.client_milestone_delays, manualSignals.client_below_standard];
+  const ceAnyYes = ce.some((v) => v === "yes");
+  const ceAnySometimes = ce.some((v) => v === "sometimes");
+  const ceAllAnswered = ce.every((v) => v !== null);
+  const iLevel: SignalLevel = !ceAllAnswered ? "na" : ceAnyYes ? "active" : ceAnySometimes ? "watch" : "no";
+
+  // J — Owner role split
+  const prod = manualSignals.owner_production_hrs ?? 0;
+  const lead = manualSignals.owner_leadership_hrs ?? 0;
+  const totalRole = prod + lead;
+  const prodPct = totalRole > 0 ? (prod / totalRole) * 100 : 0;
+  const jLevel: SignalLevel = totalRole <= 0
+    ? "na" : prodPct > 60 ? "active" : prodPct >= 40 ? "watch" : "no";
+
+  // K — Pipeline recency
+  const kLevel: SignalLevel = manualSignals.pipeline_recency === "lt2"
+    ? "no"
+    : manualSignals.pipeline_recency === "lt6"
+    ? "watch"
+    : "na";
+
+  // L — Market timing
+  const lLevel: SignalLevel = manualSignals.market_timing === "durable" || manualSignals.market_timing === "growing"
+    ? "active"
+    : manualSignals.market_timing === "seasonal" ? "watch"
+    : "na";
+
+  const levels: SignalLevel[] = [aLevel, bLevel, cLevel, dLevel, eLevel, fLevel, gLevel, hLevel, iLevel, jLevel, kLevel, lLevel];
+  const activeCount = levels.filter((l) => l === "active").length;
+  const compositeMsg = activeCount <= 2
+    ? "Early stage. Monitor these signals as your workload grows. No hire case yet."
+    : activeCount <= 4
+    ? "Growing case. Start defining what role would help most and what the hire would cost. Be ready to move when the financials align."
+    : activeCount <= 7
+    ? "Strong case. Multiple dimensions are pointing toward a hire. If the financial gate is met, this is the right window."
+    : "Urgent signal. Your firm is showing strain across most dimensions. Delaying further risks quality, client relationships, and owner wellbeing.";
+
+  // Type-of-hire recommendation
+  let hireRec: { headline: string; body: string } | null = null;
+  if (dLevel === "active" && jLevel === "active") {
+    hireRec = {
+      headline: "Consider a project coordinator or studio manager",
+      body: "Your signals suggest a project coordinator or studio manager more than a designer. The capacity loss is in administration and oversight, not design hours.",
+    };
+  } else if (aLevel === "active" && dLevel !== "active") {
+    hireRec = {
+      headline: "Point toward a design hire",
+      body: "Your signals point toward a design hire. Your team is executing efficiently — there simply isn't enough of you.",
+    };
+  } else if (hLevel === "active" && jLevel === "active") {
+    hireRec = {
+      headline: "Consider a senior designer to free you",
+      body: "Consider whether a senior designer who can work independently would free you to lead rather than execute. The hire isn't about more capacity — it's about the right capacity.",
+    };
+  } else if (eLevel === "active" && nonBillablePctEstimate > 25) {
+    hireRec = {
+      headline: "Look at operations or admin first",
+      body: "Before hiring, examine whether an operations or admin hire would recover more billable hours from your existing team. The capacity may already exist — it's buried in non-billable overhead.",
+    };
+  } else if (bLevel === "active" && aLevel !== "active") {
+    hireRec = {
+      headline: "Start hiring conversations now",
+      body: "Your pipeline suggests future demand but your team has current capacity. Start hiring conversations now so you can onboard ahead of the work arriving — not after.",
+    };
+  }
+
+  const updated = manualSignals.updated_at ? new Date(manualSignals.updated_at).toLocaleDateString() : null;
+
+  return (
+    <Section eyebrow="Section 03" title="Growth Signals">
+      <p className="mt-[-12px] text-sm text-ch/70 max-w-3xl">
+        The signals that tell you you're approaching the gate — before the financials confirm it.
+      </p>
+      <p className="mt-3 text-sm text-ch/65 max-w-3xl italic">
+        The financial threshold tells you whether you can afford to hire. These signals tell you
+        whether you need to. A strong hire decision has both.
+      </p>
+
+      <Card className="mt-6">
+        <div className="flex items-baseline justify-between flex-wrap gap-2">
+          <div className="font-display text-2xl text-ch">
+            <span className="text-gold num">{activeCount}</span> of {levels.length} signals active
+          </div>
+        </div>
+        <div className="mt-3 h-2 w-full rounded-full bg-cream/60 overflow-hidden">
+          <div
+            className="h-full bg-terra transition-all"
+            style={{ width: `${(activeCount / levels.length) * 100}%` }}
+          />
+        </div>
+        <p className="mt-4 text-sm text-ch/75 max-w-3xl">{compositeMsg}</p>
+      </Card>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SignalCardUI
+          letter="A"
+          title="Are you running out of hours?"
+          measures="Weeks in the last 8 where billable utilization exceeded 85% of target."
+          level={aLevel}
+          primary={aLevel === "na"
+            ? "Need 4+ weeks of time entries to assess this signal."
+            : `${weeksOver85} of the last 8 weeks above 85% billable utilization`}
+          insight={
+            aLevel === "active" ? "Your team is consistently near full capacity. Taking on more work at this utilization risks quality and burnout."
+            : aLevel === "watch" ? "Utilization is climbing. Worth monitoring week by week."
+            : aLevel === "no" ? "Capacity is not currently a constraint."
+            : undefined
+          }
+        />
+        <SignalCardUI
+          letter="B"
+          title="Is work piling up ahead of you?"
+          measures="Weeks until projected capacity crunch from active + weighted pipeline workload."
+          level={bLevel}
+          primary={bLevel === "na"
+            ? "Add active projects with phase hours and timelines to assess this signal."
+            : Number.isFinite(crunchWeeks) && crunchWeeks > 0
+            ? `Capacity crunch projected in ${Math.round(crunchWeeks)} weeks`
+            : "No crunch projected at current workload"}
+          insight={
+            bLevel === "active" ? "Your committed workload will exceed capacity within 2 months. A hire decision made now takes 8–16 weeks to take effect — you are already behind."
+            : bLevel === "watch" ? "The crunch is coming but you have time to prepare. Start the hiring process now and you can onboard before it hits."
+            : bLevel === "no" ? "Your forward workload is manageable at current team size."
+            : undefined
+          }
+        />
+        <SignalCardUI
+          letter="C"
+          title="Is each project earning less over time?"
+          measures="Average profit per completed project, trended quarterly over the last 12 months."
+          level={cLevel}
+          primary={cLevel === "na"
+            ? "Need 3+ completed projects to assess this signal."
+            : `Average project margin: ${fmtUsd(avgMargin)} (${avgMarginPct.toFixed(0)}%) · Trend: ${cTrend}`}
+          insight={
+            cLevel === "active"
+              ? "Your profit per project is falling. More projects without addressing the cause will accelerate the decline. Declining margins often indicate a scope, pricing, or systems problem before a staffing problem — resolve the cause before adding headcount."
+              : cLevel === "no" ? "Project profitability is holding steady."
+              : undefined
+          }
+        />
+        <SignalCardUI
+          letter="D"
+          title="Is time slipping beyond what you scope?"
+          measures="Average ratio of actual to scoped hours across completed phases, last 6 months."
+          level={dLevel}
+          primary={dLevel === "na"
+            ? "Need 3+ completed projects with phase scope and actuals."
+            : `Average: ${creepPct.toFixed(0)}% of scoped hours used across ${completedProjects.length} completed projects`}
+          insight={
+            dLevel === "active"
+              ? "Your projects are consistently running over scope. This may mean under-pricing, under-scoping, or scope creep — more staff will not fix this on its own. Resolve the scope discipline first."
+              : dLevel === "watch"
+              ? "Slight scope creep. Worth reviewing whether it's systematic or project-specific."
+              : dLevel === "no" ? "Projects are tracking close to scope. Capacity issues are genuine workload, not time management."
+              : undefined
+          }
+        />
+        <SignalCardUI
+          letter="E"
+          title="Is your time converting to revenue efficiently?"
+          measures="Total revenue divided by total available hours (not just billable), trended over 12 weeks."
+          level={eLevel}
+          primary={eLevel === "na"
+            ? "Need more time entries and completed projects to estimate."
+            : `${fmtUsd(rphLatest)} per available hour (last 12 weeks) · Trend: ${eTrend}`}
+          insight={
+            eLevel === "active"
+              ? "You're working hard but each hour of available capacity is generating less revenue. This can mean growing non-billable overhead — a systems or staffing structure issue."
+              : eLevel === "no" ? "Revenue efficiency is holding steady."
+              : undefined
+          }
+        />
+        <SignalCardUI
+          letter="F"
+          title="Is your work in progress growing?"
+          measures="Projects started minus projects completed over the last 90 days."
+          level={fLevel}
+          primary={fLevel === "na"
+            ? "Need 3 months of project activity to assess."
+            : `${projectFlow.started} started · ${projectFlow.completed} completed · WIP ${flowDelta > 0 ? "growing" : flowDelta < 0 ? "reducing" : "stable"}`}
+          insight={
+            fLevel === "active" ? "More work is starting than finishing. Your backlog is growing — either projects are stalling or the team cannot close at pace with new commitments."
+            : fLevel === "watch" ? "Slight accumulation. Monitor whether this trend continues."
+            : fLevel === "no" ? "Projects are starting and closing at a healthy pace."
+            : undefined
+          }
+        />
+        <SignalCardUI
+          letter="G"
+          title="How long before new projects can start?"
+          measures="Average days between project creation and first time entry, last 6 months."
+          level={gLevel}
+          primary={gLevel === "na"
+            ? "Need 5+ projects with logged time to assess."
+            : `Average ${avgLag.toFixed(0)} days from contract to project start`}
+          insight={
+            gLevel === "active" ? "Clients are waiting more than a month before their project gets started. This signals a backlog and risks client satisfaction."
+            : gLevel === "watch" ? "Start times are stretching. Worth tracking."
+            : gLevel === "no" ? "Projects are starting promptly after contract."
+            : undefined
+          }
+        />
+      </div>
+
+      <div className="mt-10">
+        <h3 className="font-display text-2xl text-ch">The signals only you can see</h3>
+        <p className="mt-1 text-sm text-ch/65 max-w-3xl">
+          These factors don't appear in your data but are often the earliest and most reliable indicators.
+        </p>
+        {updated && (
+          <p className="mt-1 text-xs text-ch/45 italic">Last updated {updated}</p>
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SignalCardUI
+          letter="H"
+          title="Are you working beyond your own target?"
+          measures="Your actual weekly hours compared to your target (billable + ~20% admin)."
+          level={hLevel}
+          primary={ownerActual > 0
+            ? `You're working ${ownerDelta >= 0 ? "+" : ""}${ownerDelta.toFixed(0)} hrs above your ${totalTarget.toFixed(0)} hr target on average.`
+            : undefined}
+          insight={
+            hLevel === "active" ? "You are personally absorbing the firm's capacity gap with your own time. This is unsustainable and invisible in your firm's metrics. A hire here isn't growth — it's returning you to a sustainable pace."
+            : hLevel === "watch" ? "You're stretching but not yet in the danger zone. Monitor weekly."
+            : undefined
+          }
+        >
+          <div className="flex items-end gap-2">
+            <NumberField
+              label="Actual hrs/week"
+              value={manualSignals.owner_actual_hrs ?? 0}
+              onChange={(n) => onPersist({ owner_actual_hrs: n })}
+              suffix="hrs"
+            />
+          </div>
+        </SignalCardUI>
+
+        <SignalCardUI
+          letter="I"
+          title="Is the quality of your client experience slipping?"
+          measures="Three honest yes/no checks on responsiveness, delivery, and craft."
+          level={iLevel}
+          insight={
+            iLevel === "active" ? "Client experience is already being affected by capacity. This is the signal that matters most for long-term firm health. Act before it affects your reputation."
+            : iLevel === "watch" ? "Early signs of strain on quality and responsiveness."
+            : undefined
+          }
+        >
+          <div className="space-y-3">
+            <YnsRow
+              label="Missing or delaying responses to client communications?"
+              value={manualSignals.client_missing_responses}
+              onChange={(v) => onPersist({ client_missing_responses: v })}
+            />
+            <YnsRow
+              label="Delivering milestones or presentations late?"
+              value={manualSignals.client_milestone_delays}
+              onChange={(v) => onPersist({ client_milestone_delays: v })}
+            />
+            <YnsRow
+              label="Delivering work below your standard because of time pressure?"
+              value={manualSignals.client_below_standard}
+              onChange={(v) => onPersist({ client_below_standard: v })}
+            />
+          </div>
+        </SignalCardUI>
+
+        <SignalCardUI
+          letter="J"
+          title="Are you still doing the work instead of leading it?"
+          measures="Split of your hours between production work and leading the business."
+          level={jLevel}
+          primary={totalRole > 0
+            ? `Production ${prodPct.toFixed(0)}% · Leadership ${(100 - prodPct).toFixed(0)}%`
+            : undefined}
+          insight={
+            jLevel === "active" ? "More than half your time is in production. Your firm needs you leading it — not executing within it. A hire at this stage is about unlocking your capacity for higher-value work, not just adding headcount."
+            : jLevel === "watch" ? "You're split between roles. As the firm grows this balance needs to shift."
+            : undefined
+          }
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              label="Production hrs this week"
+              value={manualSignals.owner_production_hrs ?? 0}
+              onChange={(n) => onPersist({ owner_production_hrs: n })}
+              suffix="hrs"
+            />
+            <NumberField
+              label="Leadership hrs this week"
+              value={manualSignals.owner_leadership_hrs ?? 0}
+              onChange={(n) => onPersist({ owner_leadership_hrs: n })}
+              suffix="hrs"
+            />
+          </div>
+        </SignalCardUI>
+
+        <SignalCardUI
+          letter="K"
+          title="Is your pipeline based on real probability?"
+          measures="When you last reviewed and updated probabilities on each pipeline project."
+          level={kLevel}
+          primary={`Your pipeline currently shows ${pipelineCount} projects at a weighted total of ${pipelineWeightedTotal.toFixed(0)} hours.`}
+          insight={
+            kLevel === "na" ? "Pipeline data may be outdated. Review project probabilities before using pipeline as a growth signal."
+            : undefined
+          }
+        >
+          <div className="space-y-1.5 text-sm">
+            {([
+              ["lt2", "Within the last 2 weeks — current"],
+              ["lt6", "2–6 weeks ago — possibly stale"],
+              ["gt6", "Over 6 weeks ago — likely stale"],
+              ["unset", "I haven't set probabilities yet"],
+            ] as const).map(([v, lbl]) => (
+              <label key={v} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="pipeline_recency"
+                  checked={manualSignals.pipeline_recency === v}
+                  onChange={() => onPersist({ pipeline_recency: v })}
+                />
+                <span className="text-ch/80">{lbl}</span>
+              </label>
+            ))}
+          </div>
+        </SignalCardUI>
+
+        <SignalCardUI
+          letter="L"
+          title="Is demand a durable trend or a seasonal peak?"
+          measures="Your read of current pipeline activity."
+          level={lLevel}
+          insight={
+            lLevel === "watch" && manualSignals.market_timing === "seasonal"
+              ? "Hiring into a seasonal peak is one of the most common growth mistakes. If demand is seasonal, consider contractors for peak periods before a permanent hire."
+              : undefined
+          }
+        >
+          <div className="space-y-1.5 text-sm">
+            {([
+              ["durable", "Durable — we consistently have more work than we can handle"],
+              ["growing", "Growing — demand has been increasing steadily for 6+ months"],
+              ["seasonal", "Seasonal — we're in a busy period that typically slows"],
+              ["uncertain", "Uncertain — I'm not sure yet"],
+            ] as const).map(([v, lbl]) => (
+              <label key={v} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="market_timing"
+                  checked={manualSignals.market_timing === v}
+                  onChange={() => onPersist({ market_timing: v })}
+                />
+                <span className="text-ch/80">{lbl}</span>
+              </label>
+            ))}
+          </div>
+        </SignalCardUI>
+      </div>
+
+      {hireRec && (
+        <Card className="mt-8 border-gold/40">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-gold">What kind of support do you need?</div>
+          <h3 className="mt-1 font-display text-2xl text-ch">{hireRec.headline}</h3>
+          <p className="mt-2 text-sm text-ch/75 max-w-3xl">{hireRec.body}</p>
+          <Button
+            onClick={onJumpToBuilder}
+            className="mt-4 bg-gold hover:bg-goldl text-white"
+          >
+            Run a hire scenario →
+          </Button>
+        </Card>
+      )}
+    </Section>
+  );
+}
+
+function YnsRow({
+  label, value, onChange,
+}: { label: string; value: YesNoSometimes; onChange: (v: YesNoSometimes) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-ch/80 flex-1">{label}</span>
+      <div className="flex gap-1">
+        {(["yes", "sometimes", "no"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            className={`px-2 py-1 rounded text-xs capitalize border ${
+              value === v
+                ? "bg-ch text-cream border-ch"
+                : "bg-white text-ch/70 border-border hover:border-ch/40"
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
