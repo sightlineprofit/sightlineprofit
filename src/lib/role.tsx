@@ -51,6 +51,14 @@ export function fallbackForRole(role: AppRole | null): string {
   return "/dashboard";
 }
 
+/** Whether the current user should see firm-level financial figures
+ *  (rates, margins, costs, revenue). Principals and admins only. */
+export function useShowFinancials(): boolean {
+  const { data } = useMe();
+  const role = effectiveRole(data?.profile);
+  return role === "principal" || role === "admin";
+}
+
 /**
  * Gate a page on the user's role. Renders a loading state while the role
  * resolves, redirects when the role is not allowed, and only renders
