@@ -435,8 +435,10 @@ export type Database = {
           is_super_admin: boolean
           name: string
           other_annual_costs: number | null
+          preferred_home: string | null
           role: Database["public"]["Enums"]["user_role"]
           weeks_per_year: number | null
+          welcomed_at: string | null
         }
         Insert: {
           accepted_at?: string | null
@@ -460,8 +462,10 @@ export type Database = {
           is_super_admin?: boolean
           name?: string
           other_annual_costs?: number | null
+          preferred_home?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
+          welcomed_at?: string | null
         }
         Update: {
           accepted_at?: string | null
@@ -485,8 +489,10 @@ export type Database = {
           is_super_admin?: boolean
           name?: string
           other_annual_costs?: number | null
+          preferred_home?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
+          welcomed_at?: string | null
         }
         Relationships: [
           {
