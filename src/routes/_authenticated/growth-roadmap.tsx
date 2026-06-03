@@ -952,9 +952,20 @@ function RampConsequences({
 
 type ProjRow = ReturnType<typeof projectYear> & { year: number };
 
-function ProjectionTable({ rows }: { rows: ProjRow[] }) {
-  const labels = ["Current", "Year 1", "Year 2", "Year 3"];
-  const metrics: { key: keyof ProjRow; label: string; fmt: (v: number) => string; tip?: keyof typeof GLOSSARY }[] = [
+function ProjectionTable({ rows, horizonYears = 3 }: { rows: ProjRow[]; horizonYears?: 3 | 5 | 7 }) {
+  const labels = ["Current", ...Array.from({ length: rows.length - 1 }, (_, i) => `Year ${i + 1}`)];
+  const extended = horizonYears >= 5;
+  let cumRev = 0;
+  const cumulative = rows.map((r) => (cumRev += r.annualRevenue));
+  const valuation = cumulative.map((c) => c * 2);
+  type Metric = {
+    key: keyof ProjRow | "cumulative" | "valuation";
+    label: string;
+    fmt: (v: number) => string;
+    tip?: keyof typeof GLOSSARY;
+    info?: { term: string; definition: string; why?: string };
+  };
+  const metrics: Metric[] = [
     { key: "alignedRate", label: "Aligned rate (floor)", fmt: (v) => fmtUsd(v, { decimals: 0 }), tip: "alignedRate" },
     { key: "billedRate", label: "Billed rate", fmt: (v) => fmtUsd(v, { decimals: 0 }) },
     { key: "weeklyBillable", label: "Billable hrs / week", fmt: (v) => v.toFixed(0) },
@@ -964,6 +975,19 @@ function ProjectionTable({ rows }: { rows: ProjRow[] }) {
     { key: "marginPct", label: "Margin %", fmt: (v) => fmtPct(v, 1) },
     { key: "headcount", label: "Team headcount", fmt: (v) => v.toFixed(0) },
   ];
+  if (extended) {
+    metrics.push({ key: "cumulative", label: "Cumulative revenue", fmt: (v) => fmtUsd(v) });
+    metrics.push({
+      key: "valuation",
+      label: "Indicative firm value (2× revenue)",
+      fmt: (v) => fmtUsd(v),
+      info: {
+        term: "Indicative firm value",
+        definition: "A rough valuation reference using a common service-business multiple (2× revenue).",
+        why: "Actual valuation depends on profitability, client concentration, team stability, and other factors. Not a formal appraisal.",
+      },
+    });
+  }
   return (
     <Card>
       <div className="overflow-x-auto">
@@ -983,21 +1007,30 @@ function ProjectionTable({ rows }: { rows: ProjRow[] }) {
           </thead>
           <tbody className="divide-y divide-border">
             {metrics.map((m) => (
-              <tr key={m.key as string}>
+              <tr key={m.key}>
                 <td className="py-3.5 text-sm text-ch/75">
                   <span className="inline-flex items-center gap-1.5">
                     {m.label}
                     {m.tip && <InfoTip {...GLOSSARY[m.tip]} />}
+                    {m.info && <InfoTip {...m.info} />}
                   </span>
                 </td>
-                {rows.map((r, i) => (
-                  <td
-                    key={r.year}
-                    className={`py-3.5 text-right num text-2xl ${i === 0 ? "text-ch/55" : "text-ch"}`}
-                  >
-                    {m.fmt(Number(r[m.key]) || 0)}
-                  </td>
-                ))}
+                {rows.map((r, i) => {
+                  const v =
+                    m.key === "cumulative"
+                      ? cumulative[i]
+                      : m.key === "valuation"
+                      ? valuation[i]
+                      : (Number(r[m.key as keyof ProjRow]) || 0);
+                  return (
+                    <td
+                      key={r.year}
+                      className={`py-3.5 text-right num text-2xl ${i === 0 ? "text-ch/55" : "text-ch"}`}
+                    >
+                      {m.fmt(v)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
