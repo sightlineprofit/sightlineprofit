@@ -76,7 +76,7 @@ export const getMyContext = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id, firm_id, role, name, email, is_super_admin, impersonated_firm_id")
+      .select("id, firm_id, role, name, email, is_super_admin, impersonated_firm_id, preferred_home, welcomed_at")
       .eq("id", userId)
       .maybeSingle();
     const effectiveFirmId = profile?.impersonated_firm_id ?? profile?.firm_id ?? null;
@@ -86,6 +86,33 @@ export const getMyContext = createServerFn({ method: "GET" })
       supabase.from("firm_config").select("*").eq("firm_id", effectiveFirmId).maybeSingle(),
     ]);
     return { profile, firm, config };
+  });
+
+export const setPreferredHome = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ preferred_home: z.enum(["dashboard", "calendar", "sightline"]) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ preferred_home: data.preferred_home })
+      .eq("id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const markWelcomed = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ welcomed_at: new Date().toISOString() })
+      .eq("id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 const configSchema = z.object({
