@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Trash2, Check, AlertTriangle, X } from "lucide-react";
@@ -7,6 +7,7 @@ import { ModulePage } from "@/components/shell/ModulePage";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { calc, fmtPct, fmtUsd, type FirmConfig, type Expense } from "@/lib/finance";
 import { InfoTip, GLOSSARY } from "@/components/dashboard/InfoTip";
 import {
@@ -14,6 +15,7 @@ import {
   saveGrowthScenario,
   deleteScenario,
   saveCapacityIndicator,
+  saveGrowthSignals,
 } from "@/lib/growth.functions";
 import { toast } from "sonner";
 
