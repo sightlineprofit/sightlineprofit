@@ -33,6 +33,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { RoleGuard } from "@/lib/role";
+import { CapacityTile, type CapacityTileData } from "@/components/capacity/CapacityTile";
+import { CapacityExpanded, type CapacityExpandedData } from "@/components/capacity/CapacityExpanded";
+import type { CapacityInputs } from "@/lib/capacity-math";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -74,6 +77,58 @@ function Dashboard() {
   );
 
   const c = useMemo(() => calc(data?.config ?? null, data?.expenses ?? []), [data]);
+
+  // Build capacity payload (memo so both tile + expanded see the same instance)
+  const capacity = useMemo<{ tile: CapacityTileData; expanded: CapacityExpandedData } | null>(() => {
+    if (!data) return null;
+    const cap = (data as any).capacity;
+    if (!cap) return null;
+    const targetHrs = Number(data.config?.target_billable_hrs_per_week ?? 0) || 0;
+    const ratePerHr = Number(data.config?.rate_billed ?? 0) || 0;
+    const inputs: CapacityInputs = {
+      projects: cap.projects ?? [],
+      phases: cap.phases ?? [],
+      pipeline: cap.pipeline ?? [],
+      trailingEntries: cap.trailingEntries ?? [],
+      avgWeeklyNonBillable: Number(cap.avgWeeklyNonBillable ?? 0),
+      targetHrsPerWeek: targetHrs,
+      weeksPerYear: 48,
+      ratePerHr,
+    };
+    // Weekly hours per user (current week, billable only, non-BD)
+    const weeklyHoursByUser = new Map<string, number>();
+    // We don't have per-user current-week split in the existing payload; derive from trailingEntries
+    const startOfWeek = new Date();
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    const iso = startOfWeek.toISOString().slice(0, 10);
+    for (const t of cap.trailingEntries ?? []) {
+      if (t.billable && t.date >= iso && t.user_id) {
+        weeklyHoursByUser.set(t.user_id, (weeklyHoursByUser.get(t.user_id) ?? 0) + Number(t.hrs || 0));
+      }
+    }
+    return {
+      tile: {
+        inputs,
+        weekHours: data.weekHours ?? 0,
+        team: cap.team ?? [],
+        weeklyHoursByUser,
+        configSetup: targetHrs > 0,
+      },
+      expanded: {
+        inputs,
+        weekHours: data.weekHours ?? 0,
+        bdWeekHours: data.bdWeekHours ?? 0,
+        team: cap.team ?? [],
+        weeklyHoursByUser,
+        sopTemplates: cap.sopTemplates ?? [],
+        configSetup: targetHrs > 0,
+        annualRevenue: c.annualRevenue,
+        alignedAnnualRevenue: c.alignedRate * c.annualBillableHrs,
+      },
+    };
+  }, [data, c]);
+
   const firstName = (data?.profile?.name || data?.profile?.email || "").split(/[ @]/)[0] || "there";
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
@@ -110,9 +165,13 @@ function Dashboard() {
         <Tile eyebrow="Scenarios" title="Model a decision" onOpen={() => setOpen("scenario")}>
           <ScenarioPreview lastName={data?.scenarios?.[0]?.name} />
         </Tile>
-        <Tile eyebrow="Capacity" title="Firm capacity this week" onOpen={() => setOpen("capacity")}>
-          <CapacityPreview c={c} weekHours={data?.weekHours ?? 0} bdHours={data?.bdWeekHours ?? 0} />
-        </Tile>
+        {capacity ? (
+          <CapacityTile data={capacity.tile} onOpen={() => setOpen("capacity")} />
+        ) : (
+          <Tile eyebrow="Capacity" title="Firm capacity" onOpen={() => setOpen("capacity")}>
+            <div className="text-sm text-ch/50">Loading…</div>
+          </Tile>
+        )}
         <Tile eyebrow="Learn" title="Knowledge Base" onOpen={() => setOpen("kb")}>
           <KnowledgePreview />
         </Tile>
@@ -136,7 +195,7 @@ function Dashboard() {
       </FullViewDialog>
       <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
       <FullViewDialog open={open === "capacity"} onClose={() => setOpen(null)} title="Firm Capacity" wide>
-        <CapacityFull c={c} weekHours={data?.weekHours ?? 0} bdHours={data?.bdWeekHours ?? 0} />
+        {capacity && <CapacityExpanded data={capacity.expanded} />}
       </FullViewDialog>
       <FullViewDialog open={open === "kb"} onClose={() => setOpen(null)} title="Knowledge Base" wide><KnowledgeFull /></FullViewDialog>
     </div>
