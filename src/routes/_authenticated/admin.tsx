@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -40,15 +40,7 @@ function AdminPage() {
     return <ModulePage title="Admin"><p className="text-ch/60">Loading…</p></ModulePage>;
   }
   if (!ctx?.profile?.is_super_admin) {
-    return (
-      <ModulePage eyebrow="Restricted" title="Admin">
-        <div className="rounded-lg border border-border bg-white p-10 text-center">
-          <Shield className="mx-auto h-8 w-8 text-ch/40" />
-          <p className="mt-3 font-display text-2xl text-ch">Super admin only</p>
-          <p className="mt-2 text-sm text-ch/60">This area is reserved for the Sightline team.</p>
-        </div>
-      </ModulePage>
-    );
+    return <Navigate to="/dashboard" replace />;
   }
 
   const tabs: { id: Tab; label: string }[] = [
