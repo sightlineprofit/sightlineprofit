@@ -7,7 +7,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Sightline answers the three questions every interior design firm owner needs — what should I charge, am I hitting my targets, and was this project profitable. Built exclusively for design firms.",
+          "Sightline answers the three questions most designers have never got a straight answer to— what to charge, how to plan, and when to grow.",
       },
       { property: "og:title", content: "Sightline — Financial Management for Interior Design Firms" },
       {
@@ -197,9 +197,8 @@ function Hero() {
             }}
           >
             Sightline is a financial management platform that answers the three
-            questions every design firm owner needs to ask — what should I
-            charge, am I actually hitting my targets, and was this project
-            profitable.
+            questions most designers have never got a straight answer to— what
+            to charge, how to plan, and when to grow.
           </p>
 
           <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
