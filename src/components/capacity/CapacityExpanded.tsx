@@ -16,7 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtUsd } from "@/lib/finance";
 import { cn } from "@/lib/utils";
-import { RoleGuard } from "@/lib/role";
+import { useMe, effectiveRole } from "@/lib/role";
 
 export type CapacityExpandedData = {
   inputs: CapacityInputs;
@@ -43,6 +43,9 @@ const TAB_KEY = "sightline:capacity-tab";
 export function CapacityExpanded({ data }: { data: CapacityExpandedData }) {
   const summary = useMemo(() => computeCapacity(data.inputs), [data.inputs]);
   const meta = statusMeta(summary.status);
+  const { data: meData } = useMe();
+  const role = effectiveRole(meData?.profile);
+  const canSeeTeam = role === "principal" || role === "admin";
 
   const defaultTab = summary.status === "comfortable" ? "overview" : "timeline";
   const [tab, setTab] = useState<string>(() => {
@@ -84,7 +87,7 @@ export function CapacityExpanded({ data }: { data: CapacityExpandedData }) {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
+          {canSeeTeam && <TabsTrigger value="team">Team</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview">
@@ -93,11 +96,11 @@ export function CapacityExpanded({ data }: { data: CapacityExpandedData }) {
         <TabsContent value="timeline">
           <TimelineTab data={data} summary={summary} />
         </TabsContent>
-        <TabsContent value="team">
-          <RoleGuard allow={["principal", "admin"]} fallback={<p className="text-sm text-ch/60 p-4">Team view is available to principals and admins.</p>}>
+        {canSeeTeam && (
+          <TabsContent value="team">
             <TeamTab data={data} />
-          </RoleGuard>
-        </TabsContent>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
