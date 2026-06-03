@@ -52,6 +52,10 @@ export function CapacityTile({
     .filter((m) => (m.expected_hrs_per_week ?? 0) > 0)
     .filter((m) => (data.weeklyHoursByUser.get(m.id) ?? 0) > (m.expected_hrs_per_week ?? 0));
 
+  const hasActiveTimelines = data.inputs.projects.some(
+    (p) => (p.status || "").toLowerCase() === "active" && p.start_date && p.end_date,
+  );
+
   return (
     <button
       type="button"
@@ -103,6 +107,11 @@ export function CapacityTile({
       {overMembers.length > 0 && (
         <div className={cn("mt-3 text-[11px]")} style={{ color: "#C4714A" }}>
           ● {overMembers[0].name || "Team member"} is over capacity this week
+        </div>
+      )}
+      {!hasActiveTimelines && overMembers.length === 0 && (
+        <div className="mt-3 text-[11px] text-ch/50">
+          Add project timelines to see your workload mapped ahead.
         </div>
       )}
     </button>
