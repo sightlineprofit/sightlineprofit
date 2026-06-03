@@ -497,7 +497,73 @@ function FirmTab() {
       <button type="submit" className={btnCls} disabled={saving}>
         {saving ? "Saving…" : "Save changes"}
       </button>
+
+      <DefaultHomeSection />
     </form>
+  );
+}
+
+/* ─────────────── Default home (principal/admin) ─────────────── */
+function DefaultHomeSection() {
+  const qc = useQueryClient();
+  const { data } = useMe();
+  const saveHome = useServerFn(setPreferredHome);
+  const current = (data?.profile?.preferred_home as
+    | "dashboard"
+    | "calendar"
+    | "sightline"
+    | null
+    | undefined) ?? "dashboard";
+  const [val, setVal] = useState<"dashboard" | "calendar" | "sightline">(current);
+
+  // Resync when profile loads
+  useMemo(() => {
+    setVal(current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.profile?.preferred_home]);
+
+  async function pick(next: "dashboard" | "calendar" | "sightline") {
+    setVal(next);
+    try {
+      await saveHome({ data: { preferred_home: next } });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      toast.success("Home screen updated.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save");
+    }
+  }
+
+  const options: { id: "dashboard" | "calendar" | "sightline"; label: string }[] = [
+    { id: "dashboard", label: "Dashboard" },
+    { id: "calendar", label: "Time Calendar" },
+    { id: "sightline", label: "Projects (Sightline)" },
+  ];
+
+  return (
+    <section className="space-y-3 border-t border-border pt-6">
+      <h3 className="font-display text-lg text-ch">Default home screen</h3>
+      <p className="text-xs text-ch/60">
+        Where you land after signing in. Takes effect on next login.
+      </p>
+      <div className="space-y-2">
+        {options.map((o) => (
+          <label
+            key={o.id}
+            className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer"
+          >
+            <input
+              type="radio"
+              name="preferred_home"
+              value={o.id}
+              checked={val === o.id}
+              onChange={() => pick(o.id)}
+              className="mt-1 accent-gold"
+            />
+            <div className="text-sm font-medium text-ch">{o.label}</div>
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 
