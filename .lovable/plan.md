@@ -1,74 +1,91 @@
-## Growth Roadmap restructure + Growth Signals
 
-### Scope
-Restructure `/growth-roadmap` into a 2-tab layout and add a comprehensive "Growth Signals Assessment" section (12 signals) plus a hire-type recommendation. Extend the financial projection to 3/5/7 year horizons.
+## Scope
 
-### Tab 1 — Hiring & Growth
-Sections in order:
-1. **Capacity & Utilization Snapshot** — unchanged
-2. **Hiring Threshold — Financial Gate** — existing content, header relabeled only
-3. **Growth Signals Assessment** — NEW (see below)
-4. **Hire Scenario Builder** — existing downstream-consequences block, moved here
+Expand the **existing** dashboard Capacity tile in `src/routes/_authenticated/dashboard.tsx`. No new route, no schema changes, no rebuilds of unrelated tiles. Sidebar already has no `/capacity` entry, so nothing to remove.
 
-### Tab 2 — Financial Projection
-- Existing 3-year projection table moved here
-- Horizon toggle: [3 / 5 / 7 Years], default 3 (current behavior unchanged)
-- For 5 & 7 yr: add rows **Cumulative revenue** and **Indicative firm value (2× revenue)** with InfoTip caveat
-- 7-yr: directional-uncertainty footnote
-- All compounding logic re-uses existing per-year math
+## Files touched
 
-### Section 3 — Growth Signals Assessment
+- `src/routes/_authenticated/dashboard.tsx` — replace `CapacityPreview` + `CapacityFull` with new components.
+- `src/lib/dashboard.functions.ts` — extend `getDashboardData` to return the extra capacity payload (projects with phases, pipeline rows, last-4-weeks non-billable, SOP template totals).
+- `src/components/capacity/` (new folder) — extract sub-components to keep dashboard.tsx readable:
+  - `CapacityTile.tsx` (collapsed)
+  - `CapacityExpanded.tsx` (tab shell, tab memory via `sessionStorage`)
+  - `tabs/OverviewTab.tsx`, `tabs/TimelineTab.tsx`, `tabs/TeamTab.tsx`
+  - `WeeklyPressureChart.tsx`, `ProjectTimeline.tsx`, `OpenWindows.tsx`, `WhatIfTool.tsx`
+  - `capacity-math.ts` — pure helpers (weekly committed per week, open-window detection, status thresholds, dollar potential).
 
-**Composite header**: "N of 12 signals active" + progress bar + tiered interpretation (0–2 / 3–4 / 5–7 / 8+).
+## Data layer (single server fn additions)
 
-**Status badge component** (4 states): Active (terracotta), Watch (gold), No signal (cream/muted), Needs input (slate).
+Extend `getDashboardData` (or add `getCapacityData` called from the dashboard query) to return:
 
-**Auto-calculated signals (A–G)** — 2-col grid:
-- **A. Capacity Pressure** — count weeks in last 8 above 85% util. Reuse `weeklyBuckets` from `getGrowthData` (already present); thresholds: 4+/2–3/0–1, <4wk → needs-input.
-- **B. Committed Workload Horizon** — weeks until projected crunch using active `project_phases.expected_hrs` minus actuals + weighted pipeline hrs, against team weekly capacity. Server-side calc.
-- **C. Project Profit Trend** — completed projects last 12 months grouped by quarter, fee − time_cost. Declining 2+ quarters → active.
-- **D. Scope Creep Rate** — completed phases sum(actual)/sum(expected) last 6 months. >125% active (flagged as discipline issue), 110–125% watch.
-- **E. Revenue per Available Hour** — (collected+committed) / (team × target_hrs × weeks), 12-wk trend. Declining 8+ weeks AND util >75% → active.
-- **F. Start vs Close Rate** — projects created vs marked Completed/Archived last 90d.
-- **G. Time from Contract to Kickoff** — avg days between `projects.created_at` and `min(time_entries.date)`, last 6 months.
+- `projects`: id, name, status, start_date, end_date, scoped_hrs, fixed_fee, scoped_rate, phases [{ expected_hrs, sort_order }]
+- `pipeline`: id, name, estimated_hrs, estimated_start, probability_pct
+- `team`: profiles (id, name, role, color, expected_hrs_per_week, billable_rate)
+- `last4WeeksNonBillable`: sum hrs where `billable=false` over trailing 4 weeks → weekly average
+- `weeklyLoggedPast`: last 8 weeks of billable hours per ISO week
+- `sopTemplates`: id, name, total_hrs (sum of `sop_phases.expected_hrs`)
 
-**Principal-input signals (H–L)** — sub-section "The signals only you can see":
-- **H. Owner Hours Beyond Target** — number input → compared to target+20% admin.
-- **I. Client Experience Under Load** — 3 sub-questions Yes/No/Sometimes.
-- **J. Owner Role Split** — production hrs + leadership hrs inputs.
-- **K. Pipeline Realism** — radio of last-reviewed bucket; injects current weighted pipeline count/hrs.
-- **L. Market Timing** — radio: durable/growing/seasonal/uncertain (seasonal shows contractor warning).
+All RLS-respected via `requireSupabaseAuth`. No new tables, no migration.
 
-All manual answers stored in `firm_config.growth_signals` (jsonb) and surfaced with "Last updated [date]" stamp. New server fn `saveGrowthSignals` (single jsonb upsert).
+## Calculation rules (single source — `capacity-math.ts`)
 
-**Type-of-hire recommendation card** at bottom — applies the 5 conditional rules in spec against active signal set; renders headline + 2-sentence body + "Run a hire scenario →" button that scrolls to Section 4.
+- `annualTarget = target_billable_hrs_per_week × weeksPerYear` (weeksPerYear = 48 fallback, no config field exists).
+- `committed = Σ project_phases.expected_hrs` for active projects, fallback `Σ projects.scoped_hrs` when phases missing.
+- `pipelineWeighted = Σ estimated_hrs × probability_pct/100`.
+- `nonBillableEst = avgWeeklyNonBillable × weeksRemainingInYear`.
+- `available = max(0, annualTarget − committed − pipelineWeighted − nonBillableEst)`.
+- `weeklyCommitted[w]` for next 16 weeks: for each active project with dates, distribute phase `expected_hrs` evenly across project weeks (phase ordering used only when phases have explicit week spans; otherwise flat split — pragmatic fallback matching spec note). Past weeks pulled from `time_entries`.
+- `weeklyPipeline[w]`: pipeline rows distributed across 8 weeks starting at `estimated_start`, scaled by probability.
+- `openWindows`: contiguous spans ≥2 weeks where `weeklyCommitted < target × 0.70`; classify by avg pct (Comfortable <60, Tight 60–85, Over >85).
+- Status pill thresholds drive collapsed tile color and default tab.
 
-### Data layer changes
+## Collapsed tile (Part 2)
 
-- **Migration**: add `growth_signals jsonb` column to `firm_config` (default `{}`).
-- **`getGrowthData`** server fn extended to return:
-  - `completedProjects`: id, fee, completed_at, time_cost (computed)
-  - `completedPhases`: expected_hrs, actual_hrs, completed_at (last 6 mo)
-  - `projectStartLag`: per-project days from created → first time entry (last 6 mo)
-  - `projectFlow`: started/completed counts last 90d
-  - `revenuePerHourSeries`: 12 weekly points
-  - `growthSignals`: current jsonb value from firm_config
-  - `weightedPipelineHrs`: sum(estimated_hrs × probability)
-- **New server fn `saveGrowthSignals`** — merges into `firm_config.growth_signals`.
+Status pill (green/gold/terra/danger), mini 3-segment annual bar (committed gold / pipeline gold-40 / available cream), three numbers (committed hrs+%, available hrs+%, logged this week), conditional flags (member over capacity, project strains a month). One click opens expanded modal; default tab = Timeline unless Comfortable (then Overview).
 
-### UI structure
+## Expanded shell
 
-- Add `Tabs` (shadcn) wrapper at top of `GrowthRoadmap` component.
-- Extract existing JSX into `<HiringGrowthTab>` and `<FinancialProjectionTab>` local components in the same file to keep diff manageable.
-- New `<GrowthSignalsSection>` component lives in the same file (large but cohesive). Uses `<SignalCard>` and `<StatusBadge>` helpers.
-- Horizon toggle is local `useState`; projection rendering loops to N years.
+Reuse the existing `FullViewDialog` (wide). Header keeps "Firm Capacity" + status pill. Tabs use shadcn `Tabs`. Active tab persisted to `sessionStorage["capacity:tab"]`.
 
-### Out of scope (not touched)
-- Existing capacity snapshot, financial gate calculation, hire scenario builder math, existing 5-signal readiness panel (kept inside Section 2 as before).
-- Dashboard, Sightline, SOP library.
+## Overview tab (Part 4)
 
-### Files touched
-- `supabase/migrations/<new>.sql` — add jsonb column
-- `src/lib/growth.functions.ts` — extend getGrowthData, add saveGrowthSignals
-- `src/routes/_authenticated/growth-roadmap.tsx` — tabs + Section 3 + horizon toggle
-- `src/integrations/supabase/types.ts` — regenerated after migration
+Keep the current planned-capacity / billable-vs-non-billable / revenue blocks. **Add**: annual capacity stacked bar with 4 segments + legend with dollar potential; four key stat blocks (Open / Committed / Pipeline / At your rate $).
+
+## Timeline tab (Part 5) — the main work
+
+Five sections built to the editorial spec (Cormorant Garamond for display, Jost for UI, color tokens charcoal/gold/cream/success/terra). No card outlines on section interiors.
+
+- **A. Framing** — eyebrow, italic headline, subline, status row.
+- **B. Weekly pressure chart** — custom flex-row bars (no chart lib), 16 weeks, stacked pipeline-over-committed, dashed target line, zone labels, week labels, legend.
+- **C. Project timeline** — Gantt-style rows from active projects with start/end, sorted by start. Six-month window.
+- **D. Open windows** — up to 3 cards generated from `openWindows`; classification colors + auto descriptions. Hidden entirely when <4 weeks forward project data.
+- **E. What-if tool** — hours input + start-window select (populated from windows; "ASAP" first); result block with three states; SOP template chips below pre-fill hours.
+
+## Team tab (Part 6)
+
+Guarded by `RoleGuard allow={["principal","admin"]}`. Member cards (color dot, target, mini bar, this-week stats), team totals bar, utilization table with row-border classification.
+
+## Graceful degradation (Part 7)
+
+Implemented as branches in each component:
+- No `target_billable_hrs_per_week` → all tabs replaced by single CTA card linking to `/setup`.
+- Pressure chart: empty/projects-missing/phases-missing variants with inline notes.
+- Project timeline: split list of dateless active projects with edit links.
+- Open windows hidden when insufficient; one-line hint shown in its place.
+- What-if collapses to hours-only + annual % when no windows.
+- Pipeline simply absent when zero rows.
+
+## Progressive prompts (Part 8)
+
+Add a small `useDismissiblePrompt(key)` hook backed by `localStorage["sightline:prompt-dismissed:<key>"]` + auto-dismiss when underlying data exists. Wire the specific prompts called out in spec at: dashboard header (cost setup), BvA tile (Foundation log-hours), collapsed capacity tile (no timelines), Timeline tab (phases missing, pipeline missing), project detail (no dates / no phases), time calendar (first-week sidebar). Each prompt is one line, links to the right place, never repeats.
+
+## Out of scope / explicitly skipped
+
+- No new routes, no edge functions, no migrations.
+- Existing BvA / Rate / Scenario / Knowledge tiles untouched.
+- Sightline project-detail $-scrubbing (separate pending question) untouched.
+
+## Verification
+
+- Build/typecheck (auto).
+- Manual: open dashboard → expand tile → check three tabs render with seed data; toggle a project's `start_date` null to confirm degradation; clear `target_billable_hrs_per_week` to confirm setup CTA.
