@@ -430,6 +430,13 @@ function GrowthRoadmap() {
       title="Growth Roadmap"
       description="Should we grow — and if so, when, and what does it cost?"
     >
+      <Tabs defaultValue="hiring" className="mt-4">
+        <TabsList className="bg-cream/40">
+          <TabsTrigger value="hiring">Hiring & Growth</TabsTrigger>
+          <TabsTrigger value="projection">Financial Projection</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="hiring">
       {/* SECTION 1 */}
       <Section eyebrow="Section 01" title="Capacity & Utilization">
         <Card>
