@@ -32,11 +32,20 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { RoleGuard } from "@/lib/role";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
-  component: Dashboard,
+  component: GuardedDashboard,
 });
+
+function GuardedDashboard() {
+  return (
+    <RoleGuard allow={["principal", "admin"]}>
+      <Dashboard />
+    </RoleGuard>
+  );
+}
 
 type TileId = "bva" | "allocation" | "scenario" | "capacity" | "kb" | null;
 
