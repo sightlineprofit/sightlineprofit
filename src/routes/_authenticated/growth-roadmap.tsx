@@ -646,8 +646,38 @@ function GrowthRoadmap() {
             </div>
           )}
         </Card>
+      </Section>
 
+      {/* SECTION 3 — Growth Signals */}
+      <GrowthSignalsSection
+        weeklyBuckets={weeklyBuckets}
+        weeklyTargetTeam={weeklyTargetTeam}
+        weeksWithData={weeksWithData}
+        pipelineWeightedTotal={pipelineWeightedTotal}
+        pipelineCount={pipeline.length}
+        teamActual={teamTotals.actual}
+        completedProjects={(data?.completedProjects ?? []) as CompletedProject[]}
+        completedPhases={(data?.completedPhases ?? []) as { expectedHrs: number; actualHrs: number }[]}
+        projectFlow={(data?.projectFlow ?? { started: 0, completed: 0 }) as { started: number; completed: number }}
+        projectStartLag={(data?.projectStartLag ?? []) as { id: string; days: number }[]}
+        teamUtil={teamUtil}
+        nonBillablePctEstimate={
+          teamTotals.expected > 0
+            ? Math.max(0, 1 - teamTotals.actual / teamTotals.expected) * 100
+            : 0
+        }
+        targetHrsPerWeek={Number(config?.target_billable_hrs_per_week) || 32}
+        manualSignals={manualSignals}
+        onPersist={persistSignals}
+        onJumpToBuilder={() =>
+          hireBuilderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      />
+
+      {/* SECTION 4 — Hire Scenario Builder */}
+      <Section eyebrow="Section 04" title="Hire Scenario Builder">
         <Card>
+          <div ref={hireBuilderRef} />
           <h3 className="font-display text-xl text-ch mb-4">Model a hypothetical hire</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div>
@@ -683,9 +713,25 @@ function GrowthRoadmap() {
           </div>
         </Card>
       </Section>
+        </TabsContent>
 
-      {/* SECTION 3 */}
-      <Section eyebrow="Section 03" title="3-Year Projection">
+        <TabsContent value="projection">
+      {/* Financial Projection */}
+      <Section eyebrow="Section 01" title="Financial Projection">
+        <div className="mb-4 inline-flex rounded-md border border-border bg-white p-1 text-sm">
+          {([3, 5, 7] as const).map((y) => (
+            <button
+              key={y}
+              type="button"
+              onClick={() => setHorizonYears(y)}
+              className={`px-3 py-1.5 rounded ${
+                horizonYears === y ? "bg-gold text-white" : "text-ch/70 hover:text-ch"
+              }`}
+            >
+              {y} Years
+            </button>
+          ))}
+        </div>
         <Card className="mb-6">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <NumberField label="Revenue goal" value={proj.revenueGoal} onChange={(n) => setProj({ ...proj, revenueGoal: n })} prefix="$" step={10000} />
@@ -704,11 +750,19 @@ function GrowthRoadmap() {
           </label>
         </Card>
 
-        <ProjectionTable rows={projection} />
+        <ProjectionTable
+          rows={projection.slice(0, horizonYears + 1)}
+          horizonYears={horizonYears}
+        />
+        {horizonYears === 7 && (
+          <p className="mt-3 text-xs text-ch/55 italic max-w-2xl">
+            7-year projections carry significant uncertainty. Treat as directional, not
+            predictive. Review and recalibrate annually.
+          </p>
+        )}
       </Section>
 
-      {/* SECTION 4 */}
-      <Section eyebrow="Section 04" title="Scenario Comparison">
+      <Section eyebrow="Section 02" title="Scenario Comparison">
         <Card className="mb-6">
           <div className="flex items-end gap-3">
             <div className="flex-1">
@@ -764,6 +818,8 @@ function GrowthRoadmap() {
           </div>
         )}
       </Section>
+        </TabsContent>
+      </Tabs>
     </ModulePage>
   );
 }
