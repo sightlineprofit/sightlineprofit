@@ -321,11 +321,40 @@ function GrowthRoadmap() {
   }
 
   const projection = useMemo(() => {
-    return [0, 1, 2, 3].map((y) => ({
+    return Array.from({ length: 8 }, (_, y) => ({
       year: y,
       ...projectYear(y, proj, config, expenses, team),
     }));
   }, [proj, config, expenses, team]);
+
+  // Horizon toggle for the financial projection tab
+  const [horizonYears, setHorizonYears] = useState<3 | 5 | 7>(3);
+
+  // Refs to scroll to Hire Scenario Builder when recommendation CTA is clicked
+  const hireBuilderRef = useRef<HTMLDivElement | null>(null);
+
+  // Growth signals (manual) — persisted in firm_config.growth_signals jsonb
+  const persistedSignals =
+    ((config as unknown as { growth_signals?: Record<string, unknown> } | null)
+      ?.growth_signals ?? {}) as Record<string, unknown>;
+  const [manualSignals, setManualSignals] = useState<ManualSignals>(() =>
+    normaliseManualSignals(persistedSignals),
+  );
+  const [syncedManual, setSyncedManual] = useState(false);
+  if (!syncedManual && config) {
+    setManualSignals(normaliseManualSignals(persistedSignals));
+    setSyncedManual(true);
+  }
+  const saveSignalsFn = useServerFn(saveGrowthSignals);
+  const signalsMut = useMutation({
+    mutationFn: (patch: Record<string, unknown>) => saveSignalsFn({ data: { patch } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["growth"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const persistSignals = (patch: Partial<ManualSignals>) => {
+    setManualSignals((s) => ({ ...s, ...patch }));
+    signalsMut.mutate(patch as Record<string, unknown>);
+  };
 
   // Scenarios
   type ScenarioRow = { id: string; name: string; payload: ProjectionInputs & { kind?: string } };
