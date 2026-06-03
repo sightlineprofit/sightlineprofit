@@ -126,6 +126,7 @@ export type Database = {
           comp_reserve_target_annual: number | null
           comp_retire_annual: number | null
           firm_id: string
+          growth_signals: Json
           planned_activity_allocation: Json
           rate_billed: number | null
           target_billable_hrs_per_week: number | null
@@ -146,6 +147,7 @@ export type Database = {
           comp_reserve_target_annual?: number | null
           comp_retire_annual?: number | null
           firm_id: string
+          growth_signals?: Json
           planned_activity_allocation?: Json
           rate_billed?: number | null
           target_billable_hrs_per_week?: number | null
@@ -166,6 +168,7 @@ export type Database = {
           comp_reserve_target_annual?: number | null
           comp_retire_annual?: number | null
           firm_id?: string
+          growth_signals?: Json
           planned_activity_allocation?: Json
           rate_billed?: number | null
           target_billable_hrs_per_week?: number | null
