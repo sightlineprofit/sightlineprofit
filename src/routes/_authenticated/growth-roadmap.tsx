@@ -66,6 +66,44 @@ type ProjectionInputs = {
   hire?: Hire | null;
 };
 
+type YesNoSometimes = "yes" | "no" | "sometimes" | null;
+type PipelineRecency = "lt2" | "lt6" | "gt6" | "unset" | null;
+type MarketTiming = "durable" | "growing" | "seasonal" | "uncertain" | null;
+
+type ManualSignals = {
+  owner_actual_hrs: number | null;
+  client_missing_responses: YesNoSometimes;
+  client_milestone_delays: YesNoSometimes;
+  client_below_standard: YesNoSometimes;
+  owner_production_hrs: number | null;
+  owner_leadership_hrs: number | null;
+  pipeline_recency: PipelineRecency;
+  market_timing: MarketTiming;
+  updated_at?: string | null;
+};
+
+function normaliseManualSignals(raw: Record<string, unknown>): ManualSignals {
+  const num = (k: string): number | null => {
+    const v = raw[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
+  };
+  const str = <T extends string>(k: string, allowed: readonly T[]): T | null => {
+    const v = raw[k];
+    return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+  };
+  return {
+    owner_actual_hrs: num("owner_actual_hrs"),
+    client_missing_responses: str("client_missing_responses", ["yes", "no", "sometimes"] as const),
+    client_milestone_delays: str("client_milestone_delays", ["yes", "no", "sometimes"] as const),
+    client_below_standard: str("client_below_standard", ["yes", "no", "sometimes"] as const),
+    owner_production_hrs: num("owner_production_hrs"),
+    owner_leadership_hrs: num("owner_leadership_hrs"),
+    pipeline_recency: str("pipeline_recency", ["lt2", "lt6", "gt6", "unset"] as const),
+    market_timing: str("market_timing", ["durable", "growing", "seasonal", "uncertain"] as const),
+    updated_at: typeof raw.updated_at === "string" ? raw.updated_at : null,
+  };
+}
+
 function Section({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
   return (
     <section className="mt-14">
