@@ -131,7 +131,8 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
     targetBillableHrsWeek, weeksPerYear, annualBillableHrs,
     breakEvenRate, alignedRate, billedRate,
     annualRevenue, grossProfit, grossMarginPct,
-    marginAboveFloor, rateSafetyBuffer,
+    marginAboveFloor, marginAboveBreakEven, gapToFloor, gapToBreakEven,
+    rateHealth, rateSafetyBuffer,
     marginBuffer: marginAboveFloor,
     perHour,
   };
