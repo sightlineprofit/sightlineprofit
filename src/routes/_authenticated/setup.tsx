@@ -145,6 +145,9 @@ function SetupPage() {
   const billableHrsWeek = Number(draft.target_billable_hrs_per_week) || 0;
   const spanFactor = { hr: 1, day: 8, week: billableHrsWeek, month: billableHrsWeek * 4.33, year: billableHrsWeek * 52 }[span];
   const marginAboveFloorSpan = marginAboveFloorHr * spanFactor;
+  const targetMarginPct = Number(draft.target_gross_margin_pct) || 0;
+  const annualBillableHrs = billableHrsWeek * 52;
+  const gapAnnualLoss = c.gapToFloor * annualBillableHrs;
 
   return (
     <ModulePage
