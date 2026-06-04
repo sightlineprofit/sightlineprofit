@@ -220,7 +220,24 @@ function FullViewDialog({ open, onClose, title, wide, children }: { open: boolea
 function RatePreview({ c }: { c: ReturnType<typeof calc> }) {
   const aligned = c.alignedRate;
   const billed = c.billedRate;
-  const gap = billed - aligned;
+  const gap = billed - aligned; // negative = below floor
+  const health = c.rateHealth;
+  const dotClass =
+    health === "healthy" ? "bg-success" : health === "below_floor" ? "bg-gold" : "bg-danger";
+  const valueClass =
+    health === "healthy" ? "text-success" : health === "below_floor" ? "text-terra" : "text-terra";
+  const subText =
+    health === "critical"
+      ? "below break-even"
+      : health === "below_floor"
+        ? "below your floor"
+        : "above your floor";
+  const deltaText =
+    health === "critical"
+      ? "Critical — costs not covered"
+      : health === "below_floor"
+        ? `${fmtUsd(Math.abs(gap), { decimals: 0 })}/hr below margin target`
+        : `${fmtPct((Math.abs(gap) / Math.max(aligned, 1)) * 100, 0)} buffer`;
   return (
     <div>
       <div className="grid grid-cols-2 gap-4">
@@ -233,25 +250,31 @@ function RatePreview({ c }: { c: ReturnType<typeof calc> }) {
           <div className="num font-display text-3xl text-ch mt-0.5">{fmtUsd(billed)}<span className="text-sm text-ch/40">/hr</span></div>
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-2 text-xs">
-        <span className={cn("inline-block h-2 w-2 rounded-full", gap >= 0 ? "bg-success" : "bg-danger")} />
-        <span className="text-ch/70">
-          {gap >= 0 ? `${fmtUsd(gap)}/hr above floor` : `${fmtUsd(Math.abs(gap))}/hr below floor`}
-        </span>
-        <InfoTip {...GLOSSARY.marginAboveFloor} />
+      <div className="mt-4 space-y-1">
+        <div className="flex items-baseline gap-2 text-xs">
+          <span className={cn("inline-block h-2 w-2 rounded-full", dotClass)} />
+          <span className={cn("num font-display text-base", valueClass)}>
+            {gap >= 0 ? "+" : "−"}{fmtUsd(Math.abs(gap), { decimals: 0 })}/hr
+          </span>
+          <span className="text-ch/60">{subText}</span>
+          <InfoTip {...GLOSSARY.marginAboveFloor} />
+        </div>
+        <div className="text-[11px] text-ch/55">{deltaText}</div>
       </div>
     </div>
   );
 }
 
 export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
-  const total = c.perHour.comp + c.perHour.opexRecurring + c.perHour.opexOneTime + c.perHour.marginAbove;
   const segs = [
-    { label: "Compensation", val: c.perHour.comp, color: "#B8860B" },
-    { label: "Recurring opex", val: c.perHour.opexRecurring, color: "#5C8A6E" },
-    { label: "Amortized one-time", val: c.perHour.opexOneTime, color: "#C4714A" },
-    { label: "Margin above floor", val: c.perHour.marginAbove, color: "#D4A017" },
-  ];
+    { label: "Compensation", val: c.perHour.comp, color: "#B8860B", ghost: false },
+    { label: "Recurring opex", val: c.perHour.opexRecurring, color: "#5C8A6E", ghost: false },
+    { label: "Amortized one-time", val: c.perHour.opexOneTime, color: "#C4714A", ghost: false },
+    { label: "Margin at floor", val: c.perHour.marginAtFloor, color: "#5C8A6E", ghost: false },
+    { label: "Margin above floor", val: c.perHour.marginAbove, color: "#D4A017", ghost: false },
+    { label: "Gap to floor", val: c.perHour.gapToFloor, color: "#C4714A", ghost: true },
+  ].filter((s) => s.val > 0);
+  const total = segs.reduce((s, x) => s + x.val, 0);
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border bg-white p-6">
@@ -261,17 +284,35 @@ export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
         </div>
         <div className="mt-4 flex h-3 overflow-hidden rounded-full border border-border">
           {segs.map((s) => (
-            <div key={s.label} title={`${s.label}: ${fmtUsd(s.val)}/hr`} style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }} />
+            <div
+              key={s.label}
+              title={`${s.label}: ${fmtUsd(s.val)}/hr`}
+              style={{
+                width: total > 0 ? `${(s.val / total) * 100}%` : "0%",
+                backgroundColor: s.ghost ? "transparent" : s.color,
+                backgroundImage: s.ghost
+                  ? `repeating-linear-gradient(45deg, ${s.color}55 0 6px, transparent 6px 12px)`
+                  : undefined,
+              }}
+            />
           ))}
         </div>
         <ul className="mt-5 space-y-2 text-sm">
           {segs.map((s) => (
             <li key={s.label} className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-ch/70">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: s.ghost ? "transparent" : s.color,
+                    border: s.ghost ? `1px dashed ${s.color}` : undefined,
+                  }}
+                />
                 {s.label}
               </span>
-              <span className="num text-ch">{fmtUsd(s.val, { decimals: 2 })}/hr</span>
+              <span className={cn("num", s.ghost ? "text-terra" : "text-ch")}>
+                {s.ghost ? "−" : ""}{fmtUsd(s.val, { decimals: 2 })}/hr
+              </span>
             </li>
           ))}
         </ul>
@@ -1318,17 +1359,15 @@ export function CapacityFull({
 
 /* ───────── Tile: Where Your Rate Goes (Rate Allocation) ───────── */
 function AllocationPreview({ c }: { c: ReturnType<typeof calc> }) {
-  const total =
-    c.perHour.comp +
-    c.perHour.opexRecurring +
-    c.perHour.opexOneTime +
-    c.perHour.marginAbove;
   const segs = [
-    { label: "Comp", val: c.perHour.comp, color: "#B8860B" },
-    { label: "Recurring", val: c.perHour.opexRecurring, color: "#5C8A6E" },
-    { label: "One-time", val: c.perHour.opexOneTime, color: "#C4714A" },
-    { label: "Margin", val: c.perHour.marginAbove, color: "#D4A017" },
-  ];
+    { label: "Comp", val: c.perHour.comp, color: "#B8860B", ghost: false },
+    { label: "Recurring", val: c.perHour.opexRecurring, color: "#5C8A6E", ghost: false },
+    { label: "One-time", val: c.perHour.opexOneTime, color: "#C4714A", ghost: false },
+    { label: "Margin at floor", val: c.perHour.marginAtFloor, color: "#5C8A6E", ghost: false },
+    { label: "Above floor", val: c.perHour.marginAbove, color: "#D4A017", ghost: false },
+    { label: "Gap to floor", val: c.perHour.gapToFloor, color: "#C4714A", ghost: true },
+  ].filter((s) => s.val > 0);
+  const total = segs.reduce((s, x) => s + x.val, 0);
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between">
@@ -1340,14 +1379,26 @@ function AllocationPreview({ c }: { c: ReturnType<typeof calc> }) {
           <div
             key={s.label}
             title={`${s.label}: ${fmtUsd(s.val, { decimals: 2 })}/hr`}
-            style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }}
+            style={{
+              width: total > 0 ? `${(s.val / total) * 100}%` : "0%",
+              backgroundColor: s.ghost ? "transparent" : s.color,
+              backgroundImage: s.ghost
+                ? `repeating-linear-gradient(45deg, ${s.color}55 0 5px, transparent 5px 10px)`
+                : undefined,
+            }}
           />
         ))}
       </div>
       <div className="flex flex-wrap gap-2 text-[10px]">
         {segs.map((s) => (
           <span key={s.label} className="inline-flex items-center gap-1 text-ch/70">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{
+                backgroundColor: s.ghost ? "transparent" : s.color,
+                border: s.ghost ? `1px dashed ${s.color}` : undefined,
+              }}
+            />
             {s.label}
           </span>
         ))}
@@ -1364,10 +1415,12 @@ export function AllocationFull({
   expenses: any[];
 }) {
   const segs = [
-    { label: "Owner Compensation", val: c.perHour.comp, color: "#B8860B" },
-    { label: "Recurring Expenses", val: c.perHour.opexRecurring, color: "#5C8A6E" },
-    { label: "One-Time Purchases", val: c.perHour.opexOneTime, color: "#C4714A" },
-    { label: "Above-Floor Margin", val: c.perHour.marginAbove, color: "#D4A017" },
+    { label: "Owner Compensation", val: c.perHour.comp, color: "#B8860B", ghost: false },
+    { label: "Recurring Expenses", val: c.perHour.opexRecurring, color: "#5C8A6E", ghost: false },
+    { label: "One-Time Purchases", val: c.perHour.opexOneTime, color: "#C4714A", ghost: false },
+    { label: "Margin at Floor", val: c.perHour.marginAtFloor, color: "#5C8A6E", ghost: false },
+    { label: "Above-Floor Margin", val: c.perHour.marginAbove, color: "#D4A017", ghost: false },
+    { label: "Gap to Floor", val: c.perHour.gapToFloor, color: "#C4714A", ghost: true },
   ].filter((s) => s.val > 0);
   const total = segs.reduce((s, x) => s + x.val, 0);
   const oneTimeExpenses = (expenses ?? []).filter((e) => e.frequency === "onetime");
@@ -1387,7 +1440,13 @@ export function AllocationFull({
             <div
               key={s.label}
               title={`${s.label}: ${fmtUsd(s.val, { decimals: 2 })}/hr`}
-              style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }}
+              style={{
+                width: total > 0 ? `${(s.val / total) * 100}%` : "0%",
+                backgroundColor: s.ghost ? "transparent" : s.color,
+                backgroundImage: s.ghost
+                  ? `repeating-linear-gradient(45deg, ${s.color}55 0 6px, transparent 6px 12px)`
+                  : undefined,
+              }}
             />
           ))}
         </div>
@@ -1395,11 +1454,17 @@ export function AllocationFull({
           {segs.map((s) => (
             <li key={s.label} className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-ch/80">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: s.ghost ? "transparent" : s.color,
+                    border: s.ghost ? `1px dashed ${s.color}` : undefined,
+                  }}
+                />
                 {s.label}
               </span>
-              <span className="num text-ch">
-                {fmtUsd(s.val, { decimals: 2 })}/hr
+              <span className={cn("num", s.ghost ? "text-terra" : "text-ch")}>
+                {s.ghost ? "−" : ""}{fmtUsd(s.val, { decimals: 2 })}/hr
                 <span className="ml-2 text-xs text-ch/50">{((s.val / total) * 100).toFixed(0)}%</span>
               </span>
             </li>

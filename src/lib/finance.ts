@@ -94,17 +94,35 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
   const grossProfit = annualRevenue - totalCost;
   const grossMarginPct = annualRevenue > 0 ? (grossProfit / annualRevenue) * 100 : 0;
 
-  const marginAboveFloor = (billedRate || 0) - breakEvenRate;
-  const rateSafetyBuffer = breakEvenRate > 0 ? (marginAboveFloor / breakEvenRate) * 100 : 0;
+  // CORRECT: aligned rate is the floor. Margin above floor = billed - aligned.
+  // Can be negative when billed rate falls short of the floor.
+  const marginAboveFloor = (billedRate || 0) - alignedRate;
+  const marginAboveBreakEven = (billedRate || 0) - breakEvenRate;
+  const gapToFloor = Math.max(0, alignedRate - (billedRate || 0));
+  const gapToBreakEven = Math.max(0, breakEvenRate - (billedRate || 0));
+  // Rate safety buffer = cushion above break-even, as % of break-even.
+  const rateSafetyBuffer = breakEvenRate > 0 ? (marginAboveBreakEven / breakEvenRate) * 100 : 0;
 
-  // Per-hour allocation
+  // Three-state rate health
+  type RateHealth = "critical" | "below_floor" | "healthy";
+  const rateHealth: RateHealth =
+    (billedRate || 0) < breakEvenRate
+      ? "critical"
+      : (billedRate || 0) < alignedRate
+        ? "below_floor"
+        : "healthy";
+
+  // Per-hour allocation. Split margin into "at floor" (needed to reach aligned)
+  // and "above floor" (true cushion). Both clamp to >= 0 for bar rendering.
+  const billedForBar = Math.max(0, billedRate || 0);
   const perHour = annualBillableHrs > 0 ? {
     comp: compTotal / annualBillableHrs,
     opexRecurring: opexRecurring / annualBillableHrs,
     opexOneTime: opexOneTime / annualBillableHrs,
-    marginFloor: 0, // floor itself is break-even, no margin
-    marginAbove: Math.max(0, marginAboveFloor),
-  } : { comp: 0, opexRecurring: 0, opexOneTime: 0, marginFloor: 0, marginAbove: 0 };
+    marginAtFloor: Math.max(0, Math.min(alignedRate, billedForBar) - breakEvenRate),
+    marginAbove: Math.max(0, billedForBar - alignedRate),
+    gapToFloor,
+  } : { comp: 0, opexRecurring: 0, opexOneTime: 0, marginAtFloor: 0, marginAbove: 0, gapToFloor: 0 };
 
   return {
     draw, ptax, health, retire, distribution, reserveTarget, compTotal,
@@ -113,7 +131,8 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
     targetBillableHrsWeek, weeksPerYear, annualBillableHrs,
     breakEvenRate, alignedRate, billedRate,
     annualRevenue, grossProfit, grossMarginPct,
-    marginAboveFloor, rateSafetyBuffer,
+    marginAboveFloor, marginAboveBreakEven, gapToFloor, gapToBreakEven,
+    rateHealth, rateSafetyBuffer,
     marginBuffer: marginAboveFloor,
     perHour,
   };

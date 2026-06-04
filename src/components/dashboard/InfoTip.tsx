@@ -23,13 +23,13 @@ export function InfoTip({ term, definition, why }: { term: string; definition: s
 export const GLOSSARY = {
   alignedRate: {
     term: "Aligned Rate",
-    definition: "The rate that covers every real cost of running your studio and still hits the gross margin you committed to.",
-    why: "It's the rate you should be quoting if the math is going to work out.",
+    definition: "Your floor. Calculated from your total annual costs divided by your annual billable hours, adjusted for your target margin. The minimum you can charge and still run a financially healthy firm.",
+    why: "Break-even is survival. This is health.",
   },
   breakEvenRate: {
     term: "Break-Even Rate",
-    definition: "The rate that covers your costs exactly — zero profit, zero loss.",
-    why: "Below this, every billable hour quietly loses money.",
+    definition: "The absolute minimum hourly rate to cover your costs with nothing left over. Billing above break-even means you're not losing money — it does not mean you're meeting your financial goals.",
+    why: "Your aligned rate is the number that actually matters.",
   },
   utilizationRate: {
     term: "Utilization Rate",
@@ -38,8 +38,8 @@ export const GLOSSARY = {
   },
   marginAboveFloor: {
     term: "Margin Above Floor",
-    definition: "What you actually earn per billable hour after covering all costs at break-even.",
-    why: "This is the cushion that funds growth, taxes, and bad weeks.",
+    definition: "The difference between what you bill and your aligned rate — the minimum your cost structure requires to hit your margin target. Different from break-even, which only covers costs; aligned rate covers costs AND target profit margin.",
+    why: "True financial health requires billing above your aligned rate, not just above break-even.",
   },
   fullyBurdenedCost: {
     term: "Fully Burdened Cost",
