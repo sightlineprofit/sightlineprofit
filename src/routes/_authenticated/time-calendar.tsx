@@ -398,15 +398,24 @@ function WeekView({
 }
 
 function Grid({
-  days, entries, rowH, myId, projects, ags, onCellClick, onEntryClick,
+  days, entries, rowH, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; rowH: number; myId: string;
   projects: Project[]; ags: Ag[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onDuplicate: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const dayRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const getDayDateAt = (x: number, y: number): string | null => {
+    for (const [iso, el] of dayRefs.current.entries()) {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return iso;
+    }
+    return null;
+  };
   return (
     <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(${days.length}, minmax(0, 1fr))` }}>
       {/* time labels */}
@@ -419,8 +428,16 @@ function Grid({
       </div>
       {days.map((d) => {
         const dayEntries = entries.filter((e) => e.date === isoDate(d));
+        const iso = isoDate(d);
         return (
-          <div key={d.toISOString()} className="relative border-l border-border">
+          <div
+            key={d.toISOString()}
+            ref={(el) => {
+              if (el) dayRefs.current.set(iso, el);
+              else dayRefs.current.delete(iso);
+            }}
+            className="relative border-l border-border"
+          >
             {Array.from({ length: HOURS }).map((_, i) => (
               <button
                 key={i}
@@ -441,29 +458,24 @@ function Grid({
               const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
               const lineCount = h >= 56 ? 3 : h >= 36 ? 2 : 1;
               return (
-                <button
+                <EntryBlock
                   key={e.id}
-                  type="button"
-                  onClick={(ev) => { ev.stopPropagation(); onEntryClick(e); }}
-                  className={cn(
-                    "absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden",
-                    "border shadow-sm transition-opacity",
-                    !isMine && "opacity-70",
-                  )}
-                  style={{
-                    top, height: h,
-                    background: e.billable ? "#5C8A6E" : "#C4714A",
-                    borderColor: e.billable ? "#4A7158" : "#A85F3D",
-                    color: "#fff",
-                  }}
-                  title={tooltip}
-                >
-                  <div className="font-medium truncate">{clientPart}</div>
-                  {lineCount >= 2 && <div className="opacity-90 truncate">{activity || "—"}</div>}
-                  {lineCount >= 3 && (
-                    <div className="opacity-80 truncate">{dur} · {e.billable ? "Billable" : "Non-Bill"}</div>
-                  )}
-                </button>
+                  entry={e}
+                  top={top}
+                  height={h}
+                  rowH={rowH}
+                  isMine={isMine}
+                  bg={e.billable ? "#5C8A6E" : "#C4714A"}
+                  borderColor={e.billable ? "#4A7158" : "#A85F3D"}
+                  tooltip={tooltip}
+                  lineCount={lineCount}
+                  clientPart={clientPart}
+                  activity={activity}
+                  durLabel={dur}
+                  getDayDateAt={getDayDateAt}
+                  onOpen={() => onEntryClick(e)}
+                  onDuplicate={() => onDuplicate(e)}
+                />
               );
             })}
           </div>
