@@ -185,7 +185,7 @@ function OverviewTab({ data, summary }: { data: CapacityExpandedData; summary: C
         </ul>
       </div>
 
-      <ProspectsSection prospects={data.inputs.pipeline} />
+      <ProspectsSection prospects={data.inputs.pipeline} sopTemplates={data.sopTemplates} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KeyStat label="Open capacity" value={`${fmtHrs(summary.available)} hrs`} large gold />
@@ -362,16 +362,34 @@ function LegendSwatch({ color, label, outline }: { color: string; label: string;
   );
 }
 
-function ProspectsSection({ prospects }: { prospects: CapacityInputs["pipeline"] }) {
+function ProspectsSection({
+  prospects,
+  sopTemplates,
+}: {
+  prospects: CapacityInputs["pipeline"];
+  sopTemplates: CapacityExpandedData["sopTemplates"];
+}) {
   const total = prospects.reduce((s, p) => s + Number(p.estimated_hrs || 0), 0);
+  const [open, setOpen] = useState(false);
   return (
     <div className="rounded-xl border border-border bg-white p-5">
-      <h3
-        className="text-[16px] font-normal"
-        style={{ fontFamily: "Cormorant Garamond, serif", color: "#2C2C2C" }}
-      >
-        Prospects in your pipeline
-      </h3>
+      <div className="flex items-center justify-between">
+        <h3
+          className="text-[16px] font-normal"
+          style={{ fontFamily: "Cormorant Garamond, serif", color: "#2C2C2C" }}
+        >
+          Prospects in your pipeline
+        </h3>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-[12px] font-medium hover:underline"
+          style={{ color: "#B8860B" }}
+        >
+          + Add a prospect
+        </button>
+      </div>
+      <ProspectFormSheet open={open} onOpenChange={setOpen} sopTemplates={sopTemplates} />
       {prospects.length === 0 ? (
         <p className="mt-2 text-[12px] font-light" style={{ color: "#aaa" }}>
           No prospects added yet.
