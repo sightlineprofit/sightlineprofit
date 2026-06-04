@@ -47,7 +47,6 @@ export type WeekBucket = {
   weekStart: Date;
   past: boolean;
   committed: number;
-  pipeline: number;
 };
 
 export type CapacityWindow = {
@@ -63,7 +62,7 @@ export type CapacityWindow = {
 export type CapacitySummary = {
   annualTarget: number;
   committed: number; // hrs from active projects
-  pipelineWeighted: number;
+  prospectTotalHrs: number;
   nonBillableEst: number;
   available: number;
   status: "comfortable" | "getting-full" | "nearly-full" | "at-capacity";
@@ -110,15 +109,6 @@ function projectWeeklyHrs(p: ProjRow, totalHrs: number): { start: Date; end: Dat
   return { start, end, perWeek: totalHrs / weeks };
 }
 
-function pipelineWeeklyHrs(r: PipelineRow): { start: Date; perWeek: number; weeks: number } | null {
-  if (!r.estimated_start) return null;
-  const start = startOfISOWeek(new Date(r.estimated_start + "T00:00:00"));
-  const probability = Number(r.probability_pct || 0) / 100;
-  const hrs = Number(r.estimated_hrs || 0) * probability;
-  const weeks = 8;
-  return { start, perWeek: hrs / weeks, weeks };
-}
-
 function summaryStatus(committedPct: number): CapacitySummary["status"] {
   if (committedPct < 60) return "comfortable";
   if (committedPct < 80) return "getting-full";
@@ -132,8 +122,9 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
   const annualTarget = targetHrsPerWeek * weeksPerYear;
 
   const committed = active.reduce((s, p) => s + projectHours(p, phases), 0);
-  const pipelineWeighted = pipeline.reduce(
-    (s, r) => s + Number(r.estimated_hrs || 0) * (Number(r.probability_pct || 0) / 100),
+  // Plain sum of estimated prospect hours — no probability weighting.
+  const prospectTotalHrs = pipeline.reduce(
+    (s, r) => s + Number(r.estimated_hrs || 0),
     0,
   );
 
@@ -144,14 +135,14 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
   const weeksRemaining = Math.max(0, Math.ceil((yearEnd.getTime() - weekStart.getTime()) / (7 * 86400000)));
   const nonBillableEst = avgWeeklyNonBillable * weeksRemaining;
 
-  const available = Math.max(0, annualTarget - committed - pipelineWeighted - nonBillableEst);
+  const available = Math.max(0, annualTarget - committed - nonBillableEst);
   const committedPct = annualTarget > 0 ? (committed / annualTarget) * 100 : 0;
   const availablePct = annualTarget > 0 ? (available / annualTarget) * 100 : 0;
 
   // Build 16-week buckets centered around now: 0..15 future weeks starting this week.
   const buckets: WeekBucket[] = [];
   for (let i = 0; i < 16; i++) {
-    buckets.push({ weekStart: addWeeks(weekStart, i), past: false, committed: 0, pipeline: 0 });
+    buckets.push({ weekStart: addWeeks(weekStart, i), past: false, committed: 0 });
   }
 
   // Past weeks: replace committed of the current week from actual logged billable
@@ -180,19 +171,6 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
         } else {
           buckets[i].committed += d.perWeek;
         }
-      }
-    }
-  }
-
-  // Pipeline allocation.
-  for (const r of pipeline) {
-    const d = pipelineWeeklyHrs(r);
-    if (!d) continue;
-    for (let i = 0; i < buckets.length; i++) {
-      const ws = buckets[i].weekStart;
-      const endWs = addWeeks(d.start, d.weeks - 1);
-      if (ws >= d.start && ws <= endWs) {
-        buckets[i].pipeline += d.perWeek;
       }
     }
   }
@@ -234,7 +212,7 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
   return {
     annualTarget,
     committed,
-    pipelineWeighted,
+    prospectTotalHrs,
     nonBillableEst,
     available,
     status: summaryStatus(committedPct),

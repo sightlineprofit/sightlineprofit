@@ -43,9 +43,6 @@ export function CapacityTile({
   }
 
   const committedPct = Math.max(0, Math.min(100, summary.committedPct));
-  const pipelinePct = summary.annualTarget > 0
-    ? Math.max(0, Math.min(100 - committedPct, (summary.pipelineWeighted / summary.annualTarget) * 100))
-    : 0;
 
   // Active flags
   const overMembers = data.team
@@ -80,7 +77,6 @@ export function CapacityTile({
       <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-cream">
         <div className="flex h-full">
           <div style={{ width: `${committedPct}%`, background: "#B8860B" }} />
-          <div style={{ width: `${pipelinePct}%`, background: "rgba(184,134,11,0.4)" }} />
         </div>
       </div>
 

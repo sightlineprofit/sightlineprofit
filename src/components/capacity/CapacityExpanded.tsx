@@ -10,7 +10,6 @@ import {
   type CapacitySummary,
   type CapacityWindow,
   type PhaseRow,
-  type PipelineRow,
   type ProjRow,
 } from "@/lib/capacity-math";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -117,7 +116,6 @@ function OverviewTab({ data, summary }: { data: CapacityExpandedData; summary: C
     const total = annualTarget;
     return [
       { label: "Committed", hrs: summary.committed, pct: (summary.committed / total) * 100, color: "#B8860B" },
-      { label: "Pipeline", hrs: summary.pipelineWeighted, pct: (summary.pipelineWeighted / total) * 100, color: "rgba(184,134,11,0.4)" },
       { label: "Non-billable est.", hrs: summary.nonBillableEst, pct: (summary.nonBillableEst / total) * 100, color: "rgba(196,113,74,0.25)" },
       { label: "Available", hrs: summary.available, pct: (summary.available / total) * 100, color: "#FAF7F2" },
     ];
@@ -148,10 +146,6 @@ function OverviewTab({ data, summary }: { data: CapacityExpandedData; summary: C
             Committed: <span className="num text-ch">{fmtHrs(summary.committed)} hrs · {Math.round(summary.committedPct)}% · {fmtUsd(summary.committed * rate)} potential</span>
           </li>
           <li>
-            <span className="inline-block h-2 w-2 mr-2 rounded-sm" style={{ background: "rgba(184,134,11,0.4)" }} />
-            Pipeline: <span className="num text-ch">{fmtHrs(summary.pipelineWeighted)} hrs (weighted)</span>
-          </li>
-          <li>
             <span className="inline-block h-2 w-2 mr-2 rounded-sm" style={{ background: "rgba(196,113,74,0.25)" }} />
             Non-billable est.: <span className="num text-ch">{fmtHrs(summary.nonBillableEst)} hrs · based on avg of last 4 weeks</span>
           </li>
@@ -162,10 +156,12 @@ function OverviewTab({ data, summary }: { data: CapacityExpandedData; summary: C
         </ul>
       </div>
 
+      <ProspectsSection prospects={data.inputs.pipeline} />
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KeyStat label="Open capacity" value={`${fmtHrs(summary.available)} hrs`} large gold />
         <KeyStat label="Committed" value={`${fmtHrs(summary.committed)} hrs`} />
-        <KeyStat label="Pipeline" value={`${fmtHrs(summary.pipelineWeighted)} hrs`} />
+        <KeyStat label="Prospects" value={`${fmtHrs(summary.prospectTotalHrs)} hrs`} />
         <KeyStat label="At your rate" value={fmtUsd(summary.available * rate)} />
       </div>
 
@@ -253,7 +249,6 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
           <LegendSwatch color="#5C8A6E" label="Within target" />
           <LegendSwatch color="#B8860B" label="Approaching limit" />
           <LegendSwatch color="#C4714A" label="Over committed" />
-          <LegendSwatch color="#D4A01760" label="Pipeline weighted" outline />
         </div>
         {target === 0 && (
           <p className="mt-3 text-[11px] italic" style={{ color: "#aaa" }}>
@@ -271,14 +266,6 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
               Add phases to {projectsMissingPhases} project{projectsMissingPhases === 1 ? "" : "s"}
             </Link>{" "}
             for a more accurate weekly load estimate.
-          </p>
-        )}
-        {data.inputs.pipeline.length === 0 && (
-          <p className="mt-2 text-[11px]" style={{ color: "#777" }}>
-            <Link to="/projects" className="underline" style={{ color: "#B8860B" }}>
-              Add prospects to your pipeline
-            </Link>{" "}
-            to see likely future work in this view.
           </p>
         )}
       </section>
@@ -346,6 +333,61 @@ function LegendSwatch({ color, label, outline }: { color: string; label: string;
   );
 }
 
+function ProspectsSection({ prospects }: { prospects: CapacityInputs["pipeline"] }) {
+  const total = prospects.reduce((s, p) => s + Number(p.estimated_hrs || 0), 0);
+  return (
+    <div className="rounded-xl border border-border bg-white p-5">
+      <h3
+        className="text-[16px] font-normal"
+        style={{ fontFamily: "Cormorant Garamond, serif", color: "#2C2C2C" }}
+      >
+        Prospects in your pipeline
+      </h3>
+      {prospects.length === 0 ? (
+        <p className="mt-2 text-[12px] font-light" style={{ color: "#aaa" }}>
+          No prospects added yet.
+        </p>
+      ) : (
+        <>
+          <ul className="mt-3 divide-y divide-border">
+            {prospects.map((p) => {
+              const start = p.estimated_start
+                ? new Date(p.estimated_start + "T00:00:00").toLocaleDateString("en-US", { month: "long" })
+                : null;
+              return (
+                <li key={p.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
+                  <div className="min-w-0">
+                    <div className="truncate text-ch">{p.name || "Unnamed prospect"}</div>
+                    <div className="text-[11px] text-ch/50">
+                      {p.estimated_hrs ? `${fmtHrs(Number(p.estimated_hrs))} hrs est.` : "Hours not set"}
+                      {start ? ` · Starting ${start}` : ""}
+                    </div>
+                  </div>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                    style={{ color: "#B8860B", background: "#F5EDD6" }}
+                  >
+                    Prospect
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p
+            className="mt-3 text-[11px] font-light"
+            style={{ color: "#777" }}
+            title="This shows the full estimated hours for all prospects — not adjusted for probability. Use this as a planning ceiling: if everything converts, this is what your load would look like."
+          >
+            If all {prospects.length} prospect{prospects.length === 1 ? "" : "s"} convert, they would add{" "}
+            <span className="num text-ch">{fmtHrs(total)} hrs</span> to your committed load.{" "}
+            <span className="text-ch/40">ⓘ</span>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
   const maxH = Math.max(target * 1.6, 1);
   return (
@@ -367,7 +409,6 @@ function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"
         <div className="flex items-end gap-[2px] px-[6px] pb-[6px] h-full">
           {weeks.map((w, i) => {
             const cHeight = (Math.min(w.committed, maxH) / maxH) * 82;
-            const pHeight = (Math.min(w.pipeline, maxH - w.committed) / maxH) * 82;
             const color =
               target > 0 && w.committed >= target
                 ? "#C4714A"
@@ -376,7 +417,6 @@ function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"
                   : "#5C8A6E";
             return (
               <div key={i} className="flex flex-1 flex-col justify-end">
-                {pHeight > 0 && <div style={{ height: pHeight, background: "#D4A01760" }} />}
                 <div style={{ height: cHeight, background: color }} />
               </div>
             );
