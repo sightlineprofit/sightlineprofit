@@ -414,6 +414,111 @@ function OutputRow({ label, tip, value }: { label: string; tip: { term: string; 
   );
 }
 
+type SpanT = "hr" | "day" | "week" | "month" | "year";
+function RateHealthBox({
+  health, billed, breakEven, aligned,
+  gapToBreakEven, gapToFloor,
+  marginAboveFloorSpan, targetMarginPct, gapAnnualLoss,
+  span, setSpan,
+}: {
+  health: "critical" | "below_floor" | "healthy";
+  billed: number; breakEven: number; aligned: number;
+  gapToBreakEven: number; gapToFloor: number;
+  marginAboveFloorSpan: number; targetMarginPct: number; gapAnnualLoss: number;
+  span: SpanT; setSpan: (s: SpanT) => void;
+}) {
+  const pill =
+    health === "critical"
+      ? { dot: "bg-danger", text: "text-terra", label: "Critical" }
+      : health === "below_floor"
+        ? { dot: "bg-gold", text: "text-gold", label: "Below your floor" }
+        : { dot: "bg-success", text: "text-success", label: "Above your floor" };
+
+  return (
+    <div className="mt-4 rounded-md border border-border/60 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs uppercase tracking-[0.18em] text-ch/50">Rate health</span>
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px]", pill.text)}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", pill.dot)} />
+          {pill.label}
+        </span>
+      </div>
+
+      {health === "critical" && (
+        <div className="mt-3 border-l-2 border-terra/70 bg-terra/5 p-3 text-xs text-ch/80 leading-relaxed">
+          Your billed rate (<span className="num text-ch">{fmtUsd(billed, { decimals: 0 })}/hr</span>) is
+          below your break-even rate (<span className="num text-ch">{fmtUsd(breakEven, { decimals: 0 })}/hr</span>).
+          You are not covering your costs. Every hour you bill at this rate costs your business money.
+        </div>
+      )}
+      {health === "below_floor" && (
+        <div className="mt-3 border-l-2 border-gold/70 bg-gold/5 p-3 text-xs text-ch/80 leading-relaxed">
+          Your billed rate (<span className="num text-ch">{fmtUsd(billed, { decimals: 0 })}/hr</span>) covers your costs
+          but falls short of your aligned rate (<span className="num text-ch">{fmtUsd(aligned, { decimals: 0 })}/hr</span>) —
+          the minimum needed to reach your {targetMarginPct}% margin target. The gap costs you{" "}
+          <span className="num text-terra">{fmtUsd(gapAnnualLoss)}</span> in unreached potential every year.
+        </div>
+      )}
+
+      {health === "critical" && (
+        <div className="mt-3 space-y-1.5 text-sm">
+          <Row label="Below break-even by" value={`−${fmtUsd(gapToBreakEven, { decimals: 0 })}/hr`} valueClass="text-terra" />
+          <Row label="Below your floor by" value={`−${fmtUsd(gapToFloor, { decimals: 0 })}/hr`} valueClass="text-terra" />
+        </div>
+      )}
+      {health === "below_floor" && (
+        <div className="mt-3 space-y-1.5 text-sm">
+          <Row label="Break-even rate" value={`${fmtUsd(breakEven, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
+          <Row label="Your floor" value={`${fmtUsd(aligned, { decimals: 0 })}/hr`} valueClass="text-gold" />
+          <Row label="You're billing" value={`${fmtUsd(billed, { decimals: 0 })}/hr`} valueClass="text-ch" />
+          <Row label="Gap to floor" value={`−${fmtUsd(gapToFloor, { decimals: 0 })}/hr`} valueClass="text-terra" />
+          <p className="mt-2 text-[11px] text-ch/60 leading-relaxed">
+            To reach your {targetMarginPct}% margin target you need to raise your rate by{" "}
+            <span className="num text-ch">{fmtUsd(gapToFloor, { decimals: 0 })}/hr</span> or reduce your cost floor.
+          </p>
+        </div>
+      )}
+      {health === "healthy" && (
+        <>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Margin above floor</span>
+            <InfoTip {...GLOSSARY.marginAboveFloor} />
+            <select
+              value={span}
+              onChange={(e) => setSpan(e.target.value as SpanT)}
+              className="ml-auto rounded border border-border bg-white px-1.5 py-0.5 text-xs text-ch/70"
+            >
+              <option value="hr">/hr</option>
+              <option value="day">/day</option>
+              <option value="week">/week</option>
+              <option value="month">/month</option>
+              <option value="year">/year</option>
+            </select>
+          </div>
+          <div className="mt-1 font-display text-2xl tabular-nums text-success">
+            +{fmtUsd(marginAboveFloorSpan)}
+          </div>
+          <div className="mt-3 space-y-1.5 text-sm">
+            <Row label="Break-even rate" value={`${fmtUsd(breakEven, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
+            <Row label="Your floor" value={`${fmtUsd(aligned, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
+            <Row label="You're billing" value={`${fmtUsd(billed, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
+            <Row label="Buffer above floor" value={`+${fmtUsd(billed - aligned, { decimals: 0 })}/hr`} valueClass="text-success" />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-ch/65">{label}</span>
+      <span className={cn("num tabular-nums", valueClass)}>{value}</span>
+    </div>
+  );
+}
+
 /* ── expenses editor ── */
 
 const CATEGORIES = ["Software", "Marketing", "Office", "Insurance", "Professional", "Team", "Other"] as const;
