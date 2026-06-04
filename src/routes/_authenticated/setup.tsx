@@ -579,6 +579,48 @@ function ActualMarginRow({
   );
 }
 
+function MarginSummaryLine({
+  billed, breakEven, aligned, targetMarginPct,
+}: { billed: number; breakEven: number; aligned: number; targetMarginPct: number }) {
+  if (!(billed > 0) || !(targetMarginPct > 0)) return null;
+  const actualPct = ((billed - breakEven) / billed) * 100;
+  const buffer = Math.max(0, billed - aligned);
+  const targetRounded = Math.round(targetMarginPct);
+  const actualRounded = actualPct.toFixed(1);
+
+  if (actualPct >= targetMarginPct) {
+    return (
+      <p
+        className="font-sans mt-2"
+        style={{ fontSize: "11px", fontWeight: 300, color: "#777", lineHeight: 1.6 }}
+      >
+        You're hitting your {targetRounded}% margin target. Your {fmtUsd(buffer, { decimals: 0 })}/hr
+        buffer means you have room to absorb small cost increases without falling below your floor.
+      </p>
+    );
+  }
+  if (actualPct >= targetMarginPct - 5) {
+    return (
+      <p
+        className="font-sans mt-2 text-gold/80"
+        style={{ fontSize: "11px", fontWeight: 300, lineHeight: 1.6 }}
+      >
+        You're close to your {targetRounded}% margin target but the buffer is thin. A small rate
+        increase or cost reduction would give you more room.
+      </p>
+    );
+  }
+  return (
+    <p
+      className="font-sans mt-2 text-terra/90"
+      style={{ fontSize: "11px", fontWeight: 300, lineHeight: 1.6 }}
+    >
+      Your current rate produces {actualRounded}% margin — below your {targetRounded}% target.
+      Review your rate or your costs to close the gap.
+    </p>
+  );
+}
+
 function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="flex items-center justify-between">
