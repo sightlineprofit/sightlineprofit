@@ -501,12 +501,13 @@ function DayFooters({ days, entries, myId }: { days: Date[]; entries: Entry[]; m
 
 // ───────── day view ─────────
 function DayView({
-  day, weekDays, setDay, entries, projects, ags, onCellClick, onEntryClick,
+  day, weekDays, setDay, entries, projects, ags, onCellClick, onEntryClick, onDuplicate,
 }: {
   day: Date; weekDays: Date[]; setDay: (d: Date) => void;
   entries: Entry[]; projects: Project[]; ags: Ag[];
   onCellClick: (hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onDuplicate: (e: Entry) => void;
 }) {
   const activeIso = isoDate(day);
   return (
@@ -539,6 +540,7 @@ function DayView({
           ags={ags}
           onCellClick={(_d, h) => onCellClick(h)}
           onEntryClick={onEntryClick}
+          onDuplicate={onDuplicate}
         />
       </div>
     </div>
