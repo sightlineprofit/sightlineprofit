@@ -286,21 +286,6 @@ function SetupPage() {
                 onChange={(v) => patchDraft({ rate_billed: v })}
               />
 
-              <div className="mt-6 rounded-md bg-creamd/60 p-4 text-sm text-ch/80">
-                <p className="mb-2 text-[11px] uppercase tracking-[0.18em] text-ch/50">Aligned rate formula</p>
-                <p className="font-display text-base leading-relaxed text-ch">
-                  <span className="tabular-nums">{fmtUsd(c.totalCost)}</span>
-                  <span className="text-ch/50"> ÷ </span>
-                  <span className="tabular-nums">{c.annualBillableHrs.toFixed(0)}h</span>
-                  <span className="text-ch/50"> ÷ </span>
-                  <span className="tabular-nums">{(1 - (Number(draft.target_gross_margin_pct) || 0) / 100).toFixed(2)}</span>
-                  <span className="text-ch/50"> = </span>
-                  <span className="font-display text-lg text-gold">{fmtUsd(c.alignedRate, { decimals: 0 })}/hr</span>
-                </p>
-                <p className="mt-2 text-xs text-ch/55">
-                  total annual cost ÷ annual billable hrs ÷ margin factor
-                </p>
-              </div>
             </Card>
           )}
         </div>
