@@ -540,9 +540,35 @@ function RateHealthBox({
             <Row label="Your floor" value={`${fmtUsd(aligned, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
             <Row label="You're billing" value={`${fmtUsd(billed, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
             <Row label="Buffer above floor" value={`+${fmtUsd(billed - aligned, { decimals: 0 })}/hr`} valueClass="text-success" />
+            <ActualMarginRow billed={billed} breakEven={breakEven} targetMarginPct={targetMarginPct} />
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ActualMarginRow({
+  billed, breakEven, targetMarginPct,
+}: { billed: number; breakEven: number; targetMarginPct: number }) {
+  const actualPct = billed > 0 ? ((billed - breakEven) / billed) * 100 : 0;
+  const cls =
+    actualPct >= targetMarginPct
+      ? "text-success"
+      : actualPct >= targetMarginPct - 5
+        ? "text-gold"
+        : "text-terra";
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5">
+        <span className="text-ch/65">Actual margin at {fmtUsd(billed, { decimals: 0 })}/hr</span>
+        <InfoTip
+          term="Actual margin"
+          definition="Your actual profit margin at your current billed rate. Compare this to your target above — if it meets or exceeds your target you are in good shape."
+          why="Your aligned rate is calibrated so that billing at exactly that rate hits your target precisely. Billing above the aligned rate means you are exceeding it."
+        />
+      </div>
+      <span className={cn("num tabular-nums", cls)}>{actualPct.toFixed(1)}%</span>
     </div>
   );
 }
