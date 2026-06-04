@@ -1415,10 +1415,12 @@ export function AllocationFull({
   expenses: any[];
 }) {
   const segs = [
-    { label: "Owner Compensation", val: c.perHour.comp, color: "#B8860B" },
-    { label: "Recurring Expenses", val: c.perHour.opexRecurring, color: "#5C8A6E" },
-    { label: "One-Time Purchases", val: c.perHour.opexOneTime, color: "#C4714A" },
-    { label: "Above-Floor Margin", val: c.perHour.marginAbove, color: "#D4A017" },
+    { label: "Owner Compensation", val: c.perHour.comp, color: "#B8860B", ghost: false },
+    { label: "Recurring Expenses", val: c.perHour.opexRecurring, color: "#5C8A6E", ghost: false },
+    { label: "One-Time Purchases", val: c.perHour.opexOneTime, color: "#C4714A", ghost: false },
+    { label: "Margin at Floor", val: c.perHour.marginAtFloor, color: "#5C8A6E", ghost: false },
+    { label: "Above-Floor Margin", val: c.perHour.marginAbove, color: "#D4A017", ghost: false },
+    { label: "Gap to Floor", val: c.perHour.gapToFloor, color: "#C4714A", ghost: true },
   ].filter((s) => s.val > 0);
   const total = segs.reduce((s, x) => s + x.val, 0);
   const oneTimeExpenses = (expenses ?? []).filter((e) => e.frequency === "onetime");
@@ -1438,7 +1440,13 @@ export function AllocationFull({
             <div
               key={s.label}
               title={`${s.label}: ${fmtUsd(s.val, { decimals: 2 })}/hr`}
-              style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }}
+              style={{
+                width: total > 0 ? `${(s.val / total) * 100}%` : "0%",
+                backgroundColor: s.ghost ? "transparent" : s.color,
+                backgroundImage: s.ghost
+                  ? `repeating-linear-gradient(45deg, ${s.color}55 0 6px, transparent 6px 12px)`
+                  : undefined,
+              }}
             />
           ))}
         </div>
@@ -1446,11 +1454,17 @@ export function AllocationFull({
           {segs.map((s) => (
             <li key={s.label} className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-ch/80">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: s.ghost ? "transparent" : s.color,
+                    border: s.ghost ? `1px dashed ${s.color}` : undefined,
+                  }}
+                />
                 {s.label}
               </span>
-              <span className="num text-ch">
-                {fmtUsd(s.val, { decimals: 2 })}/hr
+              <span className={cn("num", s.ghost ? "text-terra" : "text-ch")}>
+                {s.ghost ? "−" : ""}{fmtUsd(s.val, { decimals: 2 })}/hr
                 <span className="ml-2 text-xs text-ch/50">{((s.val / total) * 100).toFixed(0)}%</span>
               </span>
             </li>
