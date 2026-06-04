@@ -360,12 +360,13 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
 
 // ───────── week view ─────────
 function WeekView({
-  days, entries, myId, projects, ags, onCellClick, onEntryClick,
+  days, entries, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; myId: string;
   projects: Project[]; ags: Ag[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onDuplicate: (e: Entry) => void;
 }) {
   return (
     <div className="rounded-lg border border-border bg-white">
@@ -389,6 +390,7 @@ function WeekView({
         ags={ags}
         onCellClick={onCellClick}
         onEntryClick={onEntryClick}
+        onDuplicate={onDuplicate}
       />
       <DayFooters days={days} entries={entries} myId={myId} />
     </div>
