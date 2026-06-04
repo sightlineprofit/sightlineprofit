@@ -150,7 +150,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
   const [view, setView] = useState<View>("week");
   const [weekDate, setWeekDate] = useState(() => startOfWeek(new Date()));
   const [activeDay, setActiveDay] = useState(() => new Date());
-  const [modal, setModal] = useState<null | Partial<Entry>>(null);
+  const [modal, setModal] = useState<null | (Partial<Entry> & { _duplicate?: boolean })>(null);
 
   const weekStart = isoDate(weekDate);
   const fetchData = useServerFn(getCalendarData);
@@ -251,6 +251,17 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 billable: true,
               })}
               onEntryClick={(e) => setModal(e)}
+              onDuplicate={(e) => setModal({
+                _duplicate: true,
+                date: e.date,
+                start_time: e.end_time || hourToTime(toHourFloat(e.start_time) + Number(e.hrs || 1)),
+                end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
+                billable: e.billable,
+                notes: e.notes,
+                project_id: e.project_id,
+                project_phase_id: e.project_phase_id,
+                activity_group_id: e.activity_group_id,
+              })}
             />
           ) : view === "day" ? (
             <DayView
@@ -262,6 +273,17 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 billable: true,
               })}
               onEntryClick={(e) => setModal(e)}
+              onDuplicate={(e) => setModal({
+                _duplicate: true,
+                date: e.date,
+                start_time: e.end_time || hourToTime(toHourFloat(e.start_time) + Number(e.hrs || 1)),
+                end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
+                billable: e.billable,
+                notes: e.notes,
+                project_id: e.project_id,
+                project_phase_id: e.project_phase_id,
+                activity_group_id: e.activity_group_id,
+              })}
             />
           ) : (
             <TeamView
@@ -325,8 +347,8 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               team={team}
               isAdmin={isAdmin}
               meId={me?.id || ""}
-              initial={modal}
-              onSaved={() => { setModal(null); refresh(); toast.success(modal.id ? "Updated" : "Logged"); }}
+              initial={modal._duplicate ? { ...modal, id: undefined } : modal}
+              onSaved={() => { setModal(null); refresh(); toast.success(modal._duplicate ? "New entry logged" : modal.id ? "Updated" : "Logged"); }}
               onDeleted={() => { setModal(null); refresh(); toast.success("Deleted"); }}
             />
           )}
