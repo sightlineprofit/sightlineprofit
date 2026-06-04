@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Lock, Plus, Trash2, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Plus, Trash2, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
@@ -69,6 +69,13 @@ function hourToTime(h: number) {
   const hh = String(Math.floor(h)).padStart(2, "0");
   const mm = String(Math.round((h - Math.floor(h)) * 60)).padStart(2, "0");
   return `${hh}:${mm}`;
+}
+function snap15(h: number) {
+  return Math.round(h * 4) / 4;
+}
+function addHoursToTime(t: string, deltaHrs: number): string {
+  const h = toHourFloat(t) + deltaHrs;
+  return hourToTime(Math.max(0, Math.min(24, h)));
 }
 
 // ───────── types ─────────
