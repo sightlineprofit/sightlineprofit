@@ -303,28 +303,19 @@ function SetupPage() {
               value={<span className="font-display text-2xl text-gold tabular-nums">{fmtUsd(c.billedRate, { decimals: 0 })}</span>}
             />
 
-            <div className="mt-4 rounded-md border border-border/60 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs uppercase tracking-[0.16em] text-ch/50">Margin above floor</span>
-                <InfoTip {...GLOSSARY.marginAboveFloor} />
-              </div>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className={cn("font-display text-xl tabular-nums", marginAboveFloorSpan < 0 ? "text-terra" : "text-ch")}>
-                  {fmtUsd(marginAboveFloorSpan)}
-                </span>
-                <select
-                  value={span}
-                  onChange={(e) => setSpan(e.target.value as typeof span)}
-                  className="ml-auto rounded border border-border bg-white px-1.5 py-0.5 text-xs text-ch/70"
-                >
-                  <option value="hr">/hr</option>
-                  <option value="day">/day</option>
-                  <option value="week">/week</option>
-                  <option value="month">/month</option>
-                  <option value="year">/year</option>
-                </select>
-              </div>
-            </div>
+            <RateHealthBox
+              health={c.rateHealth}
+              billed={c.billedRate}
+              breakEven={c.breakEvenRate}
+              aligned={c.alignedRate}
+              gapToBreakEven={c.gapToBreakEven}
+              gapToFloor={c.gapToFloor}
+              marginAboveFloorSpan={marginAboveFloorSpan}
+              targetMarginPct={targetMarginPct}
+              gapAnnualLoss={gapAnnualLoss}
+              span={span}
+              setSpan={setSpan}
+            />
 
             <OutputRow
               label="Break-even rate"
