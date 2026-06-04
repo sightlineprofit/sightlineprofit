@@ -246,11 +246,18 @@ function SetupPage() {
                 label="Available hours per week"
                 value={draft.available_hrs_per_week}
                 onChange={(v) => patchDraft({ available_hrs_per_week: v })}
+                helper="The total hours you want to work each week — design, admin, client calls, business development, all of it. This is your working week, not just your billable hours. Be honest rather than aspirational. If your realistic week is 40 hours, enter 40."
               />
               <NumberField
                 label="Target billable hours per week"
                 value={draft.target_billable_hrs_per_week}
                 onChange={(v) => patchDraft({ target_billable_hrs_per_week: v })}
+                helper="Of your total working hours, how many do you reasonably expect to bill to clients? Not your best week — your average, realistic week. Most designers find that 60–75% of available hours are billable once admin, business development, and non-client work are accounted for. The remaining hours are still real work — they just don't generate direct revenue."
+                tip={{
+                  term: "Target billable hours per week",
+                  definition: "This number drives your aligned rate. Fewer billable hours means each hour has to carry more of the cost load — which raises your floor. Overestimating here produces an aligned rate that looks achievable but isn't, because the hours don't materialize.",
+                  why: "When in doubt, enter the number you actually hit most weeks, not the number you're aiming for.",
+                }}
               />
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5">
@@ -273,10 +280,15 @@ function SetupPage() {
                   />
                   <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ch/40">%</span>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-ch/55">
-                  The portion of each dollar billed that becomes profit after all costs are paid.
-                  At 45%, every $100 you bill keeps $45 as profit. A typical range for design firms
-                  is 25–40%. This is built into your aligned rate — a higher target means a higher floor.
+                <p
+                  className="font-sans"
+                  style={{ fontSize: "11px", fontWeight: 300, color: "#777", lineHeight: 1.6, marginTop: "4px" }}
+                >
+                  This builds your profit target into your aligned rate. At 45%, your aligned rate is
+                  calculated so that — if you bill at exactly that rate — 45% becomes profit and 55%
+                  covers costs. Your margin above floor is separate: it's the buffer between what you
+                  charge and what you need to charge. A small buffer isn't a problem as long as your
+                  aligned rate already reflects a healthy margin target.
                 </p>
               </div>
               <NumberField
