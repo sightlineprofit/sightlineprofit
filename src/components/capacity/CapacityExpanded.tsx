@@ -333,6 +333,61 @@ function LegendSwatch({ color, label, outline }: { color: string; label: string;
   );
 }
 
+function ProspectsSection({ prospects }: { prospects: CapacityInputs["pipeline"] }) {
+  const total = prospects.reduce((s, p) => s + Number(p.estimated_hrs || 0), 0);
+  return (
+    <div className="rounded-xl border border-border bg-white p-5">
+      <h3
+        className="text-[16px] font-normal"
+        style={{ fontFamily: "Cormorant Garamond, serif", color: "#2C2C2C" }}
+      >
+        Prospects in your pipeline
+      </h3>
+      {prospects.length === 0 ? (
+        <p className="mt-2 text-[12px] font-light" style={{ color: "#aaa" }}>
+          No prospects added yet.
+        </p>
+      ) : (
+        <>
+          <ul className="mt-3 divide-y divide-border">
+            {prospects.map((p) => {
+              const start = p.estimated_start
+                ? new Date(p.estimated_start + "T00:00:00").toLocaleDateString("en-US", { month: "long" })
+                : null;
+              return (
+                <li key={p.id} className="flex items-center justify-between gap-3 py-2 text-[12px]">
+                  <div className="min-w-0">
+                    <div className="truncate text-ch">{p.name || "Unnamed prospect"}</div>
+                    <div className="text-[11px] text-ch/50">
+                      {p.estimated_hrs ? `${fmtHrs(Number(p.estimated_hrs))} hrs est.` : "Hours not set"}
+                      {start ? ` · Starting ${start}` : ""}
+                    </div>
+                  </div>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                    style={{ color: "#B8860B", background: "#F5EDD6" }}
+                  >
+                    Prospect
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p
+            className="mt-3 text-[11px] font-light"
+            style={{ color: "#777" }}
+            title="This shows the full estimated hours for all prospects — not adjusted for probability. Use this as a planning ceiling: if everything converts, this is what your load would look like."
+          >
+            If all {prospects.length} prospect{prospects.length === 1 ? "" : "s"} convert, they would add{" "}
+            <span className="num text-ch">{fmtHrs(total)} hrs</span> to your committed load.{" "}
+            <span className="text-ch/40">ⓘ</span>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
   const maxH = Math.max(target * 1.6, 1);
   return (
