@@ -364,11 +364,22 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
 }
 
 function NumberField({
-  label, value, onChange, prefix, suffix,
-}: { label: string; value: string; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
+  label, value, onChange, prefix, suffix, helper, tip,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  prefix?: string;
+  suffix?: string;
+  helper?: string;
+  tip?: { term: string; definition: string; why?: string };
+}) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-ch/50">{label}</label>
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <label className="block text-xs uppercase tracking-[0.15em] text-ch/50">{label}</label>
+        {tip && <InfoTip {...tip} />}
+      </div>
       <div className="relative">
         {prefix && <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ch/40">{prefix}</span>}
         <input
@@ -382,6 +393,14 @@ function NumberField({
         />
         {suffix && <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ch/40">{suffix}</span>}
       </div>
+      {helper && (
+        <p
+          className="font-sans"
+          style={{ fontSize: "11px", fontWeight: 300, color: "#777", lineHeight: 1.6, marginTop: "4px" }}
+        >
+          {helper}
+        </p>
+      )}
     </div>
   );
 }
