@@ -266,13 +266,15 @@ function RatePreview({ c }: { c: ReturnType<typeof calc> }) {
 }
 
 export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
-  const total = c.perHour.comp + c.perHour.opexRecurring + c.perHour.opexOneTime + c.perHour.marginAbove;
   const segs = [
-    { label: "Compensation", val: c.perHour.comp, color: "#B8860B" },
-    { label: "Recurring opex", val: c.perHour.opexRecurring, color: "#5C8A6E" },
-    { label: "Amortized one-time", val: c.perHour.opexOneTime, color: "#C4714A" },
-    { label: "Margin above floor", val: c.perHour.marginAbove, color: "#D4A017" },
-  ];
+    { label: "Compensation", val: c.perHour.comp, color: "#B8860B", ghost: false },
+    { label: "Recurring opex", val: c.perHour.opexRecurring, color: "#5C8A6E", ghost: false },
+    { label: "Amortized one-time", val: c.perHour.opexOneTime, color: "#C4714A", ghost: false },
+    { label: "Margin at floor", val: c.perHour.marginAtFloor, color: "#5C8A6E", ghost: false },
+    { label: "Margin above floor", val: c.perHour.marginAbove, color: "#D4A017", ghost: false },
+    { label: "Gap to floor", val: c.perHour.gapToFloor, color: "#C4714A", ghost: true },
+  ].filter((s) => s.val > 0);
+  const total = segs.reduce((s, x) => s + x.val, 0);
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border bg-white p-6">
@@ -282,17 +284,35 @@ export function RateFull({ c }: { c: ReturnType<typeof calc> }) {
         </div>
         <div className="mt-4 flex h-3 overflow-hidden rounded-full border border-border">
           {segs.map((s) => (
-            <div key={s.label} title={`${s.label}: ${fmtUsd(s.val)}/hr`} style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }} />
+            <div
+              key={s.label}
+              title={`${s.label}: ${fmtUsd(s.val)}/hr`}
+              style={{
+                width: total > 0 ? `${(s.val / total) * 100}%` : "0%",
+                backgroundColor: s.ghost ? "transparent" : s.color,
+                backgroundImage: s.ghost
+                  ? `repeating-linear-gradient(45deg, ${s.color}55 0 6px, transparent 6px 12px)`
+                  : undefined,
+              }}
+            />
           ))}
         </div>
         <ul className="mt-5 space-y-2 text-sm">
           {segs.map((s) => (
             <li key={s.label} className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-ch/70">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: s.ghost ? "transparent" : s.color,
+                    border: s.ghost ? `1px dashed ${s.color}` : undefined,
+                  }}
+                />
                 {s.label}
               </span>
-              <span className="num text-ch">{fmtUsd(s.val, { decimals: 2 })}/hr</span>
+              <span className={cn("num", s.ghost ? "text-terra" : "text-ch")}>
+                {s.ghost ? "−" : ""}{fmtUsd(s.val, { decimals: 2 })}/hr
+              </span>
             </li>
           ))}
         </ul>
