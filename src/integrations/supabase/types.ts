@@ -374,33 +374,54 @@ export type Database = {
       pipeline_projects: {
         Row: {
           assigned_user_ids: string[] | null
+          billing_type: string | null
+          client_name: string | null
           created_at: string
+          estimated_end: string | null
           estimated_hrs: number | null
           estimated_start: string | null
           firm_id: string
+          fixed_fee: number | null
           id: string
           name: string
+          notes: string | null
           probability_pct: number | null
+          scoped_rate: number | null
+          sop_template_id: string | null
         }
         Insert: {
           assigned_user_ids?: string[] | null
+          billing_type?: string | null
+          client_name?: string | null
           created_at?: string
+          estimated_end?: string | null
           estimated_hrs?: number | null
           estimated_start?: string | null
           firm_id: string
+          fixed_fee?: number | null
           id?: string
           name: string
+          notes?: string | null
           probability_pct?: number | null
+          scoped_rate?: number | null
+          sop_template_id?: string | null
         }
         Update: {
           assigned_user_ids?: string[] | null
+          billing_type?: string | null
+          client_name?: string | null
           created_at?: string
+          estimated_end?: string | null
           estimated_hrs?: number | null
           estimated_start?: string | null
           firm_id?: string
+          fixed_fee?: number | null
           id?: string
           name?: string
+          notes?: string | null
           probability_pct?: number | null
+          scoped_rate?: number | null
+          sop_template_id?: string | null
         }
         Relationships: [
           {
@@ -408,6 +429,13 @@ export type Database = {
             columns: ["firm_id"]
             isOneToOne: false
             referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_projects_sop_template_id_fkey"
+            columns: ["sop_template_id"]
+            isOneToOne: false
+            referencedRelation: "sop_templates"
             referencedColumns: ["id"]
           },
         ]
