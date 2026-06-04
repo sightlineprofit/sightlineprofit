@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Lock, Plus, Trash2, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Plus, Trash2, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
@@ -69,6 +69,13 @@ function hourToTime(h: number) {
   const hh = String(Math.floor(h)).padStart(2, "0");
   const mm = String(Math.round((h - Math.floor(h)) * 60)).padStart(2, "0");
   return `${hh}:${mm}`;
+}
+function snap15(h: number) {
+  return Math.round(h * 4) / 4;
+}
+function addHoursToTime(t: string, deltaHrs: number): string {
+  const h = toHourFloat(t) + deltaHrs;
+  return hourToTime(Math.max(0, Math.min(24, h)));
 }
 
 // ───────── types ─────────
@@ -143,7 +150,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
   const [view, setView] = useState<View>("week");
   const [weekDate, setWeekDate] = useState(() => startOfWeek(new Date()));
   const [activeDay, setActiveDay] = useState(() => new Date());
-  const [modal, setModal] = useState<null | Partial<Entry>>(null);
+  const [modal, setModal] = useState<null | (Partial<Entry> & { _duplicate?: boolean })>(null);
 
   const weekStart = isoDate(weekDate);
   const fetchData = useServerFn(getCalendarData);
@@ -244,6 +251,17 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 billable: true,
               })}
               onEntryClick={(e) => setModal(e)}
+              onDuplicate={(e) => setModal({
+                _duplicate: true,
+                date: e.date,
+                start_time: e.end_time || hourToTime(toHourFloat(e.start_time) + Number(e.hrs || 1)),
+                end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
+                billable: e.billable,
+                notes: e.notes,
+                project_id: e.project_id,
+                project_phase_id: e.project_phase_id,
+                activity_group_id: e.activity_group_id,
+              })}
             />
           ) : view === "day" ? (
             <DayView
@@ -255,6 +273,17 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 billable: true,
               })}
               onEntryClick={(e) => setModal(e)}
+              onDuplicate={(e) => setModal({
+                _duplicate: true,
+                date: e.date,
+                start_time: e.end_time || hourToTime(toHourFloat(e.start_time) + Number(e.hrs || 1)),
+                end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
+                billable: e.billable,
+                notes: e.notes,
+                project_id: e.project_id,
+                project_phase_id: e.project_phase_id,
+                activity_group_id: e.activity_group_id,
+              })}
             />
           ) : (
             <TeamView
@@ -318,8 +347,8 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               team={team}
               isAdmin={isAdmin}
               meId={me?.id || ""}
-              initial={modal}
-              onSaved={() => { setModal(null); refresh(); toast.success(modal.id ? "Updated" : "Logged"); }}
+              initial={modal._duplicate ? { ...modal, id: undefined } : modal}
+              onSaved={() => { setModal(null); refresh(); toast.success(modal._duplicate ? "New entry logged" : modal.id ? "Updated" : "Logged"); }}
               onDeleted={() => { setModal(null); refresh(); toast.success("Deleted"); }}
             />
           )}
@@ -331,12 +360,13 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
 
 // ───────── week view ─────────
 function WeekView({
-  days, entries, myId, projects, ags, onCellClick, onEntryClick,
+  days, entries, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; myId: string;
   projects: Project[]; ags: Ag[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onDuplicate: (e: Entry) => void;
 }) {
   return (
     <div className="rounded-lg border border-border bg-white">
@@ -360,6 +390,7 @@ function WeekView({
         ags={ags}
         onCellClick={onCellClick}
         onEntryClick={onEntryClick}
+        onDuplicate={onDuplicate}
       />
       <DayFooters days={days} entries={entries} myId={myId} />
     </div>
@@ -367,15 +398,24 @@ function WeekView({
 }
 
 function Grid({
-  days, entries, rowH, myId, projects, ags, onCellClick, onEntryClick,
+  days, entries, rowH, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; rowH: number; myId: string;
   projects: Project[]; ags: Ag[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onDuplicate: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const dayRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const getDayDateAt = (x: number, y: number): string | null => {
+    for (const [iso, el] of dayRefs.current.entries()) {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return iso;
+    }
+    return null;
+  };
   return (
     <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(${days.length}, minmax(0, 1fr))` }}>
       {/* time labels */}
@@ -388,8 +428,16 @@ function Grid({
       </div>
       {days.map((d) => {
         const dayEntries = entries.filter((e) => e.date === isoDate(d));
+        const iso = isoDate(d);
         return (
-          <div key={d.toISOString()} className="relative border-l border-border">
+          <div
+            key={d.toISOString()}
+            ref={(el) => {
+              if (el) dayRefs.current.set(iso, el);
+              else dayRefs.current.delete(iso);
+            }}
+            className="relative border-l border-border"
+          >
             {Array.from({ length: HOURS }).map((_, i) => (
               <button
                 key={i}
@@ -410,35 +458,289 @@ function Grid({
               const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
               const lineCount = h >= 56 ? 3 : h >= 36 ? 2 : 1;
               return (
-                <button
+                <EntryBlock
                   key={e.id}
-                  type="button"
-                  onClick={(ev) => { ev.stopPropagation(); onEntryClick(e); }}
-                  className={cn(
-                    "absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden",
-                    "border shadow-sm transition-opacity",
-                    !isMine && "opacity-70",
-                  )}
-                  style={{
-                    top, height: h,
-                    background: e.billable ? "#5C8A6E" : "#C4714A",
-                    borderColor: e.billable ? "#4A7158" : "#A85F3D",
-                    color: "#fff",
-                  }}
-                  title={tooltip}
-                >
-                  <div className="font-medium truncate">{clientPart}</div>
-                  {lineCount >= 2 && <div className="opacity-90 truncate">{activity || "—"}</div>}
-                  {lineCount >= 3 && (
-                    <div className="opacity-80 truncate">{dur} · {e.billable ? "Billable" : "Non-Bill"}</div>
-                  )}
-                </button>
+                  entry={e}
+                  top={top}
+                  height={h}
+                  rowH={rowH}
+                  isMine={isMine}
+                  bg={e.billable ? "#5C8A6E" : "#C4714A"}
+                  borderColor={e.billable ? "#4A7158" : "#A85F3D"}
+                  tooltip={tooltip}
+                  lineCount={lineCount}
+                  clientPart={clientPart}
+                  activity={activity}
+                  durLabel={dur}
+                  getDayDateAt={getDayDateAt}
+                  onOpen={() => onEntryClick(e)}
+                  onDuplicate={() => onDuplicate(e)}
+                />
               );
             })}
           </div>
         );
       })}
     </div>
+  );
+}
+
+// ───────── interactive entry block (resize / move / duplicate / undo) ─────────
+function EntryBlock({
+  entry, top, height, rowH, isMine, bg, borderColor, tooltip, lineCount,
+  clientPart, activity, durLabel, getDayDateAt, onOpen, onDuplicate,
+}: {
+  entry: Entry;
+  top: number;
+  height: number;
+  rowH: number;
+  isMine: boolean;
+  bg: string;
+  borderColor: string;
+  tooltip: string;
+  lineCount: number;
+  clientPart: string;
+  activity: string | undefined;
+  durLabel: string;
+  getDayDateAt: (x: number, y: number) => string | null;
+  onOpen: () => void;
+  onDuplicate: () => void;
+}) {
+  const qc = useQueryClient();
+  const saveFn = useServerFn(saveTimeEntry);
+  const [mode, setMode] = useState<"idle" | "resize" | "move">("idle");
+  const [previewTop, setPreviewTop] = useState(top);
+  const [previewH, setPreviewH] = useState(height);
+  const [previewLeftPx, setPreviewLeftPx] = useState<number | null>(null);
+  const [hoverDay, setHoverDay] = useState<string | null>(null);
+  const startState = useRef({ pointerY: 0, pointerX: 0, top, height, moved: false });
+
+  const editable = isMine;
+
+  function showUndoToast(label: string, prev: Entry) {
+    const t = toast.success(label, {
+      duration: 10000,
+      action: {
+        label: "Undo",
+        onClick: async () => {
+          try {
+            await saveFn({
+              data: {
+                id: prev.id,
+                date: prev.date,
+                start_time: (prev.start_time || "09:00").slice(0, 5),
+                end_time: (prev.end_time || "10:00").slice(0, 5),
+                billable: prev.billable,
+                notes: prev.notes ?? null,
+                project_id: prev.project_id ?? null,
+                project_phase_id: prev.project_phase_id ?? null,
+                activity_group_id: prev.activity_group_id ?? null,
+                user_id: prev.user_id,
+              },
+            });
+            qc.invalidateQueries({ queryKey: ["calendar"] });
+            toast.dismiss(t);
+            toast.success("Reverted");
+          } catch (e) {
+            toast.error((e as Error).message || "Could not undo");
+          }
+        },
+      },
+    });
+  }
+
+  async function commitResize(newHeightPx: number) {
+    const durHrs = Math.max(0.25, snap15(newHeightPx / rowH));
+    const startHrs = toHourFloat(entry.start_time);
+    const newEnd = hourToTime(startHrs + durHrs);
+    if (newEnd === (entry.end_time || "").slice(0, 5)) return;
+    const prev = { ...entry };
+    try {
+      await saveFn({
+        data: {
+          id: entry.id,
+          date: entry.date,
+          start_time: (entry.start_time || "09:00").slice(0, 5),
+          end_time: newEnd,
+          billable: entry.billable,
+          notes: entry.notes ?? null,
+          project_id: entry.project_id ?? null,
+          project_phase_id: entry.project_phase_id ?? null,
+          activity_group_id: entry.activity_group_id ?? null,
+          user_id: entry.user_id,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
+      const h = Math.floor(durHrs);
+      const m = Math.round((durHrs - h) * 60);
+      showUndoToast(`Entry updated to ${h}h${m ? ` ${m}m` : ""}`, prev);
+    } catch (e) {
+      toast.error((e as Error).message || "Could not resize");
+    }
+  }
+
+  async function commitMove(newDateIso: string) {
+    if (newDateIso === entry.date) return;
+    const prev = { ...entry };
+    try {
+      await saveFn({
+        data: {
+          id: entry.id,
+          date: newDateIso,
+          start_time: (entry.start_time || "09:00").slice(0, 5),
+          end_time: (entry.end_time || "10:00").slice(0, 5),
+          billable: entry.billable,
+          notes: entry.notes ?? null,
+          project_id: entry.project_id ?? null,
+          project_phase_id: entry.project_phase_id ?? null,
+          activity_group_id: entry.activity_group_id ?? null,
+          user_id: entry.user_id,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["calendar"] });
+      const label = new Date(newDateIso + "T00:00:00").toLocaleDateString(undefined, { weekday: "long" });
+      showUndoToast(`Moved to ${label}`, prev);
+    } catch (e) {
+      toast.error((e as Error).message || "Could not move");
+    }
+  }
+
+  function onResizeDown(ev: React.PointerEvent) {
+    if (!editable) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    (ev.target as Element).setPointerCapture(ev.pointerId);
+    setMode("resize");
+    startState.current = { pointerY: ev.clientY, pointerX: ev.clientX, top, height, moved: false };
+    setPreviewH(height);
+  }
+
+  function onBodyDown(ev: React.PointerEvent) {
+    if (!editable) return;
+    // Ignore clicks on the resize handle or controls (they stop propagation).
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    startState.current = { pointerY: ev.clientY, pointerX: ev.clientX, top, height, moved: false };
+    setMode("idle"); // becomes "move" after threshold
+  }
+
+  function onPointerMove(ev: React.PointerEvent) {
+    if (!editable) return;
+    const dx = ev.clientX - startState.current.pointerX;
+    const dy = ev.clientY - startState.current.pointerY;
+
+    if (mode === "resize") {
+      const raw = startState.current.height + dy;
+      const snapped = Math.max(rowH * 0.25, snap15(raw / rowH) * rowH);
+      setPreviewH(snapped);
+      startState.current.moved = true;
+      return;
+    }
+
+    // Begin move once user crosses a small drag threshold (4px).
+    if (mode === "idle" && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      setMode("move");
+    }
+    if (mode === "move" || (mode === "idle" && (Math.abs(dx) > 4 || Math.abs(dy) > 4))) {
+      startState.current.moved = true;
+      setPreviewLeftPx(dx);
+      setHoverDay(getDayDateAt(ev.clientX, ev.clientY));
+    }
+  }
+
+  function onPointerUp(ev: React.PointerEvent) {
+    try { (ev.target as Element).releasePointerCapture(ev.pointerId); } catch { /* noop */ }
+    const wasMode = mode;
+    const moved = startState.current.moved;
+    setMode("idle");
+    setPreviewLeftPx(null);
+    const dropDay = hoverDay;
+    setHoverDay(null);
+
+    if (wasMode === "resize" && moved) {
+      commitResize(previewH);
+      return;
+    }
+    if (wasMode === "move" && moved) {
+      if (dropDay) commitMove(dropDay);
+      return;
+    }
+    // Click (no drag) → open editor.
+    if (!moved) onOpen();
+  }
+
+  const draggingStyle: React.CSSProperties =
+    mode === "move"
+      ? { transform: `translateX(${previewLeftPx ?? 0}px)`, opacity: 0.85, zIndex: 20 }
+      : {};
+
+  const liveDur = mode === "resize" ? (previewH / rowH) : Number(entry.hrs || 0);
+  const liveHr = Math.floor(liveDur);
+  const liveMin = Math.round((liveDur - liveHr) * 60);
+  const liveLabel = `${liveHr}h${liveMin ? ` ${liveMin}m` : ""}`;
+
+  return (
+    <>
+      {/* ghost outline of original position while moving */}
+      {mode === "move" && (
+        <div
+          className="absolute left-1 right-1 rounded border border-dashed pointer-events-none"
+          style={{ top, height, borderColor, opacity: 0.4 }}
+        />
+      )}
+      <div
+        role="button"
+        tabIndex={0}
+        onContextMenu={(ev) => { ev.preventDefault(); onDuplicate(); }}
+        onPointerDown={onBodyDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className={cn(
+          "group absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden",
+          "border shadow-sm select-none touch-none",
+          !isMine && "opacity-70",
+          editable && "cursor-grab active:cursor-grabbing",
+        )}
+        style={{
+          top: mode === "resize" ? top : top,
+          height: mode === "resize" ? previewH : height,
+          background: bg,
+          borderColor,
+          color: "#fff",
+          ...draggingStyle,
+        }}
+        title={tooltip}
+      >
+        {editable && (
+          <button
+            type="button"
+            onPointerDown={(ev) => { ev.stopPropagation(); }}
+            onClick={(ev) => { ev.stopPropagation(); onDuplicate(); }}
+            aria-label="Duplicate entry"
+            className="absolute top-0.5 right-0.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded bg-black/20 hover:bg-black/40"
+          >
+            <Copy className="h-2.5 w-2.5" />
+          </button>
+        )}
+        <div className="font-medium truncate pr-5">{clientPart}</div>
+        {lineCount >= 2 && <div className="opacity-90 truncate">{activity || "—"}</div>}
+        {lineCount >= 3 && (
+          <div className="opacity-80 truncate">{durLabel} · {entry.billable ? "Billable" : "Non-Bill"}</div>
+        )}
+        {mode === "resize" && (
+          <div className="absolute bottom-0 left-0 right-0 text-center text-[10px] bg-black/30 num">
+            {liveLabel}
+          </div>
+        )}
+        {editable && (
+          <div
+            onPointerDown={onResizeDown}
+            className="absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize bg-black/20 opacity-0 group-hover:opacity-100"
+            aria-hidden
+          />
+        )}
+      </div>
+    </>
   );
 }
 
@@ -470,12 +772,13 @@ function DayFooters({ days, entries, myId }: { days: Date[]; entries: Entry[]; m
 
 // ───────── day view ─────────
 function DayView({
-  day, weekDays, setDay, entries, projects, ags, onCellClick, onEntryClick,
+  day, weekDays, setDay, entries, projects, ags, onCellClick, onEntryClick, onDuplicate,
 }: {
   day: Date; weekDays: Date[]; setDay: (d: Date) => void;
   entries: Entry[]; projects: Project[]; ags: Ag[];
   onCellClick: (hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onDuplicate: (e: Entry) => void;
 }) {
   const activeIso = isoDate(day);
   return (
@@ -508,6 +811,7 @@ function DayView({
           ags={ags}
           onCellClick={(_d, h) => onCellClick(h)}
           onEntryClick={onEntryClick}
+          onDuplicate={onDuplicate}
         />
       </div>
     </div>
