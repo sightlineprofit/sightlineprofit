@@ -252,12 +252,33 @@ function SetupPage() {
                 value={draft.target_billable_hrs_per_week}
                 onChange={(v) => patchDraft({ target_billable_hrs_per_week: v })}
               />
-              <NumberField
-                label="Target gross margin %"
-                suffix="%"
-                value={draft.target_gross_margin_pct}
-                onChange={(v) => patchDraft({ target_gross_margin_pct: v })}
-              />
+              <div>
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <label className="block text-xs uppercase tracking-[0.15em] text-ch/50">Target gross margin %</label>
+                  <InfoTip
+                    term="Target gross margin %"
+                    definition="Your aligned rate is calculated to cover your costs AND hit this margin target. Setting it to 0% gives you your break-even rate — enough to survive. Setting it to 30–40% gives you a rate that builds real profit."
+                    why="The difference between break-even and your aligned rate is this number doing its job."
+                  />
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    min={0}
+                    value={draft.target_gross_margin_pct}
+                    onChange={(e) => patchDraft({ target_gross_margin_pct: e.target.value })}
+                    className={cn(inputCls, "pr-9")}
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ch/40">%</span>
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed text-ch/55">
+                  The portion of each dollar billed that becomes profit after all costs are paid.
+                  At 45%, every $100 you bill keeps $45 as profit. A typical range for design firms
+                  is 25–40%. This is built into your aligned rate — a higher target means a higher floor.
+                </p>
+              </div>
               <NumberField
                 label="Your billed rate ($/hr)"
                 prefix="$"
@@ -265,21 +286,6 @@ function SetupPage() {
                 onChange={(v) => patchDraft({ rate_billed: v })}
               />
 
-              <div className="mt-6 rounded-md bg-creamd/60 p-4 text-sm text-ch/80">
-                <p className="mb-2 text-[11px] uppercase tracking-[0.18em] text-ch/50">Aligned rate formula</p>
-                <p className="font-display text-base leading-relaxed text-ch">
-                  <span className="tabular-nums">{fmtUsd(c.totalCost)}</span>
-                  <span className="text-ch/50"> ÷ </span>
-                  <span className="tabular-nums">{c.annualBillableHrs.toFixed(0)}h</span>
-                  <span className="text-ch/50"> ÷ </span>
-                  <span className="tabular-nums">{(1 - (Number(draft.target_gross_margin_pct) || 0) / 100).toFixed(2)}</span>
-                  <span className="text-ch/50"> = </span>
-                  <span className="font-display text-lg text-gold">{fmtUsd(c.alignedRate, { decimals: 0 })}/hr</span>
-                </p>
-                <p className="mt-2 text-xs text-ch/55">
-                  total annual cost ÷ annual billable hrs ÷ margin factor
-                </p>
-              </div>
             </Card>
           )}
         </div>
