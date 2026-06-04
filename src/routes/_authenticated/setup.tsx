@@ -334,6 +334,12 @@ function SetupPage() {
               span={span}
               setSpan={setSpan}
             />
+            <MarginSummaryLine
+              billed={c.billedRate}
+              breakEven={c.breakEvenRate}
+              aligned={c.alignedRate}
+              targetMarginPct={targetMarginPct}
+            />
 
             <OutputRow
               label="Break-even rate"
