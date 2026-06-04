@@ -17,6 +17,7 @@ import { fmtUsd } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { useMe, effectiveRole } from "@/lib/role";
 import { InfoTip } from "@/components/dashboard/InfoTip";
+import { ProspectFormSheet } from "@/components/capacity/ProspectForm";
 
 export type CapacityExpandedData = {
   inputs: CapacityInputs;
