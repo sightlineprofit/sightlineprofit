@@ -10,6 +10,7 @@ export type ProjRow = {
   scoped_rate: number | null;
   fixed_fee: number | null;
   sop_template_id?: string | null;
+  quoted_hours?: number | null;
 };
 export type PhaseRow = {
   id: string;
@@ -70,6 +71,8 @@ export type CapacitySummary = {
   availablePct: number;
   weeks: WeekBucket[];
   windows: CapacityWindow[];
+  committedDollars: number; // sum of project dollar values where calculable
+  committedDollarMode: "none" | "all-fixed" | "all-estimated" | "mixed";
 };
 
 function isActive(p: ProjRow): boolean {
@@ -80,6 +83,21 @@ function projectHours(p: ProjRow, phases: PhaseRow[]): number {
   const ph = phases.filter((x) => x.project_id === p.id);
   if (ph.length) return ph.reduce((s, x) => s + Number(x.expected_hrs || 0), 0);
   return Number(p.scoped_hrs || 0);
+}
+
+// Returns dollar value for a single project per the rules:
+//  - fixed_fee > 0  → fixed_fee (contracted)
+//  - else quoted_hours * scoped_rate (estimated)
+//  - else null (no dollar figure)
+export function projectDollarValue(
+  p: ProjRow,
+): { value: number; kind: "fixed" | "estimated" } | null {
+  const fee = Number(p.fixed_fee || 0);
+  if (fee > 0) return { value: fee, kind: "fixed" };
+  const qHrs = Number(p.quoted_hours ?? p.scoped_hrs ?? 0);
+  const rate = Number(p.scoped_rate || 0);
+  if (qHrs > 0 && rate > 0) return { value: qHrs * rate, kind: "estimated" };
+  return null;
 }
 
 export function startOfISOWeek(d: Date): Date {
@@ -122,6 +140,27 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
   const annualTarget = targetHrsPerWeek * weeksPerYear;
 
   const committed = active.reduce((s, p) => s + projectHours(p, phases), 0);
+
+  // Per-project dollar values (honour fixed_fee vs hourly estimate, omit otherwise).
+  let committedDollars = 0;
+  let fixedCount = 0;
+  let estimatedCount = 0;
+  for (const p of active) {
+    const dv = projectDollarValue(p);
+    if (!dv) continue;
+    committedDollars += dv.value;
+    if (dv.kind === "fixed") fixedCount++;
+    else estimatedCount++;
+  }
+  const committedDollarMode: CapacitySummary["committedDollarMode"] =
+    fixedCount === 0 && estimatedCount === 0
+      ? "none"
+      : fixedCount > 0 && estimatedCount === 0
+        ? "all-fixed"
+        : estimatedCount > 0 && fixedCount === 0
+          ? "all-estimated"
+          : "mixed";
+
   // Plain sum of estimated prospect hours — no probability weighting.
   const prospectTotalHrs = pipeline.reduce(
     (s, r) => s + Number(r.estimated_hrs || 0),
@@ -220,6 +259,8 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
     availablePct,
     weeks: buckets,
     windows,
+    committedDollars,
+    committedDollarMode,
   };
 }
 

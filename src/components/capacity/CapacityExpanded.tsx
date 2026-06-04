@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtUsd } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { useMe, effectiveRole } from "@/lib/role";
+import { InfoTip } from "@/components/dashboard/InfoTip";
 
 export type CapacityExpandedData = {
   inputs: CapacityInputs;
@@ -141,17 +142,44 @@ function OverviewTab({ data, summary }: { data: CapacityExpandedData; summary: C
           ))}
         </div>
         <ul className="mt-4 space-y-1.5 text-xs text-ch/70">
-          <li>
-            <span className="inline-block h-2 w-2 mr-2 rounded-sm" style={{ background: "#B8860B" }} />
-            Committed: <span className="num text-ch">{fmtHrs(summary.committed)} hrs · {Math.round(summary.committedPct)}% · {fmtUsd(summary.committed * rate)} potential</span>
+          <li className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: "#B8860B" }} />
+            <span>
+              Committed:{" "}
+              <span className="num text-ch">
+                {fmtHrs(summary.committed)} hrs · {Math.round(summary.committedPct)}%
+                {summary.committedDollarMode === "all-fixed" &&
+                  ` · ${fmtUsd(summary.committedDollars)} in fees`}
+                {summary.committedDollarMode === "all-estimated" &&
+                  ` · ~${fmtUsd(summary.committedDollars)} potential`}
+                {summary.committedDollarMode === "mixed" &&
+                  ` · ~${fmtUsd(summary.committedDollars)} potential`}
+              </span>
+            </span>
+            {summary.committedDollarMode !== "none" && (
+              <InfoTip
+                term="Committed value"
+                definition="For fixed-fee projects this shows the agreed project fee. For hourly projects this estimates from quoted hours × your project rate."
+              />
+            )}
           </li>
           <li>
             <span className="inline-block h-2 w-2 mr-2 rounded-sm" style={{ background: "rgba(196,113,74,0.25)" }} />
             Non-billable est.: <span className="num text-ch">{fmtHrs(summary.nonBillableEst)} hrs · based on avg of last 4 weeks</span>
           </li>
-          <li>
-            <span className="inline-block h-2 w-2 mr-2 rounded-sm border border-border bg-cream" />
-            Available: <span className="num text-ch">{fmtHrs(summary.available)} hrs · {Math.round(summary.availablePct)}% · {fmtUsd(summary.available * rate)} potential</span>
+          <li className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm border border-border bg-cream" />
+            <span>
+              Available:{" "}
+              <span className="num text-ch">
+                {fmtHrs(summary.available)} hrs · {Math.round(summary.availablePct)}% · ~
+                {fmtUsd(summary.available * rate)} at your billed rate
+              </span>
+            </span>
+            <InfoTip
+              term="Available value"
+              definition="Estimated revenue potential if all open capacity is filled at your current billed rate. Actual will depend on project type and rates."
+            />
           </li>
         </ul>
       </div>
