@@ -220,7 +220,24 @@ function FullViewDialog({ open, onClose, title, wide, children }: { open: boolea
 function RatePreview({ c }: { c: ReturnType<typeof calc> }) {
   const aligned = c.alignedRate;
   const billed = c.billedRate;
-  const gap = billed - aligned;
+  const gap = billed - aligned; // negative = below floor
+  const health = c.rateHealth;
+  const dotClass =
+    health === "healthy" ? "bg-success" : health === "below_floor" ? "bg-gold" : "bg-danger";
+  const valueClass =
+    health === "healthy" ? "text-success" : health === "below_floor" ? "text-terra" : "text-terra";
+  const subText =
+    health === "critical"
+      ? "below break-even"
+      : health === "below_floor"
+        ? "below your floor"
+        : "above your floor";
+  const deltaText =
+    health === "critical"
+      ? "Critical — costs not covered"
+      : health === "below_floor"
+        ? `${fmtUsd(Math.abs(gap), { decimals: 0 })}/hr below margin target`
+        : `${fmtPct((Math.abs(gap) / Math.max(aligned, 1)) * 100, 0)} buffer`;
   return (
     <div>
       <div className="grid grid-cols-2 gap-4">
@@ -233,12 +250,16 @@ function RatePreview({ c }: { c: ReturnType<typeof calc> }) {
           <div className="num font-display text-3xl text-ch mt-0.5">{fmtUsd(billed)}<span className="text-sm text-ch/40">/hr</span></div>
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-2 text-xs">
-        <span className={cn("inline-block h-2 w-2 rounded-full", gap >= 0 ? "bg-success" : "bg-danger")} />
-        <span className="text-ch/70">
-          {gap >= 0 ? `${fmtUsd(gap)}/hr above floor` : `${fmtUsd(Math.abs(gap))}/hr below floor`}
-        </span>
-        <InfoTip {...GLOSSARY.marginAboveFloor} />
+      <div className="mt-4 space-y-1">
+        <div className="flex items-baseline gap-2 text-xs">
+          <span className={cn("inline-block h-2 w-2 rounded-full", dotClass)} />
+          <span className={cn("num font-display text-base", valueClass)}>
+            {gap >= 0 ? "+" : "−"}{fmtUsd(Math.abs(gap), { decimals: 0 })}/hr
+          </span>
+          <span className="text-ch/60">{subText}</span>
+          <InfoTip {...GLOSSARY.marginAboveFloor} />
+        </div>
+        <div className="text-[11px] text-ch/55">{deltaText}</div>
       </div>
     </div>
   );
