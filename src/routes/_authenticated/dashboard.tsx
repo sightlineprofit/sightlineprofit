@@ -1359,17 +1359,15 @@ export function CapacityFull({
 
 /* ───────── Tile: Where Your Rate Goes (Rate Allocation) ───────── */
 function AllocationPreview({ c }: { c: ReturnType<typeof calc> }) {
-  const total =
-    c.perHour.comp +
-    c.perHour.opexRecurring +
-    c.perHour.opexOneTime +
-    c.perHour.marginAbove;
   const segs = [
-    { label: "Comp", val: c.perHour.comp, color: "#B8860B" },
-    { label: "Recurring", val: c.perHour.opexRecurring, color: "#5C8A6E" },
-    { label: "One-time", val: c.perHour.opexOneTime, color: "#C4714A" },
-    { label: "Margin", val: c.perHour.marginAbove, color: "#D4A017" },
-  ];
+    { label: "Comp", val: c.perHour.comp, color: "#B8860B", ghost: false },
+    { label: "Recurring", val: c.perHour.opexRecurring, color: "#5C8A6E", ghost: false },
+    { label: "One-time", val: c.perHour.opexOneTime, color: "#C4714A", ghost: false },
+    { label: "Margin at floor", val: c.perHour.marginAtFloor, color: "#5C8A6E", ghost: false },
+    { label: "Above floor", val: c.perHour.marginAbove, color: "#D4A017", ghost: false },
+    { label: "Gap to floor", val: c.perHour.gapToFloor, color: "#C4714A", ghost: true },
+  ].filter((s) => s.val > 0);
+  const total = segs.reduce((s, x) => s + x.val, 0);
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between">
@@ -1381,14 +1379,26 @@ function AllocationPreview({ c }: { c: ReturnType<typeof calc> }) {
           <div
             key={s.label}
             title={`${s.label}: ${fmtUsd(s.val, { decimals: 2 })}/hr`}
-            style={{ width: total > 0 ? `${(s.val / total) * 100}%` : "0%", backgroundColor: s.color }}
+            style={{
+              width: total > 0 ? `${(s.val / total) * 100}%` : "0%",
+              backgroundColor: s.ghost ? "transparent" : s.color,
+              backgroundImage: s.ghost
+                ? `repeating-linear-gradient(45deg, ${s.color}55 0 5px, transparent 5px 10px)`
+                : undefined,
+            }}
           />
         ))}
       </div>
       <div className="flex flex-wrap gap-2 text-[10px]">
         {segs.map((s) => (
           <span key={s.label} className="inline-flex items-center gap-1 text-ch/70">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{
+                backgroundColor: s.ghost ? "transparent" : s.color,
+                border: s.ghost ? `1px dashed ${s.color}` : undefined,
+              }}
+            />
             {s.label}
           </span>
         ))}
