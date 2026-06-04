@@ -246,11 +246,18 @@ function SetupPage() {
                 label="Available hours per week"
                 value={draft.available_hrs_per_week}
                 onChange={(v) => patchDraft({ available_hrs_per_week: v })}
+                helper="The total hours you want to work each week — design, admin, client calls, business development, all of it. This is your working week, not just your billable hours. Be honest rather than aspirational. If your realistic week is 40 hours, enter 40."
               />
               <NumberField
                 label="Target billable hours per week"
                 value={draft.target_billable_hrs_per_week}
                 onChange={(v) => patchDraft({ target_billable_hrs_per_week: v })}
+                helper="Of your total working hours, how many do you reasonably expect to bill to clients? Not your best week — your average, realistic week. Most designers find that 60–75% of available hours are billable once admin, business development, and non-client work are accounted for. The remaining hours are still real work — they just don't generate direct revenue."
+                tip={{
+                  term: "Target billable hours per week",
+                  definition: "This number drives your aligned rate. Fewer billable hours means each hour has to carry more of the cost load — which raises your floor. Overestimating here produces an aligned rate that looks achievable but isn't, because the hours don't materialize.",
+                  why: "When in doubt, enter the number you actually hit most weeks, not the number you're aiming for.",
+                }}
               />
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5">
@@ -273,10 +280,15 @@ function SetupPage() {
                   />
                   <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ch/40">%</span>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-ch/55">
-                  The portion of each dollar billed that becomes profit after all costs are paid.
-                  At 45%, every $100 you bill keeps $45 as profit. A typical range for design firms
-                  is 25–40%. This is built into your aligned rate — a higher target means a higher floor.
+                <p
+                  className="font-sans"
+                  style={{ fontSize: "11px", fontWeight: 300, color: "#777", lineHeight: 1.6, marginTop: "4px" }}
+                >
+                  This builds your profit target into your aligned rate. At 45%, your aligned rate is
+                  calculated so that — if you bill at exactly that rate — 45% becomes profit and 55%
+                  covers costs. Your margin above floor is separate: it's the buffer between what you
+                  charge and what you need to charge. A small buffer isn't a problem as long as your
+                  aligned rate already reflects a healthy margin target.
                 </p>
               </div>
               <NumberField
@@ -322,6 +334,12 @@ function SetupPage() {
               span={span}
               setSpan={setSpan}
             />
+            <MarginSummaryLine
+              billed={c.billedRate}
+              breakEven={c.breakEvenRate}
+              aligned={c.alignedRate}
+              targetMarginPct={targetMarginPct}
+            />
 
             <OutputRow
               label="Break-even rate"
@@ -364,11 +382,22 @@ function Card({ title, subtitle, children }: { title: string; subtitle?: string;
 }
 
 function NumberField({
-  label, value, onChange, prefix, suffix,
-}: { label: string; value: string; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
+  label, value, onChange, prefix, suffix, helper, tip,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  prefix?: string;
+  suffix?: string;
+  helper?: string;
+  tip?: { term: string; definition: string; why?: string };
+}) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-ch/50">{label}</label>
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <label className="block text-xs uppercase tracking-[0.15em] text-ch/50">{label}</label>
+        {tip && <InfoTip {...tip} />}
+      </div>
       <div className="relative">
         {prefix && <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-ch/40">{prefix}</span>}
         <input
@@ -382,6 +411,14 @@ function NumberField({
         />
         {suffix && <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ch/40">{suffix}</span>}
       </div>
+      {helper && (
+        <p
+          className="font-sans"
+          style={{ fontSize: "11px", fontWeight: 300, color: "#777", lineHeight: 1.6, marginTop: "4px" }}
+        >
+          {helper}
+        </p>
+      )}
     </div>
   );
 }
@@ -509,10 +546,78 @@ function RateHealthBox({
             <Row label="Your floor" value={`${fmtUsd(aligned, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
             <Row label="You're billing" value={`${fmtUsd(billed, { decimals: 0 })}/hr`} valueClass="text-ch/55" />
             <Row label="Buffer above floor" value={`+${fmtUsd(billed - aligned, { decimals: 0 })}/hr`} valueClass="text-success" />
+            <ActualMarginRow billed={billed} breakEven={breakEven} targetMarginPct={targetMarginPct} />
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function ActualMarginRow({
+  billed, breakEven, targetMarginPct,
+}: { billed: number; breakEven: number; targetMarginPct: number }) {
+  const actualPct = billed > 0 ? ((billed - breakEven) / billed) * 100 : 0;
+  const cls =
+    actualPct >= targetMarginPct
+      ? "text-success"
+      : actualPct >= targetMarginPct - 5
+        ? "text-gold"
+        : "text-terra";
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-1.5">
+        <span className="text-ch/65">Actual margin at {fmtUsd(billed, { decimals: 0 })}/hr</span>
+        <InfoTip
+          term="Actual margin"
+          definition="Your actual profit margin at your current billed rate. Compare this to your target above — if it meets or exceeds your target you are in good shape."
+          why="Your aligned rate is calibrated so that billing at exactly that rate hits your target precisely. Billing above the aligned rate means you are exceeding it."
+        />
+      </div>
+      <span className={cn("num tabular-nums", cls)}>{actualPct.toFixed(1)}%</span>
+    </div>
+  );
+}
+
+function MarginSummaryLine({
+  billed, breakEven, aligned, targetMarginPct,
+}: { billed: number; breakEven: number; aligned: number; targetMarginPct: number }) {
+  if (!(billed > 0) || !(targetMarginPct > 0)) return null;
+  const actualPct = ((billed - breakEven) / billed) * 100;
+  const buffer = Math.max(0, billed - aligned);
+  const targetRounded = Math.round(targetMarginPct);
+  const actualRounded = actualPct.toFixed(1);
+
+  if (actualPct >= targetMarginPct) {
+    return (
+      <p
+        className="font-sans mt-2"
+        style={{ fontSize: "11px", fontWeight: 300, color: "#777", lineHeight: 1.6 }}
+      >
+        You're hitting your {targetRounded}% margin target. Your {fmtUsd(buffer, { decimals: 0 })}/hr
+        buffer means you have room to absorb small cost increases without falling below your floor.
+      </p>
+    );
+  }
+  if (actualPct >= targetMarginPct - 5) {
+    return (
+      <p
+        className="font-sans mt-2 text-gold/80"
+        style={{ fontSize: "11px", fontWeight: 300, lineHeight: 1.6 }}
+      >
+        You're close to your {targetRounded}% margin target but the buffer is thin. A small rate
+        increase or cost reduction would give you more room.
+      </p>
+    );
+  }
+  return (
+    <p
+      className="font-sans mt-2 text-terra/90"
+      style={{ fontSize: "11px", fontWeight: 300, lineHeight: 1.6 }}
+    >
+      Your current rate produces {actualRounded}% margin — below your {targetRounded}% target.
+      Review your rate or your costs to close the gap.
+    </p>
   );
 }
 
