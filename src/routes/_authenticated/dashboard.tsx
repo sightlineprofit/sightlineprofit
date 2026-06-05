@@ -36,6 +36,8 @@ import { RoleGuard } from "@/lib/role";
 import { CapacityTile, type CapacityTileData } from "@/components/capacity/CapacityTile";
 import { CapacityExpanded, type CapacityExpandedData } from "@/components/capacity/CapacityExpanded";
 import type { CapacityInputs } from "@/lib/capacity-math";
+import { RateInsightCard } from "@/components/dashboard/RateInsightCard";
+import { NarrativeStrip } from "@/components/dashboard/NarrativeStrip";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -175,6 +177,30 @@ function Dashboard() {
         <Tile eyebrow="Learn" title="Knowledge Base" onOpen={() => setOpen("kb")}>
           <KnowledgePreview />
         </Tile>
+      </div>
+
+      {/* ── Moment 5: Narrative strip ── */}
+      <div className="mt-6">
+        <NarrativeStrip
+          weekHours={Number(data?.weekHours ?? 0)}
+          targetHrs={Number(data?.config?.target_billable_hrs_per_week ?? 0)}
+          billedRate={c.billedRate}
+          scopeWarningProjectName={null}
+          utilizationPct={(() => {
+            const target = Number(data?.config?.target_billable_hrs_per_week ?? 0);
+            return target > 0 ? (Number(data?.weekHours ?? 0) / target) * 100 : 0;
+          })()}
+        />
+        {/* ── Moment 1: First aligned rate insight card ── */}
+        {!(data?.config as any)?.rate_insight_shown &&
+          Number(data?.config?.rate_billed ?? 0) > 0 &&
+          c.alignedRate > 0 && (
+            <RateInsightCard
+              alignedRate={c.alignedRate}
+              billedRate={c.billedRate}
+              targetHrsPerWeek={Number(data?.config?.target_billable_hrs_per_week ?? 0)}
+            />
+          )}
       </div>
 
       {/* Full views */}
