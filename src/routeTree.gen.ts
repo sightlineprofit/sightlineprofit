@@ -38,6 +38,7 @@ import { Route as AuthenticatedDashboardKnowledgeRouteImport } from './routes/_a
 import { Route as AuthenticatedDashboardHealthRouteImport } from './routes/_authenticated/dashboard.health'
 import { Route as AuthenticatedDashboardGrowthRouteImport } from './routes/_authenticated/dashboard.growth'
 import { Route as AuthenticatedDashboardBvaRouteImport } from './routes/_authenticated/dashboard.bva'
+import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -194,6 +195,12 @@ const AuthenticatedDashboardBvaRoute =
     path: '/bva',
     getParentRoute: () => AuthenticatedDashboardRoute,
   } as any)
+const LovableEmailQueueProcessRoute =
+  LovableEmailQueueProcessRouteImport.update({
+    id: '/lovable/email/queue/process',
+    path: '/lovable/email/queue/process',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -224,6 +231,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -254,6 +262,7 @@ export interface FileRoutesByTo {
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -286,6 +295,7 @@ export interface FileRoutesById {
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/_authenticated/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/_authenticated/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
+    | '/lovable/email/queue/process'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -348,6 +359,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
+    | '/lovable/email/queue/process'
   id:
     | '__root__'
     | '/'
@@ -379,6 +391,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects/$id'
     | '/_authenticated/sop-library/$id'
     | '/_authenticated/sop-library/new'
+    | '/lovable/email/queue/process'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -388,6 +401,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PostAuthRoute: typeof PostAuthRoute
   RegisterRoute: typeof RegisterRoute
+  LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -595,6 +609,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardBvaRouteImport
       parentRoute: typeof AuthenticatedDashboardRoute
     }
+    '/lovable/email/queue/process': {
+      id: '/lovable/email/queue/process'
+      path: '/lovable/email/queue/process'
+      fullPath: '/lovable/email/queue/process'
+      preLoaderRoute: typeof LovableEmailQueueProcessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -696,7 +717,18 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PostAuthRoute: PostAuthRoute,
   RegisterRoute: RegisterRoute,
+  LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
