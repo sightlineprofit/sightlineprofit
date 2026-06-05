@@ -622,7 +622,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
               {project.start_date && project.end_date && ` · ${project.start_date} → ${project.end_date}`}
             </p>
           </div>
-          <Select value={project.status} onValueChange={(v) => statusMut.mutate(v as Status)}>
+          <Select value={project.status} onValueChange={(v) => onStatusChange(v as Status)}>
             <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
