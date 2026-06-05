@@ -1,91 +1,69 @@
+# Team Invitation & Member Access — Implementation Plan
 
-## Scope
+This is a large multi-part change touching schema, email infrastructure, onboarding UX, a new public route, and global role enforcement. I'm laying out the plan so you can confirm the approach (and a couple of trade-offs) before I build.
 
-Expand the **existing** dashboard Capacity tile in `src/routes/_authenticated/dashboard.tsx`. No new route, no schema changes, no rebuilds of unrelated tiles. Sidebar already has no `/capacity` entry, so nothing to remove.
+## Part 1 — Onboarding step 02 tooltips & helper text
+Mirror the helper text + ⓘ tooltips already on `/setup` Capacity & Rate onto the onboarding step 02 fields (Available hrs/wk, Target billable hrs/wk, Target gross margin). Same Jost 11px / #777 / line-height 1.6 style. Reuse existing `InfoTip` component. File: `src/routes/_authenticated/onboarding.tsx`.
 
-## Files touched
+## Part 2 — Onboarding step 04 "Your team" copy
+- Add italic note under the section title: *"Financial details are for your planning only and are never shown to the team member."*
+- On "Add team member" submit with email present: invitation email fires immediately (Part 3) and a confirmation line renders below the form: *"Invitation sent to [email]…"*
+- Existing "you can add team members later" skip note stays prominent.
 
-- `src/routes/_authenticated/dashboard.tsx` — replace `CapacityPreview` + `CapacityFull` with new components.
-- `src/lib/dashboard.functions.ts` — extend `getDashboardData` to return the extra capacity payload (projects with phases, pipeline rows, last-4-weeks non-billable, SOP template totals).
-- `src/components/capacity/` (new folder) — extract sub-components to keep dashboard.tsx readable:
-  - `CapacityTile.tsx` (collapsed)
-  - `CapacityExpanded.tsx` (tab shell, tab memory via `sessionStorage`)
-  - `tabs/OverviewTab.tsx`, `tabs/TimelineTab.tsx`, `tabs/TeamTab.tsx`
-  - `WeeklyPressureChart.tsx`, `ProjectTimeline.tsx`, `OpenWindows.tsx`, `WhatIfTool.tsx`
-  - `capacity-math.ts` — pure helpers (weekly committed per week, open-window detection, status thresholds, dollar potential).
+## Part 3 — Database & invitation email
+**Schema migration** on `team_invitations` (adds the missing pieces; some columns already exist):
+- `invite_token uuid unique default gen_random_uuid()`
+- `invite_token_expiry timestamptz default now() + interval '7 days'`
+- `invited_at timestamptz default now()` (exists)
+- `accepted_at timestamptz` (exists)
+- index on `invite_token`
 
-## Data layer (single server fn additions)
+**Webhook log**: insert row with `event_tag='team-invite'` on send and `event_tag='team-member-onboarded'` on acceptance (`webhook_log` table already exists).
 
-Extend `getDashboardData` (or add `getCapacityData` called from the dashboard query) to return:
+**Email infrastructure**: requires Lovable Cloud email setup. I'll:
+1. Check email domain status.
+2. If no domain configured → surface the email-setup dialog (you'll need to complete domain setup once before invitations can actually send).
+3. Run `setup_email_infra` + `scaffold_transactional_email`.
+4. Add a new template `team-invitation.tsx` with the exact subject and body copy you specified, branded with Cormorant Garamond heading + Jost body, gold CTA button.
+5. Wire `inviteTeamMember` server fn (already exists in `firm.functions.ts`) to call `sendTransactionalEmail` with `idempotencyKey = team-invite-${invitation.id}-${token}`.
 
-- `projects`: id, name, status, start_date, end_date, scoped_hrs, fixed_fee, scoped_rate, phases [{ expected_hrs, sort_order }]
-- `pipeline`: id, name, estimated_hrs, estimated_start, probability_pct
-- `team`: profiles (id, name, role, color, expected_hrs_per_week, billable_rate)
-- `last4WeeksNonBillable`: sum hrs where `billable=false` over trailing 4 weeks → weekly average
-- `weeklyLoggedPast`: last 8 weeks of billable hours per ISO week
-- `sopTemplates`: id, name, total_hrs (sum of `sop_phases.expected_hrs`)
+**Trade-off heads-up**: if you haven't set up a verified email domain yet, the templates will scaffold but actual delivery won't work until DNS verifies. The DB record + token + UI all work without that — only the email send blocks.
 
-All RLS-respected via `requireSupabaseAuth`. No new tables, no migration.
+## Part 4 — `/accept-invite?token=…` route
+New **public** top-level route `src/routes/accept-invite.tsx` (NOT under `_authenticated/` — invited users aren't signed in yet).
+- Loader uses a public server fn `validateInviteToken({ token })` that uses `supabaseAdmin` to look up the invitation, returns `{ status: 'valid'|'expired'|'invalid', firmName, principalName, email, name, role }`.
+- Expired → branded message: *"This invitation link has expired. Ask [firm name] to resend…"*
+- Valid → branded form: Name (prefilled), Email (locked), Password, Confirm password, gold "Create my account" CTA.
+- Submit calls `acceptInvite({ token, password, name })` server fn:
+  - `supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true })`
+  - Insert `profiles` row with `firm_id`, `role`, `name`, `accepted_at=now()`, `invited_by`, financial fields copied from invitation
+  - Delete invitation row (or null `invite_token` + set `accepted_at`)
+  - Insert `webhook_log` row `event_tag='team-member-onboarded'`
+- Then client signs in with the new credentials and navigates to `/welcome`.
 
-## Calculation rules (single source — `capacity-math.ts`)
+## Part 5 — `/welcome` (team member)
+The route `src/routes/_authenticated/welcome.tsx` already exists and matches your spec's structure. I'll update content to the three cards (Time Calendar, Projects, Knowledge Base), add the gold-tinted note about financial data not being visible, and ensure CTA routes to `/time-calendar`. `welcomed_at` flow already wired.
 
-- `annualTarget = target_billable_hrs_per_week × weeksPerYear` (weeksPerYear = 48 fallback, no config field exists).
-- `committed = Σ project_phases.expected_hrs` for active projects, fallback `Σ projects.scoped_hrs` when phases missing.
-- `pipelineWeighted = Σ estimated_hrs × probability_pct/100`.
-- `nonBillableEst = avgWeeklyNonBillable × weeksRemainingInYear`.
-- `available = max(0, annualTarget − committed − pipelineWeighted − nonBillableEst)`.
-- `weeklyCommitted[w]` for next 16 weeks: for each active project with dates, distribute phase `expected_hrs` evenly across project weeks (phase ordering used only when phases have explicit week spans; otherwise flat split — pragmatic fallback matching spec note). Past weeks pulled from `time_entries`.
-- `weeklyPipeline[w]`: pipeline rows distributed across 8 weeks starting at `estimated_start`, scaled by probability.
-- `openWindows`: contiguous spans ≥2 weeks where `weeklyCommitted < target × 0.70`; classify by avg pct (Comfortable <60, Tight 60–85, Over >85).
-- Status pill thresholds drive collapsed tile color and default tab.
+## Part 6 — Team-role route enforcement
+Add a layout-level role check inside `_authenticated/route.tsx` (or a new sibling layout). For `role === 'team'`:
+- Allow: `/time-calendar`, `/projects`, `/projects/$id`, `/knowledge-base`, `/settings` (profile-only view), `/welcome`.
+- Block everything else (`/dashboard*`, `/setup`, `/growth-roadmap`, `/admin`, `/settings/team`, `/settings/billing`) → `navigate('/time-calendar')` + sonner toast *"That section is managed by your firm principal."*
 
-## Collapsed tile (Part 2)
+**Settings page**: today `/settings` is a single page. I'll add a role guard inside it that, for team role, renders only a "Profile" panel (name / email / password) and hides the firm/team/billing sections — no separate `/settings/profile` route needed. If you'd rather I split into sub-routes (`/settings/profile`, `/settings/team`, `/settings/billing`), say the word.
 
-Status pill (green/gold/terra/danger), mini 3-segment annual bar (committed gold / pipeline gold-40 / available cream), three numbers (committed hrs+%, available hrs+%, logged this week), conditional flags (member over capacity, project strains a month). One click opens expanded modal; default tab = Timeline unless Comfortable (then Overview).
+**Financial-data audit**: I'll grep for rate/margin/cost components and confirm the team role can't reach any page that renders them. Project detail page already conditionally renders; I'll add explicit role gating to hide dollar figures, scope-creep $$, profitability, owner comp, and other members' time entries — leaving phase names + status badges + their own entries + Log Time visible.
 
-## Expanded shell
+## Part 7 — Resend invitation in Settings → Team
+For each `team_invitations` row with `accepted_at IS NULL`:
+- Badge "Invited · pending" (gold muted) + "Invited X days ago"
+- "Resend invitation" link → server fn `resendInvitation({ id })` regenerates token, resets expiry to now+7d, re-sends email, toast *"Invitation resent to [email]."*
 
-Reuse the existing `FullViewDialog` (wide). Header keeps "Firm Capacity" + status pill. Tabs use shadcn `Tabs`. Active tab persisted to `sessionStorage["capacity:tab"]`.
+For accepted members: green "Active · joined [date]" badge, no resend.
 
-## Overview tab (Part 4)
+## Open questions before I build
 
-Keep the current planned-capacity / billable-vs-non-billable / revenue blocks. **Add**: annual capacity stacked bar with 4 segments + legend with dollar potential; four key stat blocks (Open / Committed / Pipeline / At your rate $).
+1. **Email domain**: have you completed the Lovable email domain setup for this project? If not, I'll trigger the setup dialog first — invitation DB records still work but actual email delivery requires verified DNS.
+2. **Settings split**: OK to keep `/settings` as one page with a team-role view that shows only profile fields (simpler), or do you want me to split into `/settings/profile`, `/settings/team`, `/settings/billing` sub-routes (matches your spec literally, more refactor)?
+3. **Email-less invitations**: spec says "If email field is filled" → send email. If a principal adds a member without email, we just save the record with no invite. Confirming that's intended (record exists for capacity planning, no email).
 
-## Timeline tab (Part 5) — the main work
-
-Five sections built to the editorial spec (Cormorant Garamond for display, Jost for UI, color tokens charcoal/gold/cream/success/terra). No card outlines on section interiors.
-
-- **A. Framing** — eyebrow, italic headline, subline, status row.
-- **B. Weekly pressure chart** — custom flex-row bars (no chart lib), 16 weeks, stacked pipeline-over-committed, dashed target line, zone labels, week labels, legend.
-- **C. Project timeline** — Gantt-style rows from active projects with start/end, sorted by start. Six-month window.
-- **D. Open windows** — up to 3 cards generated from `openWindows`; classification colors + auto descriptions. Hidden entirely when <4 weeks forward project data.
-- **E. What-if tool** — hours input + start-window select (populated from windows; "ASAP" first); result block with three states; SOP template chips below pre-fill hours.
-
-## Team tab (Part 6)
-
-Guarded by `RoleGuard allow={["principal","admin"]}`. Member cards (color dot, target, mini bar, this-week stats), team totals bar, utilization table with row-border classification.
-
-## Graceful degradation (Part 7)
-
-Implemented as branches in each component:
-- No `target_billable_hrs_per_week` → all tabs replaced by single CTA card linking to `/setup`.
-- Pressure chart: empty/projects-missing/phases-missing variants with inline notes.
-- Project timeline: split list of dateless active projects with edit links.
-- Open windows hidden when insufficient; one-line hint shown in its place.
-- What-if collapses to hours-only + annual % when no windows.
-- Pipeline simply absent when zero rows.
-
-## Progressive prompts (Part 8)
-
-Add a small `useDismissiblePrompt(key)` hook backed by `localStorage["sightline:prompt-dismissed:<key>"]` + auto-dismiss when underlying data exists. Wire the specific prompts called out in spec at: dashboard header (cost setup), BvA tile (Foundation log-hours), collapsed capacity tile (no timelines), Timeline tab (phases missing, pipeline missing), project detail (no dates / no phases), time calendar (first-week sidebar). Each prompt is one line, links to the right place, never repeats.
-
-## Out of scope / explicitly skipped
-
-- No new routes, no edge functions, no migrations.
-- Existing BvA / Rate / Scenario / Knowledge tiles untouched.
-- Sightline project-detail $-scrubbing (separate pending question) untouched.
-
-## Verification
-
-- Build/typecheck (auto).
-- Manual: open dashboard → expand tile → check three tabs render with seed data; toggle a project's `start_date` null to confirm degradation; clear `target_billable_hrs_per_week` to confirm setup CTA.
+Reply "go" with answers to 1–3 (or "go, your call on 2") and I'll implement everything in one pass.
