@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
+import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
@@ -323,6 +324,15 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     mutationFn: (status: Status) => statusFn({ data: { id, status } }),
     onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["sightline-list"] }); },
   });
+  // Moment 3 — intercept "completed" status changes to show summary first.
+  const [pendingClose, setPendingClose] = useState(false);
+  const onStatusChange = (v: Status) => {
+    if (v === "completed" && project?.status !== "completed") {
+      setPendingClose(true);
+      return;
+    }
+    statusMut.mutate(v);
+  };
 
   // Tab state
   const [tab, setTab] = useState<"overview" | "phases" | "timelog">("overview");
