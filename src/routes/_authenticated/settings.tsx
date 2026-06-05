@@ -8,6 +8,7 @@ import {
   updateFirm,
   listTeam,
   inviteTeamMember,
+  resendInvitation,
   listActivityGroups,
   addActivityGroup,
   deleteActivityGroup,
@@ -592,6 +593,7 @@ function TeamTab() {
   const list = useServerFn(listTeam);
   const invite = useServerFn(inviteTeamMember);
   const update = useServerFn(updateTeamMember);
+  const resend = useServerFn(resendInvitation);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -790,6 +792,11 @@ function TeamTab() {
                 <div className="text-xs text-ch/50">{m.email} · {m.role}</div>
               </button>
               <div className="flex items-center gap-4">
+                {m.accepted_at && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-emerald-700">
+                    Active · joined {new Date(m.accepted_at).toLocaleDateString()}
+                  </span>
+                )}
                 <div className="text-right text-xs text-ch/60">
                   <div>{m.billable_rate ? `$${m.billable_rate}/hr billed` : "—"}</div>
                   <div className="text-ch/50">
@@ -802,15 +809,41 @@ function TeamTab() {
               </div>
             </div>
           ))}
-          {data?.invites?.map((i) => (
-            <div key={i.id} className="flex items-center justify-between px-5 py-3 bg-cream/40">
-              <div>
-                <div className="text-sm font-medium text-ch">{i.name || i.email}</div>
-                <div className="text-xs text-ch/50">{i.email} · {i.role} · pending</div>
+          {data?.invites?.map((i) => {
+            const days = i.invited_at
+              ? Math.max(0, Math.floor((Date.now() - new Date(i.invited_at).getTime()) / 86400000))
+              : 0;
+            return (
+              <div key={i.id} className="flex items-center justify-between px-5 py-3 bg-cream/40">
+                <div>
+                  <div className="text-sm font-medium text-ch">{i.name || i.email}</div>
+                  <div className="text-xs text-ch/50">
+                    {i.email} · {i.role} · Invited {days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex items-center rounded-full bg-goldp px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-ch/70">
+                    Invited · pending
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const r = await resend({ data: { id: i.id } });
+                        toast.success(`Invitation resent to ${r.email}.`);
+                        qc.invalidateQueries({ queryKey: ["team"] });
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Could not resend.");
+                      }
+                    }}
+                    className="text-xs text-gold hover:underline"
+                  >
+                    Resend invitation
+                  </button>
+                </div>
               </div>
-              <div className="text-xs text-ch/50">Invited</div>
-            </div>
-          ))}
+            );
+          })}
           {!data?.members?.length && !data?.invites?.length && (
             <div className="px-5 py-8 text-center text-sm text-ch/50">No team members yet.</div>
           )}

@@ -929,6 +929,7 @@ export type Database = {
           expected_hrs_per_week: number | null
           firm_id: string
           id: string
+          invite_token_expiry: string
           invited_at: string
           invited_by: string
           name: string | null
@@ -945,6 +946,7 @@ export type Database = {
           expected_hrs_per_week?: number | null
           firm_id: string
           id?: string
+          invite_token_expiry?: string
           invited_at?: string
           invited_by: string
           name?: string | null
@@ -961,6 +963,7 @@ export type Database = {
           expected_hrs_per_week?: number | null
           firm_id?: string
           id?: string
+          invite_token_expiry?: string
           invited_at?: string
           invited_by?: string
           name?: string | null

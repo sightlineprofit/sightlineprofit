@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { markWelcomed } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { useState } from "react";
+import { Calendar, Folder, BookOpen } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/welcome")({
   head: () => ({ meta: [{ title: "Welcome — Sightline" }] }),
@@ -50,32 +51,55 @@ function WelcomePage() {
 
   return (
     <div className="min-h-[80vh] bg-cream">
-      <div className="mx-auto max-w-2xl px-6 py-24 text-center">
+      <div className="mx-auto max-w-4xl px-6 py-20">
         <p className="text-xs uppercase tracking-[0.28em] text-gold">Welcome</p>
-        <h1
-          className="mt-6 text-5xl leading-tight tracking-tight text-ch"
-          style={{ fontFamily: '"Cormorant Garamond", serif' }}
-        >
-          Welcome to {data.firm?.name ?? "your firm"} on Sightline.
+        <h1 className="mt-4 text-ch" style={{ fontFamily: '"Cormorant Garamond", serif', fontSize: 28, fontWeight: 400 }}>
+          Welcome to {data.firm?.name ?? "your firm"}
         </h1>
-        <p
-          className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-ch/70"
-          style={{ fontFamily: "Jost, sans-serif" }}
-        >
-          You have access to your time calendar, your assigned projects, and
-          the knowledge base. Your firm principal manages the financial
-          settings.
+        <p className="mt-3" style={{ fontFamily: "Jost, sans-serif", fontSize: 13, fontWeight: 300, color: "#777" }}>
+          Here's what you have access to and how to get started.
         </p>
-        <button
-          type="button"
-          onClick={go}
-          disabled={going}
-          className="mt-10 inline-flex items-center gap-2 rounded-md bg-gold px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-gold/90 disabled:opacity-60"
-          style={{ fontFamily: "Jost, sans-serif" }}
+
+        <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <AccessCard icon={<Calendar className="h-5 w-5 text-gold" />} title="Log your time"
+            body="Use the time calendar to log hours against projects. Your principal can see all entries — log honestly and often." />
+          <AccessCard icon={<Folder className="h-5 w-5 text-gold" />} title="Your projects"
+            body="You'll see projects you've been assigned to. You can view phase status and log time directly from a project." />
+          <AccessCard icon={<BookOpen className="h-5 w-5 text-gold" />} title="Learn the platform"
+            body="Find articles and guidance on using Sightline in the knowledge base." />
+        </div>
+
+        <div
+          className="mt-8 rounded-[3px] px-3.5 py-3"
+          style={{ background: "var(--goldp, #F5EDD6)", borderLeft: "2px solid var(--gold)" }}
         >
-          {going ? "Loading…" : "Go to my calendar →"}
-        </button>
+          <p style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 300, color: "#777", lineHeight: 1.6 }}>
+            Financial information about the firm — rates, costs, revenue, and margins — is not part of your view. This is by design. If you have questions about project budgets or billing, speak with your firm principal directly.
+          </p>
+        </div>
+
+        <div className="mt-10">
+          <button
+            type="button"
+            onClick={go}
+            disabled={going}
+            className="inline-flex items-center gap-2 rounded-md bg-gold px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-gold/90 disabled:opacity-60"
+            style={{ fontFamily: "Jost, sans-serif" }}
+          >
+            {going ? "Loading…" : "Go to my calendar →"}
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function AccessCard({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-white p-5">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-goldp">{icon}</div>
+      <div className="text-ch" style={{ fontFamily: '"Cormorant Garamond", serif', fontSize: 18 }}>{title}</div>
+      <p className="mt-2" style={{ fontFamily: "Jost, sans-serif", fontSize: 12, fontWeight: 300, color: "#777", lineHeight: 1.55 }}>{body}</p>
     </div>
   );
 }

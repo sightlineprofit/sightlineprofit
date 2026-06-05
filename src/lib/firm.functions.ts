@@ -236,11 +236,14 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("firm_id, role")
+      .select("firm_id, role, name, email")
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(profile.role)) throw new Error("Not allowed");
+    // Fresh token + 7-day expiry on every (re)invite
+    const newToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const expiry = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     const { data: row, error } = await supabase
       .from("team_invitations")
       .upsert(
@@ -255,13 +258,252 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
           weeks_per_year: data.weeks_per_year ?? null,
           billable_pct: data.billable_pct ?? null,
           invited_by: userId,
+          token: newToken,
+          invite_token_expiry: expiry,
+          invited_at: new Date().toISOString(),
+          accepted_at: null,
         },
         { onConflict: "firm_id,email" },
       )
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+
+    // Fire off invitation email (async, non-blocking on failure) +
+    // log to webhook_log so Ivorey.io / observability has a record.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ data: firm }] = await Promise.all([
+      supabaseAdmin.from("firms").select("name").eq("id", profile.firm_id).single(),
+    ]);
+    await supabaseAdmin.from("webhook_log").insert({
+      event_tag: "team-invite",
+      firm_id: profile.firm_id,
+      recipient_email: data.email,
+      payload: {
+        invitation_id: row.id,
+        token: newToken,
+        role: data.role,
+        firm_name: firm?.name ?? null,
+        principal_name: profile.name ?? profile.email,
+        principal_email: profile.email,
+        member_name: data.name ?? null,
+      },
+      status: "pending",
+    });
+    try {
+      await sendInvitationEmail({
+        to: data.email,
+        memberName: data.name ?? null,
+        principalName: profile.name || profile.email,
+        firmName: firm?.name ?? "their studio",
+        role: data.role,
+        token: newToken,
+      });
+    } catch (e) {
+      // Email infrastructure may not be wired yet — record was saved, token is valid.
+      console.warn("[inviteTeamMember] email send failed:", e);
+    }
     return row;
+  });
+
+// ─────────────── Invitation: token validation + acceptance + resend ───────────────
+
+async function sendInvitationEmail(args: {
+  to: string;
+  memberName: string | null;
+  principalName: string;
+  firmName: string;
+  role: string;
+  token: string;
+}) {
+  // Best-effort send via Lovable's transactional email route.
+  // If the route hasn't been scaffolded yet (no email infra), this no-ops.
+  const url = process.env.PUBLIC_APP_URL || "";
+  if (!url) return;
+  try {
+    const res = await fetch(`${url}/lovable/email/transactional/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
+      },
+      body: JSON.stringify({
+        templateName: "team-invitation",
+        recipientEmail: args.to,
+        idempotencyKey: `team-invite-${args.token}`,
+        templateData: args,
+      }),
+    });
+    if (!res.ok) throw new Error(`email send ${res.status}`);
+  } catch (e) {
+    throw e;
+  }
+}
+
+export const validateInviteToken = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ token: z.string().min(8).max(200) }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: inv } = await supabaseAdmin
+      .from("team_invitations")
+      .select("id, firm_id, email, role, name, invite_token_expiry, accepted_at, invited_by")
+      .eq("token", data.token)
+      .maybeSingle();
+    if (!inv) return { status: "invalid" as const };
+    if (inv.accepted_at) return { status: "accepted" as const };
+    const expired = new Date(inv.invite_token_expiry as unknown as string) < new Date();
+    const [{ data: firm }, { data: principal }] = await Promise.all([
+      supabaseAdmin.from("firms").select("name").eq("id", inv.firm_id).single(),
+      supabaseAdmin.from("profiles").select("name, email").eq("id", inv.invited_by).maybeSingle(),
+    ]);
+    const meta = {
+      firmName: firm?.name ?? "your firm",
+      principalName: principal?.name || principal?.email || "your principal",
+      email: inv.email,
+      name: inv.name,
+      role: inv.role,
+    };
+    if (expired) return { status: "expired" as const, ...meta };
+    return { status: "valid" as const, ...meta };
+  });
+
+const acceptSchema = z.object({
+  token: z.string().min(8).max(200),
+  password: z.string().min(8).max(200),
+  name: z.string().trim().min(1).max(120),
+});
+
+export const acceptInvite = createServerFn({ method: "POST" })
+  .inputValidator((d) => acceptSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: inv, error: invErr } = await supabaseAdmin
+      .from("team_invitations")
+      .select("*")
+      .eq("token", data.token)
+      .maybeSingle();
+    if (invErr || !inv) throw new Error("Invalid invitation");
+    if (inv.accepted_at) throw new Error("Invitation already used");
+    if (new Date(inv.invite_token_expiry as unknown as string) < new Date()) {
+      throw new Error("Invitation expired");
+    }
+
+    // Create the auth user
+    const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+      email: inv.email,
+      password: data.password,
+      email_confirm: true,
+      user_metadata: { name: data.name },
+    });
+    if (createErr || !created.user) throw new Error(createErr?.message ?? "Could not create account");
+
+    const newUserId = created.user.id;
+
+    // Upsert profile (handle_new_user trigger may have created a row already)
+    const { error: profErr } = await supabaseAdmin
+      .from("profiles")
+      .upsert(
+        {
+          id: newUserId,
+          email: inv.email,
+          name: data.name,
+          firm_id: inv.firm_id,
+          role: inv.role,
+          billable_rate: inv.billable_rate,
+          cost_rate: inv.cost_rate,
+          expected_hrs_per_week: inv.expected_hrs_per_week,
+          weeks_per_year: inv.weeks_per_year,
+          billable_pct: inv.billable_pct,
+          invited_at: inv.invited_at,
+          accepted_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+    if (profErr) throw new Error(profErr.message);
+
+    // Mark invitation accepted
+    await supabaseAdmin
+      .from("team_invitations")
+      .update({ accepted_at: new Date().toISOString() })
+      .eq("id", inv.id);
+
+    // Webhook log
+    await supabaseAdmin.from("webhook_log").insert({
+      event_tag: "team-member-onboarded",
+      firm_id: inv.firm_id,
+      recipient_email: inv.email,
+      payload: { invitation_id: inv.id, user_id: newUserId, role: inv.role },
+      status: "pending",
+    });
+
+    return { ok: true, email: inv.email };
+  });
+
+export const resendInvitation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role, name, email")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: inv } = await supabaseAdmin
+      .from("team_invitations")
+      .select("*")
+      .eq("id", data.id)
+      .eq("firm_id", me.firm_id)
+      .maybeSingle();
+    if (!inv) throw new Error("Invitation not found");
+
+    const newToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const expiry = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    await supabaseAdmin
+      .from("team_invitations")
+      .update({
+        token: newToken,
+        invite_token_expiry: expiry,
+        invited_at: new Date().toISOString(),
+      })
+      .eq("id", inv.id);
+
+    const { data: firm } = await supabaseAdmin
+      .from("firms")
+      .select("name")
+      .eq("id", me.firm_id)
+      .single();
+    await supabaseAdmin.from("webhook_log").insert({
+      event_tag: "team-invite",
+      firm_id: me.firm_id,
+      recipient_email: inv.email,
+      payload: {
+        invitation_id: inv.id,
+        token: newToken,
+        role: inv.role,
+        firm_name: firm?.name ?? null,
+        principal_name: me.name ?? me.email,
+        resent: true,
+      },
+      status: "pending",
+    });
+    try {
+      await sendInvitationEmail({
+        to: inv.email,
+        memberName: inv.name,
+        principalName: me.name || me.email,
+        firmName: firm?.name ?? "their studio",
+        role: inv.role,
+        token: newToken,
+      });
+    } catch (e) {
+      console.warn("[resendInvitation] email send failed:", e);
+    }
+    return { ok: true, email: inv.email };
   });
 
 export const completeOnboarding = createServerFn({ method: "POST" })
@@ -308,7 +550,7 @@ export const listTeam = createServerFn({ method: "GET" })
         .order("created_at", { ascending: true }),
       supabase
         .from("team_invitations")
-        .select("id, name, email, role, billable_rate, cost_rate, accepted_at, invited_at")
+        .select("id, name, email, role, billable_rate, cost_rate, accepted_at, invited_at, invite_token_expiry")
         .eq("firm_id", profile.firm_id)
         .is("accepted_at", null)
         .order("invited_at", { ascending: false }),
