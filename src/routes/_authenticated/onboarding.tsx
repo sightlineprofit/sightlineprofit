@@ -443,13 +443,20 @@ function Row({ children }: { children: React.ReactNode }) {
 }
 
 function Field({
-  label, value, onChange, prefix, suffix, type = "text",
+  label, value, onChange, prefix, suffix, type = "text", tip, helper,
 }: {
   label: string; value: string; onChange: (v: string) => void; prefix?: string; suffix?: string; type?: string;
+  tip?: { term: string; definition: string; why?: string };
+  helper?: string;
 }) {
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      <FieldLabel>
+        <span className="inline-flex items-center gap-1.5">
+          {label}
+          {tip && <InfoTip term={tip.term} definition={tip.definition} why={tip.why} />}
+        </span>
+      </FieldLabel>
       <div className="relative">
         {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ch/40">{prefix}</span>}
         <input
@@ -460,6 +467,14 @@ function Field({
         />
         {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-ch/40">{suffix}</span>}
       </div>
+      {helper && (
+        <p
+          className="mt-1"
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 300, color: "#777", lineHeight: 1.6 }}
+        >
+          {helper}
+        </p>
+      )}
     </div>
   );
 }
