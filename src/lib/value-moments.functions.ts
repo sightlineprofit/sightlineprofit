@@ -16,7 +16,6 @@ export const dismissRateInsight = createServerFn({ method: "POST" })
     if (!profile?.firm_id) throw new Error("No firm");
     const { error } = await supabase
       .from("firm_config")
-      // @ts-expect-error generated types may not yet include rate_insight_shown
       .update({ rate_insight_shown: true })
       .eq("firm_id", profile.firm_id);
     if (error) throw new Error(error.message);
@@ -108,7 +107,6 @@ export const getAnnualSummary = createServerFn({ method: "GET" })
       if (config) {
         await supabase
           .from("firm_config")
-          // @ts-expect-error generated types
           .update({ aligned_rate_at_signup: alignedAtSignup })
           .eq("firm_id", profile.firm_id);
       }
