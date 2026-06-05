@@ -550,7 +550,7 @@ export const listTeam = createServerFn({ method: "GET" })
         .order("created_at", { ascending: true }),
       supabase
         .from("team_invitations")
-        .select("id, name, email, role, billable_rate, cost_rate, accepted_at, invited_at")
+        .select("id, name, email, role, billable_rate, cost_rate, accepted_at, invited_at, invite_token_expiry")
         .eq("firm_id", profile.firm_id)
         .is("accepted_at", null)
         .order("invited_at", { ascending: false }),
