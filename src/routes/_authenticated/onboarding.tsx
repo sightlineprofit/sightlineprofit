@@ -159,7 +159,12 @@ function Onboarding() {
         });
       }
       for (const t of team) {
-        await sendInvite({ data: t });
+        // Invitations are already sent immediately when a member is added in
+        // step 4. If the user added a member just before clicking Finish (with
+        // a non-empty form), there's nothing left to send here.
+        if (!sentInvites.includes(t.email)) {
+          try { await sendInvite({ data: t }); } catch { /* surfaced earlier */ }
+        }
       }
       toast.success("Studio set up. Welcome to Sightline.");
       nav({ to: "/dashboard" });
@@ -223,11 +228,42 @@ function Onboarding() {
                 <p className="mt-1 text-sm text-ch/60">Available capacity vs. realistic billable time.</p>
               </header>
               <Row>
-                <Field label="Available hours / week" value={availHrs} onChange={setAvailHrs} />
-                <Field label="Target billable hours / week" value={billHrs} onChange={setBillHrs} />
+                <Field
+                  label="Available hours / week"
+                  value={availHrs}
+                  onChange={setAvailHrs}
+                  tip={{
+                    term: "Available hours / week",
+                    definition:
+                      "The total hours you want to work each week — design, admin, client calls, business development, all of it. This is your full working week, not just billable hours. Be realistic rather than aspirational.",
+                  }}
+                  helper="If your typical week is 40 hours, enter 40. This sets the container your billable time lives inside."
+                />
+                <Field
+                  label="Target billable hours / week"
+                  value={billHrs}
+                  onChange={setBillHrs}
+                  tip={{
+                    term: "Target billable hours / week",
+                    definition:
+                      "This number drives your aligned rate. Fewer billable hours means each hour carries more of the cost load, which raises your floor. Enter the number you actually hit most weeks — not your best week or your goal. Overestimating here produces a rate that looks right but won't hold up.",
+                  }}
+                  helper="Most designers bill 60–75% of their available hours once admin, business development, and non-client time are accounted for. If you work 40 hours, a realistic target is often 24–30 billable hours."
+                />
               </Row>
               <Row>
-                <Field label="Target gross margin" suffix="%" value={targetMargin} onChange={setTargetMargin} />
+                <Field
+                  label="Target gross margin"
+                  suffix="%"
+                  value={targetMargin}
+                  onChange={setTargetMargin}
+                  tip={{
+                    term: "Target gross margin",
+                    definition:
+                      "This builds your profit target into your aligned rate. At 30%, every $100 you bill is designed to keep $30 as profit and use $70 to cover costs. A higher target means a higher aligned rate. A typical range for design firms is 25–40%.",
+                  }}
+                  helper="Your aligned rate is calculated so that billing at exactly that rate hits this target. Start with 30% if you are unsure — you can adjust this at any time and your rate updates immediately."
+                />
                 <div />
               </Row>
             </div>
@@ -286,6 +322,12 @@ function Onboarding() {
               <header>
                 <h2 className="font-display text-2xl">Your team</h2>
                 <p className="mt-1 text-sm text-ch/60">Optional. You can add team members later from settings.</p>
+                <p
+                  className="mt-2 italic"
+                  style={{ fontFamily: "Jost, sans-serif", fontSize: 10, fontWeight: 400, color: "#aaa" }}
+                >
+                  Financial details are for your planning only and are never shown to the team member.
+                </p>
               </header>
 
               {team.length > 0 && (
@@ -340,6 +382,16 @@ function Onboarding() {
                   </div>
                   <button className={`${ghostBtnClass} w-auto`} onClick={addTeamLocal} type="button">Add team member</button>
                 </div>
+                {sentInvites.length > 0 && (
+                  <div
+                    className="pt-3 text-xs"
+                    style={{ fontFamily: "Jost, sans-serif", color: "#777", lineHeight: 1.6 }}
+                  >
+                    Invitation sent to{" "}
+                    <span className="text-ch">{sentInvites[sentInvites.length - 1]}</span>. They'll receive
+                    an email with instructions to set up their account.
+                  </div>
+                )}
               </div>
             </div>
           )}
