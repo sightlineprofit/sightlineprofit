@@ -792,6 +792,11 @@ function TeamTab() {
                 <div className="text-xs text-ch/50">{m.email} · {m.role}</div>
               </button>
               <div className="flex items-center gap-4">
+                {m.accepted_at && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-emerald-700">
+                    Active · joined {new Date(m.accepted_at).toLocaleDateString()}
+                  </span>
+                )}
                 <div className="text-right text-xs text-ch/60">
                   <div>{m.billable_rate ? `$${m.billable_rate}/hr billed` : "—"}</div>
                   <div className="text-ch/50">
