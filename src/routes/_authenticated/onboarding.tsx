@@ -10,6 +10,7 @@ import {
   inviteTeamMember,
 } from "@/lib/firm.functions";
 import { FieldLabel, inputClass, primaryBtnClass, ghostBtnClass } from "@/components/auth/AuthShell";
+import { InfoTip } from "@/components/dashboard/InfoTip";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({ meta: [{ title: "Set up your studio — Sightline" }] }),
@@ -85,6 +86,7 @@ function Onboarding() {
   }, [tCost, tHrs]);
 
   const [saving, setSaving] = useState(false);
+  const [sentInvites, setSentInvites] = useState<string[]>([]);
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
   const back = () => setStep((s) => Math.max(s - 1, 0));
@@ -105,7 +107,33 @@ function Onboarding() {
       toast.error("Name and email required.");
       return;
     }
-    setTeam((arr) => [
+    const member: TeamDraft = {
+      name: tName.trim(),
+      email: tEmail.trim().toLowerCase(),
+      role: tRole,
+      billable_rate: Number(tBill) || 0,
+      cost_rate: Number(tCost) || 0,
+      expected_hrs_per_week: Number(tHrs) || 0,
+      weeks_per_year: Number(tWeeks) || 0,
+      billable_pct: Number(tPct) || 0,
+    };
+    setTeam((arr) => [...arr, member]);
+    // Fire invitation email immediately
+    sendInvite({ data: member })
+      .then(() => {
+        setSentInvites((s) => [...s, member.email]);
+        toast.success(`Invitation sent to ${member.email}`);
+      })
+      .catch((e) => {
+        toast.error(
+          e instanceof Error ? e.message : `Could not send invitation to ${member.email}`,
+        );
+      });
+    setTName(""); setTEmail(""); setTBill("125"); setTCost("45"); setTHrs("40"); setTWeeks("48"); setTPct("75");
+  };
+
+  // Legacy unused reference removed (placeholder to keep diff valid)
+  const _unused = () => [
       ...arr,
       {
         name: tName.trim(),
@@ -117,9 +145,7 @@ function Onboarding() {
         weeks_per_year: Number(tWeeks) || 0,
         billable_pct: Number(tPct) || 0,
       },
-    ]);
-    setTName(""); setTEmail(""); setTBill("125"); setTCost("45"); setTHrs("40"); setTWeeks("48"); setTPct("75");
-  };
+    ];
 
   const finish = async () => {
     setSaving(true);
