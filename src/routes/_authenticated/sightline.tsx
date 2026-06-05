@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
+import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
@@ -323,6 +324,15 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     mutationFn: (status: Status) => statusFn({ data: { id, status } }),
     onSuccess: () => { invalidate(); qc.invalidateQueries({ queryKey: ["sightline-list"] }); },
   });
+  // Moment 3 — intercept "completed" status changes to show summary first.
+  const [pendingClose, setPendingClose] = useState(false);
+  const onStatusChange = (v: Status) => {
+    if (v === "completed" && project?.status !== "completed") {
+      setPendingClose(true);
+      return;
+    }
+    statusMut.mutate(v);
+  };
 
   // Tab state
   const [tab, setTab] = useState<"overview" | "phases" | "timelog">("overview");
@@ -485,6 +495,26 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
       text: `You've used ${totalPct.toFixed(0)}% of your total project budget. ${formatHours(hoursRemaining)} remaining before you're at scope.`,
     });
   }
+  // Moment 2 — append dollar-figure projection line on the existing warning.
+  if ((isOverBudget || isHeadsUp) && scopedHrs > 0 && actualHrs > 0) {
+    // Burn rate = actual/scoped used so far; project remaining work proportionally.
+    const burnRatio = actualHrs / scopedHrs; // > 0
+    const projectedTotalHrs = burnRatio >= 1
+      ? actualHrs * 1.1 // already over — assume modest further drift
+      : actualHrs / Math.max(0.5, burnRatio); // extrapolate
+    const projectedOverHrs = Math.max(0, projectedTotalHrs - scopedHrs);
+    if (isFixedFee && fixedFee > 0 && projectedTotalHrs > 0) {
+      warnings.push({
+        tone: "terra",
+        text: `At current pace this project will use ${projectedOverHrs.toFixed(1)} hrs beyond scope. These hours reduce your effective rate to ${fmtUsd(fixedFee / projectedTotalHrs)}/hr.`,
+      });
+    } else if (projectedOverHrs > 0 && projectRate > 0) {
+      warnings.push({
+        tone: "terra",
+        text: `At current pace: ${projectedOverHrs.toFixed(1)} hrs over scope · Unrecovered time value: ${fmtUsd(projectedOverHrs * projectRate)}.`,
+      });
+    }
+  }
   // Tier 1 (downgraded): non-billable dominance only when total hrs >= 4 and 0 billable.
   if (totalLogged >= 4 && billableHrs === 0) {
     warnings.push({ tone: "gold", text: "All logged time on this project is non-billable." });
@@ -612,7 +642,7 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
               {project.start_date && project.end_date && ` · ${project.start_date} → ${project.end_date}`}
             </p>
           </div>
-          <Select value={project.status} onValueChange={(v) => statusMut.mutate(v as Status)}>
+          <Select value={project.status} onValueChange={(v) => onStatusChange(v as Status)}>
             <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
@@ -1193,6 +1223,17 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Moment 3 — project close summary */}
+      <ProjectCloseSummary
+        projectId={id}
+        open={pendingClose}
+        onClose={() => setPendingClose(false)}
+        onConfirm={() => {
+          setPendingClose(false);
+          statusMut.mutate("completed");
+        }}
+        onViewBreakdown={() => setPendingClose(false)}
+      />
     </div>
   );
 }

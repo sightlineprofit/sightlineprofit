@@ -38,6 +38,7 @@ import { Route as AuthenticatedDashboardKnowledgeRouteImport } from './routes/_a
 import { Route as AuthenticatedDashboardHealthRouteImport } from './routes/_authenticated/dashboard.health'
 import { Route as AuthenticatedDashboardGrowthRouteImport } from './routes/_authenticated/dashboard.growth'
 import { Route as AuthenticatedDashboardBvaRouteImport } from './routes/_authenticated/dashboard.bva'
+import { Route as AuthenticatedDashboardAnnualSummaryRouteImport } from './routes/_authenticated/dashboard.annual-summary'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -195,6 +196,12 @@ const AuthenticatedDashboardBvaRoute =
     path: '/bva',
     getParentRoute: () => AuthenticatedDashboardRoute,
   } as any)
+const AuthenticatedDashboardAnnualSummaryRoute =
+  AuthenticatedDashboardAnnualSummaryRouteImport.update({
+    id: '/annual-summary',
+    path: '/annual-summary',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 const LovableEmailQueueProcessRoute =
   LovableEmailQueueProcessRouteImport.update({
     id: '/lovable/email/queue/process',
@@ -222,6 +229,7 @@ export interface FileRoutesByFullPath {
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/welcome': typeof AuthenticatedWelcomeRoute
+  '/dashboard/annual-summary': typeof AuthenticatedDashboardAnnualSummaryRoute
   '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
   '/dashboard/health': typeof AuthenticatedDashboardHealthRoute
@@ -253,6 +261,7 @@ export interface FileRoutesByTo {
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/welcome': typeof AuthenticatedWelcomeRoute
+  '/dashboard/annual-summary': typeof AuthenticatedDashboardAnnualSummaryRoute
   '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
   '/dashboard/health': typeof AuthenticatedDashboardHealthRoute
@@ -286,6 +295,7 @@ export interface FileRoutesById {
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/_authenticated/welcome': typeof AuthenticatedWelcomeRoute
+  '/_authenticated/dashboard/annual-summary': typeof AuthenticatedDashboardAnnualSummaryRoute
   '/_authenticated/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/_authenticated/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
   '/_authenticated/dashboard/health': typeof AuthenticatedDashboardHealthRoute
@@ -319,6 +329,7 @@ export interface FileRouteTypes {
     | '/sop-library'
     | '/time-calendar'
     | '/welcome'
+    | '/dashboard/annual-summary'
     | '/dashboard/bva'
     | '/dashboard/growth'
     | '/dashboard/health'
@@ -350,6 +361,7 @@ export interface FileRouteTypes {
     | '/sop-library'
     | '/time-calendar'
     | '/welcome'
+    | '/dashboard/annual-summary'
     | '/dashboard/bva'
     | '/dashboard/growth'
     | '/dashboard/health'
@@ -382,6 +394,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
     | '/_authenticated/welcome'
+    | '/_authenticated/dashboard/annual-summary'
     | '/_authenticated/dashboard/bva'
     | '/_authenticated/dashboard/growth'
     | '/_authenticated/dashboard/health'
@@ -609,6 +622,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardBvaRouteImport
       parentRoute: typeof AuthenticatedDashboardRoute
     }
+    '/_authenticated/dashboard/annual-summary': {
+      id: '/_authenticated/dashboard/annual-summary'
+      path: '/annual-summary'
+      fullPath: '/dashboard/annual-summary'
+      preLoaderRoute: typeof AuthenticatedDashboardAnnualSummaryRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
     '/lovable/email/queue/process': {
       id: '/lovable/email/queue/process'
       path: '/lovable/email/queue/process'
@@ -620,6 +640,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedDashboardRouteChildren {
+  AuthenticatedDashboardAnnualSummaryRoute: typeof AuthenticatedDashboardAnnualSummaryRoute
   AuthenticatedDashboardBvaRoute: typeof AuthenticatedDashboardBvaRoute
   AuthenticatedDashboardGrowthRoute: typeof AuthenticatedDashboardGrowthRoute
   AuthenticatedDashboardHealthRoute: typeof AuthenticatedDashboardHealthRoute
@@ -630,6 +651,8 @@ interface AuthenticatedDashboardRouteChildren {
 
 const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
   {
+    AuthenticatedDashboardAnnualSummaryRoute:
+      AuthenticatedDashboardAnnualSummaryRoute,
     AuthenticatedDashboardBvaRoute: AuthenticatedDashboardBvaRoute,
     AuthenticatedDashboardGrowthRoute: AuthenticatedDashboardGrowthRoute,
     AuthenticatedDashboardHealthRoute: AuthenticatedDashboardHealthRoute,
@@ -722,13 +745,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

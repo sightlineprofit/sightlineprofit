@@ -1,69 +1,83 @@
-# Team Invitation & Member Access — Implementation Plan
 
-This is a large multi-part change touching schema, email infrastructure, onboarding UX, a new public route, and global role enforcement. I'm laying out the plan so you can confirm the approach (and a couple of trade-offs) before I build.
+# Value Surfacing Moments — Implementation Plan
 
-## Part 1 — Onboarding step 02 tooltips & helper text
-Mirror the helper text + ⓘ tooltips already on `/setup` Capacity & Rate onto the onboarding step 02 fields (Available hrs/wk, Target billable hrs/wk, Target gross margin). Same Jost 11px / #777 / line-height 1.6 style. Reuse existing `InfoTip` component. File: `src/routes/_authenticated/onboarding.tsx`.
+Five new display components surfacing the dollar value of insights Sightline already calculates. No existing math changes — purely additive UI driven by live data.
 
-## Part 2 — Onboarding step 04 "Your team" copy
-- Add italic note under the section title: *"Financial details are for your planning only and are never shown to the team member."*
-- On "Add team member" submit with email present: invitation email fires immediately (Part 3) and a confirmation line renders below the form: *"Invitation sent to [email]…"*
-- Existing "you can add team members later" skip note stays prominent.
+## Scope by Moment
 
-## Part 3 — Database & invitation email
-**Schema migration** on `team_invitations` (adds the missing pieces; some columns already exist):
-- `invite_token uuid unique default gen_random_uuid()`
-- `invite_token_expiry timestamptz default now() + interval '7 days'`
-- `invited_at timestamptz default now()` (exists)
-- `accepted_at timestamptz` (exists)
-- index on `invite_token`
+### Moment 1 — First Aligned Rate Insight Card
+- **Where**: Dashboard, below the rate allocation tile
+- **Trigger**: `firm_config.aligned_rate` and `firm_config.rate_billed` both set AND `firm_config.rate_insight_shown = false`
+- **DB**: Migration adds `rate_insight_shown boolean default false` to `firm_config`
+- **Dismiss**: Server fn flips flag to true; card never reappears
+- **Variants**: Gold (under-billing, shows annual gap cost) / Green (at-or-above floor, shows annual buffer)
 
-**Webhook log**: insert row with `event_tag='team-invite'` on send and `event_tag='team-member-onboarded'` on acceptance (`webhook_log` table already exists).
+### Moment 2 — Scope Warning Dollar Figure
+- **Where**: Existing 80%-of-scope warning component on the project detail page
+- **Change**: Append two lines under existing warning text
+  - T&M: projected overage hours + unrecovered dollar value (uses current burn rate)
+  - Fixed fee: projected total hours + effective rate erosion
+- **Style**: Terracotta, matches existing warning text size
+- **No new triggers** — piggybacks on the existing 80% threshold
 
-**Email infrastructure**: requires Lovable Cloud email setup. I'll:
-1. Check email domain status.
-2. If no domain configured → surface the email-setup dialog (you'll need to complete domain setup once before invitations can actually send).
-3. Run `setup_email_infra` + `scaffold_transactional_email`.
-4. Add a new template `team-invitation.tsx` with the exact subject and body copy you specified, branded with Cormorant Garamond heading + Jost body, gold CTA button.
-5. Wire `inviteTeamMember` server fn (already exists in `firm.functions.ts`) to call `sendTransactionalEmail` with `idempotencyKey = team-invite-${invitation.id}-${token}`.
+### Moment 3 — Project Close Summary Modal
+- **Where**: Project detail page status dropdown
+- **Trigger**: User changes project status to `completed` or `archived`
+- **Behavior**: Intercept status change → open modal → user confirms via "Close project" → status saves
+- **Content**: Planned vs Actual vs Variance table (Fee / Hours / Effective rate / Margin) + scope creep callout
+- **Secondary button**: "View full breakdown" closes modal, keeps user on page
 
-**Trade-off heads-up**: if you haven't set up a verified email domain yet, the templates will scaffold but actual delivery won't work until DNS verifies. The DB record + token + UI all work without that — only the email send blocks.
+### Moment 4 — Annual Value Summary
+- **Route**: New `/dashboard/annual-summary` (full-screen page under `_authenticated`)
+- **Entry points**:
+  - Settings link "View your year in Sightline"
+  - Auto-suggest banner on dashboard when within 7 days of firm's `created_at` anniversary
+- **Server fn**: `getAnnualSummary` aggregates rate progress, project outcomes, capacity decisions, investment-vs-value
+- **Sections**: Rate Progress / Project Outcomes / Capacity Decisions / Investment vs Value (with conservative-value note)
 
-## Part 4 — `/accept-invite?token=…` route
-New **public** top-level route `src/routes/accept-invite.tsx` (NOT under `_authenticated/` — invited users aren't signed in yet).
-- Loader uses a public server fn `validateInviteToken({ token })` that uses `supabaseAdmin` to look up the invitation, returns `{ status: 'valid'|'expired'|'invalid', firmName, principalName, email, name, role }`.
-- Expired → branded message: *"This invitation link has expired. Ask [firm name] to resend…"*
-- Valid → branded form: Name (prefilled), Email (locked), Password, Confirm password, gold "Create my account" CTA.
-- Submit calls `acceptInvite({ token, password, name })` server fn:
-  - `supabaseAdmin.auth.admin.createUser({ email, password, email_confirm: true })`
-  - Insert `profiles` row with `firm_id`, `role`, `name`, `accepted_at=now()`, `invited_by`, financial fields copied from invitation
-  - Delete invitation row (or null `invite_token` + set `accepted_at`)
-  - Insert `webhook_log` row `event_tag='team-member-onboarded'`
-- Then client signs in with the new credentials and navigates to `/welcome`.
+### Moment 5 — Dashboard Narrative Strip
+- **Where**: Below the KPI strip on the main dashboard
+- **Style**: Jost 12px/300, color #555, line-height 1.8, max-width 600px, cream bg, radius 4px, 14px/16px padding
+- **Logic**: Priority order — under-target → scope pressure → over-utilized → all healthy
+- **Variation**: Phrase rotation seeded by date + data hash so identical-data reloads vary wording without changing facts
 
-## Part 5 — `/welcome` (team member)
-The route `src/routes/_authenticated/welcome.tsx` already exists and matches your spec's structure. I'll update content to the three cards (Time Calendar, Projects, Knowledge Base), add the gold-tinted note about financial data not being visible, and ensure CTA routes to `/time-calendar`. `welcomed_at` flow already wired.
+## Technical Notes
 
-## Part 6 — Team-role route enforcement
-Add a layout-level role check inside `_authenticated/route.tsx` (or a new sibling layout). For `role === 'team'`:
-- Allow: `/time-calendar`, `/projects`, `/projects/$id`, `/knowledge-base`, `/settings` (profile-only view), `/welcome`.
-- Block everything else (`/dashboard*`, `/setup`, `/growth-roadmap`, `/admin`, `/settings/team`, `/settings/billing`) → `navigate('/time-calendar')` + sonner toast *"That section is managed by your firm principal."*
+**Schema changes**
+```sql
+ALTER TABLE firm_config ADD COLUMN rate_insight_shown boolean NOT NULL DEFAULT false;
+```
 
-**Settings page**: today `/settings` is a single page. I'll add a role guard inside it that, for team role, renders only a "Profile" panel (name / email / password) and hides the firm/team/billing sections — no separate `/settings/profile` route needed. If you'd rather I split into sub-routes (`/settings/profile`, `/settings/team`, `/settings/billing`), say the word.
+**New/changed server functions**
+- `dismissRateInsight()` — flips `rate_insight_shown`
+- `getProjectCloseSummary(projectId)` — variance table data
+- `getAnnualSummary()` — full-year aggregate (rate history requires we capture initial aligned_rate; we'll add `aligned_rate_at_signup numeric` to `firm_config`, backfill with current value for existing firms)
+- Existing `getDashboardData` extended with `narrativeContext` (week billable, target, rate, active scope warnings, utilization)
 
-**Financial-data audit**: I'll grep for rate/margin/cost components and confirm the team role can't reach any page that renders them. Project detail page already conditionally renders; I'll add explicit role gating to hide dollar figures, scope-creep $$, profitability, owner comp, and other members' time entries — leaving phase names + status badges + their own entries + Log Time visible.
+**New files**
+- `src/components/dashboard/RateInsightCard.tsx`
+- `src/components/dashboard/NarrativeStrip.tsx`
+- `src/components/projects/ProjectCloseSummary.tsx`
+- `src/components/projects/ScopeOverageDetail.tsx` (or inline into existing warning)
+- `src/routes/_authenticated/dashboard.annual-summary.tsx`
 
-## Part 7 — Resend invitation in Settings → Team
-For each `team_invitations` row with `accepted_at IS NULL`:
-- Badge "Invited · pending" (gold muted) + "Invited X days ago"
-- "Resend invitation" link → server fn `resendInvitation({ id })` regenerates token, resets expiry to now+7d, re-sends email, toast *"Invitation resent to [email]."*
+**Files edited**
+- `src/routes/_authenticated/dashboard.tsx` — mount RateInsightCard + NarrativeStrip
+- `src/routes/_authenticated/projects.$id.tsx` — extend warning, intercept status change
+- `src/routes/_authenticated/settings.tsx` — add "View your year in Sightline" link
+- `src/lib/dashboard.functions.ts`, `src/lib/firm.functions.ts` — new server fns
+- Migration file for `rate_insight_shown` + `aligned_rate_at_signup`
 
-For accepted members: green "Active · joined [date]" badge, no resend.
+**Design tokens**
+- Reuse existing `--gold`, `--terracotta` (already in `styles.css`), `--cream`
+- Cormorant Garamond + Jost already loaded per prior moments
 
-## Open questions before I build
+**No changes to**
+- Aligned-rate or burdened-rate calculations
+- Existing scope warning trigger threshold
+- Capacity math
+- Onboarding, invitation flow, email infra
 
-1. **Email domain**: have you completed the Lovable email domain setup for this project? If not, I'll trigger the setup dialog first — invitation DB records still work but actual email delivery requires verified DNS.
-2. **Settings split**: OK to keep `/settings` as one page with a team-role view that shows only profile fields (simpler), or do you want me to split into `/settings/profile`, `/settings/team`, `/settings/billing` sub-routes (matches your spec literally, more refactor)?
-3. **Email-less invitations**: spec says "If email field is filled" → send email. If a principal adds a member without email, we just save the record with no invite. Confirming that's intended (record exists for capacity planning, no email).
+## Open Question
 
-Reply "go" with answers to 1–3 (or "go, your call on 2") and I'll implement everything in one pass.
+Moment 4's "Annualized revenue impact of any rate increase" requires comparing the aligned rate at signup vs today. For existing firms with no historical record, I'll backfill `aligned_rate_at_signup` with the current `aligned_rate` (so the first-year delta reads $0) and let it diverge naturally going forward. Confirm or tell me to handle differently.
