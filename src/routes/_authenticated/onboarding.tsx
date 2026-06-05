@@ -132,21 +132,6 @@ function Onboarding() {
     setTName(""); setTEmail(""); setTBill("125"); setTCost("45"); setTHrs("40"); setTWeeks("48"); setTPct("75");
   };
 
-  // Legacy unused reference removed (placeholder to keep diff valid)
-  const _unused = () => [
-      ...arr,
-      {
-        name: tName.trim(),
-        email: tEmail.trim().toLowerCase(),
-        role: tRole,
-        billable_rate: Number(tBill) || 0,
-        cost_rate: Number(tCost) || 0,
-        expected_hrs_per_week: Number(tHrs) || 0,
-        weeks_per_year: Number(tWeeks) || 0,
-        billable_pct: Number(tPct) || 0,
-      },
-    ];
-
   const finish = async () => {
     setSaving(true);
     try {
