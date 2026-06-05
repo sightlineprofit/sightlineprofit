@@ -1223,6 +1223,17 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Moment 3 — project close summary */}
+      <ProjectCloseSummary
+        projectId={id}
+        open={pendingClose}
+        onClose={() => setPendingClose(false)}
+        onConfirm={() => {
+          setPendingClose(false);
+          statusMut.mutate("completed");
+        }}
+        onViewBreakdown={() => setPendingClose(false)}
+      />
     </div>
   );
 }
