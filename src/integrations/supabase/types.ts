@@ -202,6 +202,7 @@ export type Database = {
         Row: {
           accounting_basis: string
           actual_billed_rate: number | null
+          aligned_rate_at_signup: number | null
           available_hrs_per_week: number | null
           business_structure: string
           capacity_constrained_indicator: string
@@ -216,6 +217,7 @@ export type Database = {
           growth_signals: Json
           planned_activity_allocation: Json
           rate_billed: number | null
+          rate_insight_shown: boolean
           target_billable_hrs_per_week: number | null
           target_gross_margin_pct: number | null
           updated_at: string
@@ -223,6 +225,7 @@ export type Database = {
         Insert: {
           accounting_basis?: string
           actual_billed_rate?: number | null
+          aligned_rate_at_signup?: number | null
           available_hrs_per_week?: number | null
           business_structure?: string
           capacity_constrained_indicator?: string
@@ -237,6 +240,7 @@ export type Database = {
           growth_signals?: Json
           planned_activity_allocation?: Json
           rate_billed?: number | null
+          rate_insight_shown?: boolean
           target_billable_hrs_per_week?: number | null
           target_gross_margin_pct?: number | null
           updated_at?: string
@@ -244,6 +248,7 @@ export type Database = {
         Update: {
           accounting_basis?: string
           actual_billed_rate?: number | null
+          aligned_rate_at_signup?: number | null
           available_hrs_per_week?: number | null
           business_structure?: string
           capacity_constrained_indicator?: string
@@ -258,6 +263,7 @@ export type Database = {
           growth_signals?: Json
           planned_activity_allocation?: Json
           rate_billed?: number | null
+          rate_insight_shown?: boolean
           target_billable_hrs_per_week?: number | null
           target_gross_margin_pct?: number | null
           updated_at?: string
