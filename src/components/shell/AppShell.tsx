@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   LayoutDashboard,
   Calculator,
@@ -81,6 +82,25 @@ export function AppShell({ children }: { children: ReactNode }) {
   const currentRole: Role = isSuper
     ? "principal"
     : ((data?.profile?.role as Role) ?? "team");
+
+  // Team-role route enforcement: redirect blocked paths to /time-calendar with a toast.
+  useEffect(() => {
+    if (currentRole !== "team") return;
+    const allowed = [
+      "/time-calendar",
+      "/projects",
+      "/knowledge-base",
+      "/settings",
+      "/welcome",
+    ];
+    const isAllowed = allowed.some(
+      (p) => pathname === p || pathname.startsWith(p + "/"),
+    );
+    if (!isAllowed && pathname !== "/") {
+      toast.message("That section is managed by your firm principal.");
+      nav({ to: "/time-calendar", replace: true });
+    }
+  }, [pathname, currentRole, nav]);
 
   const groups: NavItem["group"][] = ["foundation", "studio", "practice", "general"];
 
