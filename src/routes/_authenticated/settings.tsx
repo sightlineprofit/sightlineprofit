@@ -98,12 +98,12 @@ function SettingsPage() {
       </div>
       {isAdmin && (
         <div className="mt-10 border-t border-border pt-6">
-          <a
-            href="/dashboard/annual-summary"
+          <Link
+            to={"/dashboard/annual-summary" as any}
             className="inline-flex items-center gap-2 text-sm text-gold hover:text-goldl"
           >
             View your year in Sightline →
-          </a>
+          </Link>
           <p className="mt-1 text-xs text-ch/50">
             A summary of rate progress, project outcomes, capacity decisions, and value identified.
           </p>
