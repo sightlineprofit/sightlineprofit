@@ -82,6 +82,7 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"health" | "margin_desc" | "margin_asc" | "recent" | "name">("health");
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
 
@@ -108,17 +109,24 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
     }
   }
 
-  const billedRate = Number(data?.config?.rate_billed) || 0;
-
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    return data.projects.filter((p) => {
+    const list = data.projects.filter((p) => {
       if (filter !== "all" && p.status !== filter) return false;
       if (!q) return true;
       return [p.name, p.client_name].filter(Boolean).some((v) => v!.toLowerCase().includes(q));
     });
-  }, [data, filter, search]);
+    const rank = (p: typeof list[number]) => marginHealthRank(marginHealthState(p.margin));
+    const remaining = (p: typeof list[number]) => (p.margin?.remaining ?? Number.NEGATIVE_INFINITY);
+    const sorted = [...list];
+    if (sortBy === "health") sorted.sort((a, b) => rank(a) - rank(b));
+    else if (sortBy === "margin_desc") sorted.sort((a, b) => remaining(b) - remaining(a));
+    else if (sortBy === "margin_asc") sorted.sort((a, b) => remaining(a) - remaining(b));
+    else if (sortBy === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === "recent") sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return sorted;
+  }, [data, filter, search, sortBy]);
 
   return (
     <ModulePage
@@ -179,6 +187,19 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
             <SelectItem value="on_hold">On hold</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+          <SelectTrigger className="w-56 bg-white">
+            <span className="mr-2 text-[10px] uppercase tracking-[0.15em] text-ch/40">Sort</span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="health">Health (default)</SelectItem>
+            <SelectItem value="margin_desc">Margin $ remaining (high → low)</SelectItem>
+            <SelectItem value="margin_asc">Margin $ remaining (low → high)</SelectItem>
+            <SelectItem value="recent">Most recent activity</SelectItem>
+            <SelectItem value="name">Project name</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -198,55 +219,152 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((p) => {
-            const scoped = p.totals.scoped;
-            const actual = p.totals.actual;
-            const pctConsumed = scoped > 0 ? (actual / scoped) * 100 : 0;
-            const health = healthColor(pctConsumed);
-            const variance = actual - scoped;
-            return (
-              <button
-                key={p.id}
-                onClick={() => onOpen(p.id)}
-                className="group flex flex-col rounded-lg border border-border bg-white p-5 text-left transition-shadow hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="font-display text-xl tracking-tight text-ch">{p.name}</h3>
-                    {p.client_name && <p className="mt-0.5 text-sm text-ch/60">{p.client_name}</p>}
-                  </div>
-                  <span className="shrink-0 rounded-full border border-border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
-                    {p.status}
-                  </span>
-                </div>
-                <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4">
-                  <Cell label="Scoped" value={formatHours(scoped)} />
-                  <Cell label="Actual" value={formatHours(actual)} />
-                  <Cell
-                    label="Variance"
-                    value={`${variance >= 0 ? "+" : ""}${formatHours(Math.abs(variance))}`}
-                    accent={variance > 0 ? "danger" : variance < 0 ? "success" : undefined}
-                  />
-                </div>
-                <div className="mt-4">
-                  <div className="flex justify-between text-[11px] text-ch/50">
-                    <span>{pctConsumed.toFixed(0)}% consumed</span>
-                    {billedRate > 0 && variance > 0 && (
-                      <span>{fmtUsd(variance * billedRate)} unscoped</span>
-                    )}
-                  </div>
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-creamd">
-                    <div
-                      className={cn("h-full transition-all", health.bar)}
-                      style={{ width: `${Math.min(100, pctConsumed)}%` }}
-                    />
-                  </div>
-                </div>
-              </button>
-            );
+            return <ProjectCard key={p.id} project={p} onOpen={onOpen} />;
           })}
         </div>
       )}
     </ModulePage>
+  );
+}
+
+type ProjectListItem = NonNullable<Awaited<ReturnType<typeof getProjectList>>>["projects"][number];
+type MarginInfo = ProjectListItem["margin"];
+type MarginHealth = "healthy" | "watch" | "at_risk" | "critical" | "none";
+
+function marginHealthState(m: MarginInfo): MarginHealth {
+  if (!m || m.mode === "none" || m.projectFee <= 0 || m.remaining == null) return "none";
+  if (m.remaining < 0) return "critical";
+  const pct = (m.remaining / m.projectFee) * 100;
+  if (pct < 10) return "critical";
+  if (pct < 20) return "at_risk";
+  if (pct < 40) return "watch";
+  return "healthy";
+}
+
+function marginHealthRank(s: MarginHealth) {
+  return { critical: 0, at_risk: 1, watch: 2, healthy: 3, none: 4 }[s];
+}
+
+const HEALTH_STYLES: Record<MarginHealth, { text: string; border: string; label: string }> = {
+  healthy: { text: "text-success", border: "border-l-success", label: "Healthy" },
+  watch: { text: "text-gold", border: "border-l-gold", label: "Watch" },
+  at_risk: { text: "text-terra", border: "border-l-terra", label: "At risk" },
+  critical: { text: "text-danger", border: "border-l-danger", label: "Critical" },
+  none: { text: "text-ch/40", border: "border-l-transparent", label: "" },
+};
+
+function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen: (id: string) => void }) {
+  const m = p.margin;
+  const state = marginHealthState(m);
+  const styles = HEALTH_STYLES[state];
+  const scoped = p.totals.scoped;
+  const actual = p.totals.actual;
+  const pctConsumed = scoped > 0 ? (actual / scoped) * 100 : 0;
+  const hrsRemaining = Math.max(0, scoped - actual);
+  const barColor = pctConsumed > 100 ? "bg-terra" : "bg-gold";
+
+  return (
+    <button
+      onClick={() => onOpen(p.id)}
+      className={cn(
+        "group flex flex-col rounded-lg border border-border border-l-2 bg-white p-5 text-left transition-shadow hover:shadow-md",
+        styles.border,
+      )}
+    >
+      {/* Row 1 — identity */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-display text-xl tracking-tight text-ch">{p.name}</h3>
+          {p.client_name && <p className="mt-0.5 text-sm text-ch/60">{p.client_name}</p>}
+        </div>
+        <span className="shrink-0 rounded-full border border-border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
+          {p.status}
+        </span>
+      </div>
+
+      {/* Row 2 — MARGIN HEADLINE */}
+      <div className="mt-5 flex items-end justify-between gap-3 border-t border-border pt-4">
+        <div className="min-w-0">
+          <div
+            className="flex items-center gap-1.5 text-[#aaa]"
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase" }}
+          >
+            {state === "critical" && (
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-danger" />
+            )}
+            Remaining margin
+          </div>
+          {state === "none" ? (
+            <>
+              <div
+                className={cn("mt-1 font-display", styles.text)}
+                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 400, lineHeight: 1.05 }}
+              >
+                —
+              </div>
+              <div
+                className="mt-0.5 text-gold"
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+              >
+                {m?.hasAnyEntry === false && m?.mode !== "none"
+                  ? "No hours logged yet — full margin available"
+                  : "Add a project fee to see margin →"}
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                className={cn("mt-1", styles.text)}
+                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 400, lineHeight: 1.05 }}
+              >
+                {fmtUsd(m!.remaining!)}
+              </div>
+              <div
+                className="mt-0.5 text-[#aaa]"
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
+              >
+                of {fmtUsd(m!.projectFee)} fee
+                {m!.usingFallbackCostRate && " · using firm rate"}
+              </div>
+            </>
+          )}
+        </div>
+        {state !== "none" && (
+          <div className="shrink-0 text-right">
+            {m!.weeklyCost > 0 ? (
+              <div
+                className={styles.text}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+              >
+                –{fmtUsd(m!.weeklyCost)} this week
+              </div>
+            ) : (
+              <div
+                className="text-[#aaa]"
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+              >
+                No activity this week
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Row 3 — Hours context (subordinate) */}
+      {scoped > 0 && (
+        <div className="mt-4">
+          <div
+            className="text-[#aaa]"
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
+          >
+            {pctConsumed.toFixed(0)}% of budget consumed · {formatHours(hrsRemaining)} remaining
+          </div>
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-creamd">
+            <div className={cn("h-full transition-all", barColor)} style={{ width: `${Math.min(100, pctConsumed)}%` }} />
+          </div>
+        </div>
+      )}
+    </button>
   );
 }
 
