@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { calc as calcFinance, type Expense, type FirmConfig } from "@/lib/finance";
 
 export const getProjectList = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -12,10 +13,18 @@ export const getProjectList = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) return { projects: [], config: null };
-    const [{ data: projects }, { data: phases }, { data: config }] = await Promise.all([
+    const [
+      { data: projects },
+      { data: phases },
+      { data: config },
+      { data: team },
+      { data: expenses },
+    ] = await Promise.all([
       supabase.from("projects").select("*").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }),
       supabase.from("project_phases").select("project_id, expected_hrs, actual_hrs"),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+      supabase.from("profiles").select("id, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
+      supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
     ]);
     const totals: Record<string, { scoped: number; actual: number }> = {};
     for (const p of phases ?? []) {
@@ -23,12 +32,89 @@ export const getProjectList = createServerFn({ method: "GET" })
       t.scoped += Number(p.expected_hrs || 0);
       t.actual += Number(p.actual_hrs || 0);
     }
+
+    const projectIds = (projects ?? []).map((p) => p.id);
+    const { data: entries } = projectIds.length
+      ? await supabase
+          .from("time_entries")
+          .select("project_id, user_id, hrs, billable, date")
+          .in("project_id", projectIds)
+      : { data: [] as Array<{ project_id: string | null; user_id: string; hrs: number; billable: boolean; date: string }> };
+
+    const costRateByUser = new Map<string, number>();
+    const billRateByUser = new Map<string, number>();
+    for (const t of team ?? []) {
+      if (t.cost_rate != null) costRateByUser.set(t.id, Number(t.cost_rate));
+      if (t.billable_rate != null) billRateByUser.set(t.id, Number(t.billable_rate));
+    }
+
+    // Firm break-even as fallback cost rate
+    const fin = calcFinance(config as FirmConfig | null, (expenses ?? []) as unknown as Expense[]);
+    const firmBreakEven = Number(fin.breakEvenRate) || 0;
+    const firmBilledRate = Number((config as { rate_billed?: number } | null)?.rate_billed) || 0;
+
+    const now = Date.now();
+    const weekAgo = now - 7 * 24 * 3600 * 1000;
+
+    type Agg = {
+      totalCost: number;
+      weeklyCost: number;
+      revenue: number;
+      hasAnyEntry: boolean;
+      usingFallbackCostRate: boolean;
+    };
+    const agg: Record<string, Agg> = {};
+    for (const e of entries ?? []) {
+      if (!e.project_id) continue;
+      const a = (agg[e.project_id] ||= {
+        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false,
+      });
+      a.hasAnyEntry = true;
+      const hrs = Number(e.hrs || 0);
+      let cr = costRateByUser.get(e.user_id);
+      if (cr == null) { cr = firmBreakEven; a.usingFallbackCostRate = true; }
+      const cost = hrs * (cr || 0);
+      a.totalCost += cost;
+      const ts = new Date(e.date).getTime();
+      if (!Number.isNaN(ts) && ts >= weekAgo) a.weeklyCost += cost;
+      if (e.billable) {
+        const br = billRateByUser.get(e.user_id) ?? firmBilledRate;
+        a.revenue += hrs * (br || 0);
+      }
+    }
+
     return {
       config,
-      projects: (projects ?? []).map((p) => ({
-        ...p,
-        totals: totals[p.id] ?? { scoped: Number(p.scoped_hrs || 0), actual: 0 },
-      })),
+      projects: (projects ?? []).map((p) => {
+        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false };
+        const fixedFee = Number((p as { fixed_fee?: number | null }).fixed_fee) || 0;
+        const scopedRate = Number(p.scoped_rate) || 0;
+        const scopedHrs = totals[p.id]?.scoped ?? Number(p.scoped_hrs || 0);
+        const mode: "fixed" | "hourly" | "none" = fixedFee > 0 ? "fixed" : scopedRate > 0 ? "hourly" : "none";
+        let projectFee = 0;
+        let marginRemaining: number | null = null;
+        if (mode === "fixed") {
+          projectFee = fixedFee;
+          marginRemaining = projectFee - a.totalCost;
+        } else if (mode === "hourly") {
+          projectFee = scopedRate * scopedHrs;
+          marginRemaining = (scopedRate * scopedHrs) - a.totalCost;
+        }
+        return {
+          ...p,
+          totals: totals[p.id] ?? { scoped: Number(p.scoped_hrs || 0), actual: 0 },
+          margin: {
+            mode,
+            projectFee,
+            totalCost: a.totalCost,
+            weeklyCost: a.weeklyCost,
+            revenue: a.revenue,
+            remaining: marginRemaining,
+            hasAnyEntry: a.hasAnyEntry,
+            usingFallbackCostRate: a.usingFallbackCostRate,
+          },
+        };
+      }),
     };
   });
 
