@@ -514,6 +514,8 @@ function EntryBlock({
   const [previewLeftPx, setPreviewLeftPx] = useState<number | null>(null);
   const [hoverDay, setHoverDay] = useState<string | null>(null);
   const startState = useRef({ pointerY: 0, pointerX: 0, top, height, moved: false });
+  const armedRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
 
   const editable = isMine;
 
@@ -611,6 +613,8 @@ function EntryBlock({
     ev.stopPropagation();
     (ev.target as Element).setPointerCapture(ev.pointerId);
     setMode("resize");
+    armedRef.current = true;
+    pointerIdRef.current = ev.pointerId;
     startState.current = { pointerY: ev.clientY, pointerX: ev.clientX, top, height, moved: false };
     setPreviewH(height);
   }
@@ -619,12 +623,17 @@ function EntryBlock({
     if (!editable) return;
     // Ignore clicks on the resize handle or controls (they stop propagation).
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    armedRef.current = true;
+    pointerIdRef.current = ev.pointerId;
     startState.current = { pointerY: ev.clientY, pointerX: ev.clientX, top, height, moved: false };
     setMode("idle"); // becomes "move" after threshold
   }
 
   function onPointerMove(ev: React.PointerEvent) {
     if (!editable) return;
+    // Only react when a pointerdown has armed this block. Without this guard
+    // a bare hover would trip the drag threshold and shift the block.
+    if (!armedRef.current) return;
     const dx = ev.clientX - startState.current.pointerX;
     const dy = ev.clientY - startState.current.pointerY;
 
@@ -652,6 +661,8 @@ function EntryBlock({
     const wasMode = mode;
     const moved = startState.current.moved;
     setMode("idle");
+    armedRef.current = false;
+    pointerIdRef.current = null;
     setPreviewLeftPx(null);
     const dropDay = hoverDay;
     setHoverDay(null);
