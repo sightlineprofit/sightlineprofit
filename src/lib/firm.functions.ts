@@ -686,3 +686,55 @@ export const updateFirm = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/**
+ * Self-serve recovery: lets the firm owner (or first user if no principal
+ * exists yet) promote themselves to `principal`. Used when a profile ends up
+ * stuck on `team` and the navigation guard locks them out of all admin pages.
+ */
+export const claimPrincipalRole = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: profile, error: pErr } = await supabaseAdmin
+      .from("profiles")
+      .select("id, firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (pErr || !profile?.firm_id) throw new Error("No firm associated with this account");
+    if (profile.role === "principal") return { ok: true, alreadyPrincipal: true };
+
+    const { data: firm } = await supabaseAdmin
+      .from("firms")
+      .select("id, owner_id")
+      .eq("id", profile.firm_id)
+      .single();
+
+    const isOwner = firm?.owner_id === userId;
+
+    let hasPrincipal = false;
+    if (!isOwner) {
+      const { count } = await supabaseAdmin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("firm_id", profile.firm_id)
+        .eq("role", "principal");
+      hasPrincipal = (count ?? 0) > 0;
+    }
+
+    if (!isOwner && hasPrincipal) {
+      throw new Error(
+        "This firm already has a principal. Ask them to update your role in Settings → Team.",
+      );
+    }
+
+    const { error: uErr } = await supabaseAdmin
+      .from("profiles")
+      .update({ role: "principal" })
+      .eq("id", userId);
+    if (uErr) throw new Error(uErr.message);
+
+    return { ok: true, alreadyPrincipal: false };
+  });

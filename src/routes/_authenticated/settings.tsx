@@ -16,6 +16,7 @@ import {
   listExpenses,
   updateTeamMember,
   setPreferredHome,
+  claimPrincipalRole,
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { computeBurden } from "@/lib/cost";
@@ -97,12 +98,12 @@ function SettingsPage() {
       </div>
       {isAdmin && (
         <div className="mt-10 border-t border-border pt-6">
-          <a
-            href="/dashboard/annual-summary"
+          <Link
+            to={"/dashboard/annual-summary" as any}
             className="inline-flex items-center gap-2 text-sm text-gold hover:text-goldl"
           >
             View your year in Sightline →
-          </a>
+          </Link>
           <p className="mt-1 text-xs text-ch/50">
             A summary of rate progress, project outcomes, capacity decisions, and value identified.
           </p>
@@ -114,10 +115,32 @@ function SettingsPage() {
 
 /* ─────────────── Profile (team / view_only) ─────────────── */
 function ProfileTab() {
+  const qc = useQueryClient();
   const { data } = useMe();
   const p = data?.profile;
+  const claim = useServerFn(claimPrincipalRole);
+  const [claiming, setClaiming] = useState(false);
+
+  async function handleClaim() {
+    setClaiming(true);
+    try {
+      const res = await claim();
+      if (res.alreadyPrincipal) {
+        toast.message("You're already a principal.");
+      } else {
+        toast.success("Principal access granted. All modules unlocked.");
+      }
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not claim principal access");
+    } finally {
+      setClaiming(false);
+    }
+  }
+
   return (
-    <div className="max-w-xl rounded-lg border border-border bg-white p-6 space-y-4">
+    <div className="max-w-xl space-y-6">
+      <div className="rounded-lg border border-border bg-white p-6 space-y-4">
       <div>
         <label className="mb-1.5 block text-sm text-ch/70">Name</label>
         <input className={inputCls} value={p?.name ?? ""} readOnly />
@@ -133,6 +156,26 @@ function ProfileTab() {
       <p className="text-xs text-ch/50">
         Your firm principal manages financial settings, the team roster, and billing.
       </p>
+      </div>
+
+      <div className="rounded-lg border border-gold/40 bg-goldp/40 p-6 space-y-3">
+        <div>
+          <h3 className="font-display text-lg text-ch">Claim principal access</h3>
+          <p className="mt-1 text-sm text-ch/70">
+            If you're the firm owner but your role is showing as <strong>{p?.role ?? "team"}</strong>,
+            you can promote yourself to principal to unlock all modules. This only works if you
+            own the firm or no principal exists yet.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleClaim}
+          disabled={claiming}
+          className={btnCls}
+        >
+          {claiming ? "Claiming…" : "Claim principal access"}
+        </button>
+      </div>
     </div>
   );
 }
