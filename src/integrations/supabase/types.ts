@@ -749,8 +749,11 @@ export type Database = {
           description: string
           estimated_hrs: number
           id: string
+          is_custom: boolean
           project_phase_id: string
+          sop_step_id: string | null
           sort_order: number
+          template_estimated_hrs: number | null
         }
         Insert: {
           actual_hrs?: number
@@ -758,8 +761,11 @@ export type Database = {
           description: string
           estimated_hrs?: number
           id?: string
+          is_custom?: boolean
           project_phase_id: string
+          sop_step_id?: string | null
           sort_order?: number
+          template_estimated_hrs?: number | null
         }
         Update: {
           actual_hrs?: number
@@ -767,8 +773,11 @@ export type Database = {
           description?: string
           estimated_hrs?: number
           id?: string
+          is_custom?: boolean
           project_phase_id?: string
+          sop_step_id?: string | null
           sort_order?: number
+          template_estimated_hrs?: number | null
         }
         Relationships: [
           {
@@ -776,6 +785,13 @@ export type Database = {
             columns: ["project_phase_id"]
             isOneToOne: false
             referencedRelation: "project_phases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_steps_sop_step_id_fkey"
+            columns: ["sop_step_id"]
+            isOneToOne: false
+            referencedRelation: "sop_steps"
             referencedColumns: ["id"]
           },
         ]

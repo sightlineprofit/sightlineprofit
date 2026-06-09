@@ -14,6 +14,7 @@ import {
   createProject, upsertProjectPhase, deleteProjectPhase,
   updateProjectMeta, updateProjectFinancial, updateProjectPhaseFinancial,
   patchTimeEntry, listSopTemplatesLite,
+  updateProjectStepHrs, createProjectStep, deleteProjectStep,
 } from "@/lib/sightline.functions";
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
@@ -422,6 +423,9 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const deleteEntryFn = useServerFn(deleteTimeEntry);
   const listTemplatesFn = useServerFn(listSopTemplatesLite);
   const attachTplFn = useServerFn(attachTemplateToProject);
+  const updateStepHrsFn = useServerFn(updateProjectStepHrs);
+  const createStepFn = useServerFn(createProjectStep);
+  const deleteStepFn = useServerFn(deleteProjectStep);
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
@@ -1025,6 +1029,18 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                   if (!confirm(`Delete phase "${p.name}"?`)) return;
                   await deletePhaseFn({ data: { id: p.id } });
                   invalidate();
+                }}
+                onUpdateStepHrs={async (stepId, hrs) => {
+                  try { await updateStepHrsFn({ data: { id: stepId, estimated_hrs: hrs } }); invalidate(); }
+                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+                }}
+                onAddStep={async (description, hrs) => {
+                  try { await createStepFn({ data: { project_phase_id: p.id, description, estimated_hrs: hrs } }); invalidate(); }
+                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+                }}
+                onDeleteStep={async (stepId) => {
+                  try { await deleteStepFn({ data: { id: stepId } }); invalidate(); }
+                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
                 }}
               />
             ))}
@@ -1708,9 +1724,19 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 function PhaseCard({
   phase, steps, entries, team, isPrincipal, isAdmin,
   onEditHrs, onEditBillable, onDelete,
+  onUpdateStepHrs, onAddStep, onDeleteStep,
 }: {
   phase: PhaseRow;
-  steps: { id: string; description: string; estimated_hrs: number; sort_order: number; project_phase_id: string }[];
+  steps: {
+    id: string;
+    description: string;
+    estimated_hrs: number;
+    sort_order: number;
+    project_phase_id: string;
+    is_custom?: boolean;
+    template_estimated_hrs?: number | null;
+    sop_step_id?: string | null;
+  }[];
   entries: { id: string; date: string; user_id: string; hrs: number; billable: boolean; notes: string | null }[];
   team: { id: string; name: string | null; email: string }[];
   isPrincipal: boolean;
@@ -1718,6 +1744,9 @@ function PhaseCard({
   onEditHrs: (hrs: number) => void;
   onEditBillable: (b: boolean) => void;
   onDelete: () => void;
+  onUpdateStepHrs: (stepId: string, hrs: number) => void;
+  onAddStep: (description: string, hrs: number) => void;
+  onDeleteStep: (stepId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editHrs, setEditHrs] = useState(false);
@@ -1746,11 +1775,25 @@ function PhaseCard({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-ch">{phase.name}</span>
-                {phase.sop_phase_id && (
-                  <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-ch/60">
-                    In SOP library
-                  </span>
-                )}
+                {phase.sop_phase_id && (() => {
+                  const modified = steps.some(
+                    (s) => s.is_custom || (s.template_estimated_hrs != null && Number(s.template_estimated_hrs) !== Number(s.estimated_hrs)),
+                  );
+                  return (
+                    <HoverCard openDelay={120}>
+                      <HoverCardTrigger asChild>
+                        <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-ch/60">
+                          {modified ? "Modified" : "In SOP library"}
+                        </span>
+                      </HoverCardTrigger>
+                      {modified && (
+                        <HoverCardContent className="w-72 text-xs">
+                          One or more steps have been customised from the SOP template for this project.
+                        </HoverCardContent>
+                      )}
+                    </HoverCard>
+                  );
+                })()}
                 <StatusBadge tone={status.tone} label={status.label} />
               </div>
               {/* mini stacked progress bar */}
@@ -1773,25 +1816,14 @@ function PhaseCard({
         <CollapsibleContent>
           <div className="border-t border-border p-5">
             {/* Process steps */}
-            {steps.length > 0 ? (
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Process steps</p>
-                <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-creamd/30">
-                  {steps.map((s) => (
-                    <li key={s.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                      <span className="text-ch/80">{s.description}</span>
-                      <span className="text-xs text-ch/50 tabular-nums">{formatHours(Number(s.estimated_hrs))}</span>
-                    </li>
-                  ))}
-                  <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-ch">
-                    <span>Phase total</span>
-                    <span className="tabular-nums">{formatHours(phase.sc)}</span>
-                  </li>
-                </ul>
-              </div>
-            ) : (
-              <p className="text-sm text-ch/50">No process steps recorded for this phase.</p>
-            )}
+            <ProcessSteps
+              steps={steps}
+              phaseTotal={phase.sc}
+              canEdit={isAdmin}
+              onUpdateStepHrs={onUpdateStepHrs}
+              onAddStep={onAddStep}
+              onDeleteStep={onDeleteStep}
+            />
 
             {/* Financial controls */}
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1933,5 +1965,203 @@ function StatusBadge({ tone, label }: { tone: "success" | "gold" | "terra" | "mu
       tone === "terra" && "bg-terra/10 text-terra",
       tone === "muted" && "bg-creamd text-ch/60",
     )}>{label}</span>
+  );
+}
+
+// =============================================================================
+// PROCESS STEPS (editable inline)
+// =============================================================================
+
+type StepRow = {
+  id: string;
+  description: string;
+  estimated_hrs: number;
+  sort_order: number;
+  project_phase_id: string;
+  is_custom?: boolean;
+  template_estimated_hrs?: number | null;
+  sop_step_id?: string | null;
+};
+
+function ProcessSteps({
+  steps, phaseTotal, canEdit, onUpdateStepHrs, onAddStep, onDeleteStep,
+}: {
+  steps: StepRow[];
+  phaseTotal: number;
+  canEdit: boolean;
+  onUpdateStepHrs: (stepId: string, hrs: number) => void;
+  onAddStep: (description: string, hrs: number) => void;
+  onDeleteStep: (stepId: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [newDesc, setNewDesc] = useState("");
+  const [newHrs, setNewHrs] = useState("");
+
+  if (steps.length === 0 && !canEdit) {
+    return <p className="text-sm text-ch/50">No process steps recorded for this phase.</p>;
+  }
+
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Process steps</p>
+      <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-creamd/30">
+        {steps.map((s) => (
+          <StepRowItem
+            key={s.id}
+            step={s}
+            canEdit={canEdit}
+            onSave={(hrs) => onUpdateStepHrs(s.id, hrs)}
+            onDelete={() => onDeleteStep(s.id)}
+          />
+        ))}
+        <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-ch">
+          <span>Phase total</span>
+          <span className="tabular-nums">{formatHours(phaseTotal)}</span>
+        </li>
+      </ul>
+
+      {canEdit && (
+        adding ? (
+          <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-white p-2">
+            <Input
+              autoFocus
+              placeholder="Step description"
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              className="flex-1"
+            />
+            <Input
+              type="number"
+              min={0.25}
+              max={999}
+              step={0.25}
+              placeholder="Hrs"
+              value={newHrs}
+              onChange={(e) => setNewHrs(e.target.value)}
+              className="w-20"
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const h = Number(newHrs);
+                if (!newDesc.trim() || !Number.isFinite(h) || h < 0.25) return;
+                onAddStep(newDesc.trim(), h);
+                setNewDesc(""); setNewHrs(""); setAdding(false);
+              }}
+            >Save</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setNewDesc(""); setNewHrs(""); setAdding(false); }}>
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="mt-2 text-[11px] font-light text-[#9D8A7C] transition-colors hover:text-ch"
+            style={{ fontFamily: "Jost, sans-serif" }}
+          >
+            + Add step to this phase
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+function StepRowItem({
+  step, canEdit, onSave, onDelete,
+}: {
+  step: StepRow;
+  canEdit: boolean;
+  onSave: (hrs: number) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const current = Number(step.estimated_hrs);
+  const tpl = step.template_estimated_hrs == null ? null : Number(step.template_estimated_hrs);
+  const overridden = !step.is_custom && tpl != null && tpl !== current;
+  const [draft, setDraft] = useState(String(current));
+
+  if (editing) {
+    const commit = () => {
+      const v = Number(draft);
+      if (!Number.isFinite(v) || v < 0.25 || v > 999) { setEditing(false); return; }
+      onSave(v);
+      setEditing(false);
+    };
+    return (
+      <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+        <span className="text-ch/80">{step.description}</span>
+        <div className="flex items-center gap-1.5">
+          <input
+            autoFocus
+            type="number"
+            min={0.25}
+            max={999}
+            step={0.25}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") { setDraft(String(current)); setEditing(false); }
+            }}
+            className="w-16 rounded-[2px] border-[0.5px] border-[#C59845] bg-white px-1.5 py-0.5 text-xs tabular-nums outline-none focus:border-[#C59845]"
+            style={{ fontFamily: "Jost, sans-serif", fontWeight: 400 }}
+          />
+          <button type="button" onClick={commit} className="text-[11px] text-[#C59845] hover:underline">Save</button>
+          <button type="button" onClick={() => { setDraft(String(current)); setEditing(false); }} className="text-[11px] text-ch/50 hover:underline">Cancel</button>
+        </div>
+      </li>
+    );
+  }
+
+  return (
+    <li className="group flex items-center justify-between gap-3 px-3 py-2 text-sm">
+      <span className="flex items-center gap-2 text-ch/80">
+        <span>{step.description}</span>
+        {step.is_custom && (
+          <span
+            className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.15em]"
+            style={{ backgroundColor: "rgba(87,83,66,0.1)", color: "#575342" }}
+          >
+            Custom
+          </span>
+        )}
+      </span>
+      <div className="flex items-center gap-2">
+        {overridden && (
+          <HoverCard openDelay={120}>
+            <HoverCardTrigger asChild>
+              <span className="text-[10px] text-[#C59845] leading-none" aria-label="Customised">✎</span>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-64 text-xs">
+              Customised for this project. Template default: {formatHours(tpl ?? 0)}.
+            </HoverCardContent>
+          </HoverCard>
+        )}
+        <span className="text-xs text-ch/50 tabular-nums">{formatHours(current)}</span>
+        {canEdit && (
+          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[11px] text-[#C59845] hover:underline"
+            >
+              Edit
+            </button>
+            {step.is_custom && (
+              <button
+                type="button"
+                onClick={() => { if (confirm(`Delete step "${step.description}"?`)) onDelete(); }}
+                className="text-[11px] text-ch/40 hover:text-destructive"
+                aria-label="Delete custom step"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </li>
   );
 }

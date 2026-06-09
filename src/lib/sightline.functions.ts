@@ -253,7 +253,7 @@ export const createProject = createServerFn({ method: "POST" })
       const phaseIds = tplPhases.map((p) => p.id);
       const { data: allSteps } = await supabase
         .from("sop_steps")
-        .select("phase_id, description, estimated_hrs, sort_order")
+        .select("id, phase_id, description, estimated_hrs, sort_order")
         .in("phase_id", phaseIds)
         .order("sort_order");
       for (const p of tplPhases) {
@@ -276,8 +276,11 @@ export const createProject = createServerFn({ method: "POST" })
           await supabase.from("project_steps").insert(
             steps.map((s) => ({
               project_phase_id: ins.id,
+              sop_step_id: s.id,
               description: s.description,
               estimated_hrs: Number(s.estimated_hrs) || 0,
+              template_estimated_hrs: Number(s.estimated_hrs) || 0,
+              is_custom: false,
               sort_order: s.sort_order,
               actual_hrs: 0,
             })),
@@ -553,4 +556,106 @@ export const listSopTemplatesLite = createServerFn({ method: "GET" })
       .eq("firm_id", profile.firm_id)
       .order("name");
     return { templates: templates ?? [] };
+  });
+// --- Project step (process step) mutations ----------------------------------
+
+async function recomputePhaseExpectedFromSteps(supabase: any, phaseId: string) {
+  const { data: rows } = await supabase
+    .from("project_steps")
+    .select("estimated_hrs")
+    .eq("project_phase_id", phaseId);
+  const total = (rows ?? []).reduce(
+    (s: number, r: { estimated_hrs: number | null }) => s + Number(r.estimated_hrs || 0),
+    0,
+  );
+  const { data: ph } = await supabase
+    .from("project_phases")
+    .select("actual_hrs")
+    .eq("id", phaseId)
+    .maybeSingle();
+  const actual = Number(ph?.actual_hrs ?? 0);
+  await supabase
+    .from("project_phases")
+    .update({ expected_hrs: total, phase_over_scope: actual > total })
+    .eq("id", phaseId);
+}
+
+export const updateProjectStepHrs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid(),
+      estimated_hrs: z.number().min(0).max(999),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: existing } = await supabase
+      .from("project_steps")
+      .select("id, project_phase_id")
+      .eq("id", data.id)
+      .single();
+    if (!existing) throw new Error("Step not found");
+    const { error } = await supabase
+      .from("project_steps")
+      .update({ estimated_hrs: data.estimated_hrs })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    await recomputePhaseExpectedFromSteps(supabase, existing.project_phase_id as string);
+    return { ok: true };
+  });
+
+export const createProjectStep = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      project_phase_id: z.string().uuid(),
+      description: z.string().trim().min(1).max(500),
+      estimated_hrs: z.number().min(0).max(999),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: existing } = await supabase
+      .from("project_steps")
+      .select("sort_order")
+      .eq("project_phase_id", data.project_phase_id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const nextOrder = ((existing?.[0]?.sort_order ?? -1) + 1);
+    const { data: row, error } = await supabase
+      .from("project_steps")
+      .insert({
+        project_phase_id: data.project_phase_id,
+        description: data.description,
+        estimated_hrs: data.estimated_hrs,
+        sort_order: nextOrder,
+        actual_hrs: 0,
+        is_custom: true,
+        sop_step_id: null,
+        template_estimated_hrs: null,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    await recomputePhaseExpectedFromSteps(supabase, data.project_phase_id);
+    return { id: row.id };
+  });
+
+export const deleteProjectStep = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: existing } = await supabase
+      .from("project_steps")
+      .select("id, project_phase_id, is_custom")
+      .eq("id", data.id)
+      .single();
+    if (!existing) throw new Error("Step not found");
+    if (!existing.is_custom) throw new Error("Only custom steps can be deleted");
+    const { error } = await supabase.from("project_steps").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    await recomputePhaseExpectedFromSteps(supabase, existing.project_phase_id as string);
+    return { ok: true };
   });
