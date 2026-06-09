@@ -1030,6 +1030,18 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
                   await deletePhaseFn({ data: { id: p.id } });
                   invalidate();
                 }}
+                onUpdateStepHrs={async (stepId, hrs) => {
+                  try { await updateStepHrsFn({ data: { id: stepId, estimated_hrs: hrs } }); invalidate(); }
+                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+                }}
+                onAddStep={async (description, hrs) => {
+                  try { await createStepFn({ data: { project_phase_id: p.id, description, estimated_hrs: hrs } }); invalidate(); }
+                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+                }}
+                onDeleteStep={async (stepId) => {
+                  try { await deleteStepFn({ data: { id: stepId } }); invalidate(); }
+                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+                }}
               />
             ))}
           </div>
