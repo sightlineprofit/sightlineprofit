@@ -1775,11 +1775,25 @@ function PhaseCard({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-ch">{phase.name}</span>
-                {phase.sop_phase_id && (
-                  <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-ch/60">
-                    In SOP library
-                  </span>
-                )}
+                {phase.sop_phase_id && (() => {
+                  const modified = steps.some(
+                    (s) => s.is_custom || (s.template_estimated_hrs != null && Number(s.template_estimated_hrs) !== Number(s.estimated_hrs)),
+                  );
+                  return (
+                    <HoverCard openDelay={120}>
+                      <HoverCardTrigger asChild>
+                        <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-ch/60">
+                          {modified ? "Modified" : "In SOP library"}
+                        </span>
+                      </HoverCardTrigger>
+                      {modified && (
+                        <HoverCardContent className="w-72 text-xs">
+                          One or more steps have been customised from the SOP template for this project.
+                        </HoverCardContent>
+                      )}
+                    </HoverCard>
+                  );
+                })()}
                 <StatusBadge tone={status.tone} label={status.label} />
               </div>
               {/* mini stacked progress bar */}
@@ -1802,25 +1816,14 @@ function PhaseCard({
         <CollapsibleContent>
           <div className="border-t border-border p-5">
             {/* Process steps */}
-            {steps.length > 0 ? (
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Process steps</p>
-                <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-creamd/30">
-                  {steps.map((s) => (
-                    <li key={s.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                      <span className="text-ch/80">{s.description}</span>
-                      <span className="text-xs text-ch/50 tabular-nums">{formatHours(Number(s.estimated_hrs))}</span>
-                    </li>
-                  ))}
-                  <li className="flex items-center justify-between gap-3 px-3 py-2 text-sm font-medium text-ch">
-                    <span>Phase total</span>
-                    <span className="tabular-nums">{formatHours(phase.sc)}</span>
-                  </li>
-                </ul>
-              </div>
-            ) : (
-              <p className="text-sm text-ch/50">No process steps recorded for this phase.</p>
-            )}
+            <ProcessSteps
+              steps={steps}
+              phaseTotal={phase.sc}
+              canEdit={isAdmin}
+              onUpdateStepHrs={onUpdateStepHrs}
+              onAddStep={onAddStep}
+              onDeleteStep={onDeleteStep}
+            />
 
             {/* Financial controls */}
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
