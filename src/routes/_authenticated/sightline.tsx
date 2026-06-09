@@ -423,6 +423,9 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const deleteEntryFn = useServerFn(deleteTimeEntry);
   const listTemplatesFn = useServerFn(listSopTemplatesLite);
   const attachTplFn = useServerFn(attachTemplateToProject);
+  const updateStepHrsFn = useServerFn(updateProjectStepHrs);
+  const createStepFn = useServerFn(createProjectStep);
+  const deleteStepFn = useServerFn(deleteProjectStep);
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
