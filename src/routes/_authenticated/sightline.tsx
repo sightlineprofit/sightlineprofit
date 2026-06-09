@@ -14,6 +14,7 @@ import {
   createProject, upsertProjectPhase, deleteProjectPhase,
   updateProjectMeta, updateProjectFinancial, updateProjectPhaseFinancial,
   patchTimeEntry, listSopTemplatesLite,
+  updateProjectStepHrs, createProjectStep, deleteProjectStep,
 } from "@/lib/sightline.functions";
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
