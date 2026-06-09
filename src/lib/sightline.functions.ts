@@ -253,7 +253,7 @@ export const createProject = createServerFn({ method: "POST" })
       const phaseIds = tplPhases.map((p) => p.id);
       const { data: allSteps } = await supabase
         .from("sop_steps")
-        .select("phase_id, description, estimated_hrs, sort_order")
+        .select("id, phase_id, description, estimated_hrs, sort_order")
         .in("phase_id", phaseIds)
         .order("sort_order");
       for (const p of tplPhases) {
@@ -276,8 +276,11 @@ export const createProject = createServerFn({ method: "POST" })
           await supabase.from("project_steps").insert(
             steps.map((s) => ({
               project_phase_id: ins.id,
+              sop_step_id: s.id,
               description: s.description,
               estimated_hrs: Number(s.estimated_hrs) || 0,
+              template_estimated_hrs: Number(s.estimated_hrs) || 0,
+              is_custom: false,
               sort_order: s.sort_order,
               actual_hrs: 0,
             })),
