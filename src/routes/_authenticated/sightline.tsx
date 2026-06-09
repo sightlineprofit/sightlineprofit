@@ -1724,9 +1724,19 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
 function PhaseCard({
   phase, steps, entries, team, isPrincipal, isAdmin,
   onEditHrs, onEditBillable, onDelete,
+  onUpdateStepHrs, onAddStep, onDeleteStep,
 }: {
   phase: PhaseRow;
-  steps: { id: string; description: string; estimated_hrs: number; sort_order: number; project_phase_id: string }[];
+  steps: {
+    id: string;
+    description: string;
+    estimated_hrs: number;
+    sort_order: number;
+    project_phase_id: string;
+    is_custom?: boolean;
+    template_estimated_hrs?: number | null;
+    sop_step_id?: string | null;
+  }[];
   entries: { id: string; date: string; user_id: string; hrs: number; billable: boolean; notes: string | null }[];
   team: { id: string; name: string | null; email: string }[];
   isPrincipal: boolean;
@@ -1734,6 +1744,9 @@ function PhaseCard({
   onEditHrs: (hrs: number) => void;
   onEditBillable: (b: boolean) => void;
   onDelete: () => void;
+  onUpdateStepHrs: (stepId: string, hrs: number) => void;
+  onAddStep: (description: string, hrs: number) => void;
+  onDeleteStep: (stepId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [editHrs, setEditHrs] = useState(false);
