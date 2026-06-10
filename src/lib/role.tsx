@@ -4,6 +4,7 @@ import { Navigate } from "@tanstack/react-router";
 import { getMyContext } from "@/lib/firm.functions";
 
 export type AppRole = "principal" | "admin" | "team" | "view_only";
+export type AppTier = "foundation" | "studio" | "practice";
 
 export function useMe() {
   const getCtx = useServerFn(getMyContext);
@@ -57,6 +58,27 @@ export function useShowFinancials(): boolean {
   const { data } = useMe();
   const role = effectiveRole(data?.profile);
   return role === "principal" || role === "admin";
+}
+
+/**
+ * Effective subscription tier. Super admins are always treated as the
+ * highest tier so every module unlocks for them during build/test, unless
+ * they are actively impersonating another firm (in which case that firm's
+ * tier drives content — matching how AppShell already behaves).
+ */
+export function effectiveTier(
+  profile: { is_super_admin?: boolean | null; impersonated_firm_id?: string | null } | null | undefined,
+  firm: { subscription_tier?: string | null } | null | undefined,
+): AppTier {
+  const isSuper = !!profile?.is_super_admin;
+  const isImpersonating = !!profile?.impersonated_firm_id;
+  if (isSuper && !isImpersonating) return "practice";
+  return ((firm?.subscription_tier as AppTier) ?? "foundation");
+}
+
+export function useEffectiveTier(): AppTier {
+  const { data } = useMe();
+  return effectiveTier(data?.profile, data?.firm);
 }
 
 /**
