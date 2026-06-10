@@ -27,6 +27,7 @@ import {
   getActualsForSpan,
 } from "@/lib/manual-hours.functions";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
+import { effectiveTier } from "@/lib/role";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -209,7 +210,7 @@ function Dashboard() {
           c={c}
           weekHours={data?.weekHours ?? 0}
           prefs={data?.prefs.hidden_metrics ?? []}
-          tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
+          tier={effectiveTier(data?.profile, data?.firm)}
           firmId={firmId}
           committed={data?.committedRevenue ?? 0}
           collected={data?.collectedRevenue ?? 0}
