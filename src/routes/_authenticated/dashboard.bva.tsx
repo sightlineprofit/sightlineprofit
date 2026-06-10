@@ -6,6 +6,7 @@ import { getDashboardData } from "@/lib/dashboard.functions";
 import { calc } from "@/lib/finance";
 import { BvAFull } from "./dashboard";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
+import { effectiveTier } from "@/lib/role";
 
 export const Route = createFileRoute("/_authenticated/dashboard/bva")({
   head: () => ({ meta: [{ title: "Budget vs Actual — Sightline" }] }),
@@ -34,7 +35,7 @@ function Page() {
         c={c}
         weekHours={data?.weekHours ?? 0}
         prefs={data?.prefs.hidden_metrics ?? []}
-        tier={(data?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation"}
+        tier={effectiveTier(data?.profile, data?.firm)}
         firmId={firmId}
       />
     </div>

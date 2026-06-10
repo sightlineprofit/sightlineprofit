@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { listKbItemsForUser } from "@/lib/admin.functions";
 import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
+import { effectiveTier } from "@/lib/role";
 import { cn } from "@/lib/utils";
 import { Play, FileText, Search, ArrowLeft } from "lucide-react";
 
@@ -20,7 +21,7 @@ function KbPage() {
   const ctxFn = useServerFn(getMyContext);
   const { data: items = [] } = useQuery({ queryKey: ["kb-items"], queryFn: () => listFn() });
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => ctxFn() });
-  const tier = (ctx?.firm?.subscription_tier as string) ?? "foundation";
+  const tier = effectiveTier(ctx?.profile, ctx?.firm);
 
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<string | null>(null);
