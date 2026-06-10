@@ -1,35 +1,30 @@
-## Fix Role Lock + CSS Build Error
+## Problem
 
-### Problem 1: Your account is locked to `team` role
-Your profile's `role` column is `team`, which triggers the redirect guard in `AppShell.tsx` that restricts navigation to only Time Calendar, Projects, Knowledge Base, Settings, and Welcome. Every other route gets intercepted with "That section is managed by your firm principal."
+Your super admin account (`designersupport@proposability.com`) is correctly flagged in the database (`is_super_admin = true`, role = `principal`), and the sidebar already unlocks every nav item for supers. But the **individual page bodies** still gate themselves on `firm.subscription_tier`, and your firm sits on `foundation`. So when you open Sightline, SOP Library, Time Calendar (studio-only paths), Dashboard tiles, BVA, or Knowledge Base, those pages independently render the `TierLocked` upgrade wall instead of the real content.
 
-Most likely cause: you went through an invitation flow or some other path that overwrote your principal role.
+The shell bypass is the only place super admins are recognized; the route pages don't know about the flag.
 
-### Problem 2: `styles.css` causes a 500 build error
-`@source "../src"` is placed between two `@import` statements (lines 2 and 3). LightningCSS rejects this because `@import` must precede all non-`@charset`/`@layer` rules. The processed bundle reports line 4844 because Tailwind expands the file internally.
+## Fix
 
----
+Centralize the "effective tier" the same way `effectiveRole()` centralizes role:
 
-### Changes
+1. **Add `useEffectiveTier()` (and a helper `effectiveTier(profile, firm)`) in `src/lib/role.tsx`.** Returns `"practice"` whenever `profile.is_super_admin` is true; otherwise returns `firm.subscription_tier ?? "foundation"`. This mirrors how `AppShell` already computes `currentTier`.
 
-1. **Fix CSS import order** (`src/styles.css`)
-   - Move `@source "../src"` below all three `@import` statements so imports are contiguous at the top of the file.
+2. **Replace every `ctx?.firm?.subscription_tier`-derived tier check on gated pages** with the effective tier:
+   - `src/routes/_authenticated/sightline.tsx`
+   - `src/routes/_authenticated/sop-library.tsx`
+   - `src/routes/_authenticated/time-calendar.tsx`
+   - `src/routes/_authenticated/knowledge-base.tsx`
+   - `src/routes/_authenticated/dashboard.tsx`
+   - `src/routes/_authenticated/dashboard.bva.tsx`
+   - `src/routes/_authenticated/settings.tsx` (only the tier-display/lock branches; the billing controls stay as-is)
 
-2. **Add self-serve "Claim Principal" feature** (`src/lib/firm.functions.ts`, `src/routes/_authenticated/settings.tsx`)
-   - New server function `claimPrincipalRole` that:
-     - Reads the current user's profile + firm
-     - Allows promotion ONLY if the user is the firm's `owner_id` OR the firm has no existing principal
-     - Updates `profiles.role` to `principal`
-   - Add a "Claim principal access" card in Settings (visible only when the current user is `team` but is the firm owner, or when no principal exists in the firm).
-   - After claiming, invalidate the `me` query so navigation unlocks immediately.
+   `AppShell.tsx` switches to the same helper so there's one source of truth.
 
-3. **Fix the Settings page annual summary link**
-   - Replace the `<a href="/dashboard/annual-summary">` with a `<Link>` component from TanStack Router for proper SPA navigation.
+3. **Leave billing/admin alone.** `admin.tsx` reads `subscription_tier` to *edit* a firm's plan — that must still reflect the real stored value. `billing.tsx` similarly shows the actual subscription. No changes there.
 
-### No database migrations needed
-Both issues are fixed with code changes only. The `role` column already exists on `profiles`.
+4. **No DB or migration changes.** Your profile is already correct; this is purely a frontend gating bug.
 
-### Expected result
-- Preview builds successfully without the LightningCSS 500.
-- You see a "Claim principal access" button in Settings → Profile.
-- Clicking it promotes you to principal and all modules unlock immediately.
+## Result
+
+Once shipped, signing in as a super admin unlocks every module's page body regardless of the firm's stored tier, matching what the sidebar already implies. Non-super users keep their normal tier gating. Impersonation continues to use the impersonated firm's data, but tier gating stays off for the super (same behavior the shell already uses).

@@ -8,7 +8,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id, firm_id, name, email, role")
+      .select("id, firm_id, name, email, role, is_super_admin, impersonated_firm_id")
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) {
