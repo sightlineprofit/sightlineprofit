@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
+import { effectiveTier } from "@/lib/role";
 import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets } from "@/lib/time.functions";
 import { fmtUsd } from "@/lib/finance";
 import { cn } from "@/lib/utils";
