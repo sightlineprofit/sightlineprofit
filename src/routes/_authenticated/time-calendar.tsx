@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
+import { effectiveTier } from "@/lib/role";
 import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets } from "@/lib/time.functions";
 import { fmtUsd } from "@/lib/finance";
 import { cn } from "@/lib/utils";
@@ -107,10 +108,7 @@ type View = "week" | "day" | "team";
 function TimeCalendarPage() {
   const getCtx = useServerFn(getMyContext);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
-  const isSuperAdmin = !!ctx?.profile?.is_super_admin;
-  const isImpersonating = !!ctx?.profile?.impersonated_firm_id;
-  const rawTier = (ctx?.firm?.subscription_tier as string) ?? "foundation";
-  const tier = isSuperAdmin && !isImpersonating ? "practice" : rawTier;
+  const tier = effectiveTier(ctx?.profile, ctx?.firm);
   const locked = tier === "foundation";
 
   if (locked) {

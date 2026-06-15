@@ -1,5 +1,6 @@
 import { Lock } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useMe } from "@/lib/role";
 
 export function TierLocked({
   tier,
@@ -12,6 +13,12 @@ export function TierLocked({
   unlocks: string[];
   blurb: string;
 }) {
+  // Defense-in-depth: super admins (not impersonating) should never see
+  // an upgrade wall regardless of which caller renders TierLocked.
+  const { data } = useMe();
+  const isSuper = !!data?.profile?.is_super_admin;
+  const impersonating = !!data?.profile?.impersonated_firm_id;
+  if (isSuper && !impersonating) return null;
   const label = tier === "studio" ? "Studio" : "Practice";
   return (
     <div className="mx-auto max-w-2xl py-20 text-center">

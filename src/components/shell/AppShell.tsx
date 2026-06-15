@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { getMyContext } from "@/lib/firm.functions";
 import { setImpersonation } from "@/lib/admin.functions";
+import { effectiveTier } from "@/lib/role";
 import { supabase } from "@/integrations/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
@@ -70,13 +71,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const isSuper = !!data?.profile?.is_super_admin;
   const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
-  // Super admins always operate at the highest tier — every module unlocked,
-  // no upgrade prompts, no trial nag. When impersonating, the impersonated
-  // firm's data drives content, but tier gating stays off so the admin can
-  // exercise every screen.
-  const currentTier: Tier = isSuper
-    ? "practice"
-    : ((data?.firm?.subscription_tier as Tier) ?? "foundation");
+  // Single source of truth: effectiveTier() returns "practice" for super
+  // admins (unless impersonating). Every page uses the same helper so the
+  // shell and gated bodies never disagree.
+  const currentTier: Tier = effectiveTier(data?.profile, data?.firm) as Tier;
   const currentTierRank = TIER_RANK[currentTier];
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const currentRole: Role = isSuper
@@ -308,6 +306,30 @@ export function AppShell({ children }: { children: ReactNode }) {
         currentTier={currentTier}
         onClose={() => setUpgradeFor(null)}
       />
+
+      {isSuper && !impersonating && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            bottom: 16,
+            left: 16,
+            background: "#2C2C2C",
+            color: "#C59845",
+            fontFamily: "Jost, system-ui, sans-serif",
+            fontSize: 9,
+            fontWeight: 600,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            padding: "4px 10px",
+            borderRadius: 2,
+            pointerEvents: "none",
+            zIndex: 9999,
+          }}
+        >
+          Super Admin
+        </div>
+      )}
     </div>
   );
 }
