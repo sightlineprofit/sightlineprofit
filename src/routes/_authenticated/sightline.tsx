@@ -9,6 +9,7 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/h
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
 import { getMyContext } from "@/lib/firm.functions";
+import { effectiveTier } from "@/lib/role";
 import {
   getProjectList, getProjectDetail, updateProjectStatus,
   createProject, upsertProjectPhase, deleteProjectPhase,
@@ -45,10 +46,7 @@ export const Route = createFileRoute("/_authenticated/sightline")({
 function SightlinePage() {
   const ctxFn = useServerFn(getMyContext);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => ctxFn() });
-  const isSuperAdmin = !!ctx?.profile?.is_super_admin;
-  const isImpersonating = !!ctx?.profile?.impersonated_firm_id;
-  const rawTier = (ctx?.firm?.subscription_tier as "foundation" | "studio" | "practice") ?? "foundation";
-  const tier = isSuperAdmin && !isImpersonating ? "practice" : rawTier;
+  const tier = effectiveTier(ctx?.profile, ctx?.firm);
 
   const [openProject, setOpenProject] = useState<string | null>(null);
 
