@@ -491,13 +491,16 @@ export function BvAFull({
     try { await upd({ data: { hidden_metrics: next } }); qc.invalidateQueries({ queryKey: ["dashboard"] }); } catch {}
   }
 
+  const spans = (tier === "foundation"
+    ? (["week", "month", "quarter", "year"] as const)
+    : (["day", "week", "month", "quarter", "year"] as const));
   return (
     <div className="space-y-5">
-      <ManualHoursPanel />
+      <ManualHoursPanel tier={tier} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-md border border-border bg-white p-0.5">
-          {(["day", "week", "month", "quarter", "year"] as const).map((s) => (
+          {spans.map((s) => (
             <button key={s} onClick={() => setSpan(s)} className={cn("px-3 py-1.5 text-xs font-medium capitalize rounded-sm transition-colors", span === s ? "bg-goldp text-ch" : "text-ch/60 hover:text-ch")}>{s}</button>
           ))}
         </div>
