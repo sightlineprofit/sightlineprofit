@@ -592,7 +592,7 @@ function formatPeriodLabel(periodType: ManualPeriod, periodStart: string) {
 // without prop-threading. Trivial for a single dialog instance.
 let editEmitter: ((log: ManualLog) => void) | null = null;
 
-function ManualHoursPanel() {
+function ManualHoursPanel({ tier = "foundation" }: { tier?: "foundation" | "studio" | "practice" }) {
   const qc = useQueryClient();
   const upsert = useServerFn(upsertManualHourLog);
   const listFn = useServerFn(listManualHourLogs);
