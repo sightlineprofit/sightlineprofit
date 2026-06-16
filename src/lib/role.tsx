@@ -2,13 +2,53 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Navigate } from "@tanstack/react-router";
 import { getMyContext } from "@/lib/firm.functions";
+import { useViewAs } from "@/lib/view-as";
 
 export type AppRole = "principal" | "admin" | "team" | "view_only";
 export type AppTier = "foundation" | "studio" | "practice";
 
 export function useMe() {
   const getCtx = useServerFn(getMyContext);
-  return useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const va = useViewAs();
+  const query = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+
+  const realProfile = query.data?.profile ?? null;
+  const realFirm = query.data?.firm ?? null;
+  const realIsSuper = !!realProfile?.is_super_admin;
+
+  let data = query.data;
+  // Only super admins can drive view-as overrides. For non-supers (or while
+  // they're impersonating a real firm) the overrides are inert.
+  const overrideActive =
+    realIsSuper && !realProfile?.impersonated_firm_id && (va.role || va.tier);
+
+  if (data && overrideActive) {
+    data = {
+      ...data,
+      profile: {
+        ...data.profile,
+        // Swap the role so RoleGuard / role-conditional UI behaves like the
+        // selected role. Drop the super flag so tier gates apply naturally.
+        role: (va.role ?? data.profile?.role) as any,
+        is_super_admin: false,
+      } as any,
+      firm:
+        data.firm && va.tier
+          ? { ...data.firm, subscription_tier: va.tier }
+          : data.firm,
+    };
+  }
+
+  return Object.assign(query, {
+    data,
+    realIsSuper,
+    realProfile,
+    realFirm,
+  }) as typeof query & {
+    realIsSuper: boolean;
+    realProfile: typeof realProfile;
+    realFirm: typeof realFirm;
+  };
 }
 
 /** Effective role — super admins always treated as principal. */
