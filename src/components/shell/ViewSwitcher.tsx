@@ -49,15 +49,15 @@ export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
   const listFirms = useServerFn(listAllFirms);
   const setImpFn = useServerFn(setImpersonation);
 
-  // Only super admins (not currently in real DB-impersonation mode) get the
-  // switcher; impersonation banner owns that flow.
-  if (!realIsSuper || realImpersonating) return null;
-
   const firmsQuery = useQuery({
     queryKey: ["admin", "firms-mini"],
     queryFn: () => listFirms(),
-    enabled: open,
+    enabled: open && realIsSuper && !realImpersonating,
   });
+
+  // Only super admins (not currently in real DB-impersonation mode) get the
+  // switcher; impersonation banner owns that flow.
+  if (!realIsSuper || realImpersonating) return null;
 
   const overrideActive = va.isActive;
 
