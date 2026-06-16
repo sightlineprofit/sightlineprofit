@@ -78,7 +78,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const currentTier: Tier = effectiveTier(data?.profile, data?.firm) as Tier;
   const currentTierRank = TIER_RANK[currentTier];
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const currentRole: Role = isSuper && !data?.profile?.role
+  // `data` already reflects view-as overrides (useMe flips is_super_admin to
+  // false and swaps in the chosen role when an override is active).
+  const currentRole: Role = data?.profile?.is_super_admin
     ? "principal"
     : ((data?.profile?.role as Role) ?? "team");
 
