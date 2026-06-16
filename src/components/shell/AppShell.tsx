@@ -1,6 +1,5 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
@@ -21,12 +20,12 @@ import {
   EyeOff,
   Eye,
 } from "lucide-react";
-import { getMyContext } from "@/lib/firm.functions";
 import { setImpersonation } from "@/lib/admin.functions";
-import { effectiveTier } from "@/lib/role";
+import { effectiveTier, useMe } from "@/lib/role";
 import { supabase } from "@/integrations/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
+import { ViewSwitcher } from "@/components/shell/ViewSwitcher";
 import { cn } from "@/lib/utils";
 
 type Tier = "foundation" | "studio" | "practice";
@@ -65,11 +64,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [upgradeFor, setUpgradeFor] = useState<Tier | null>(null);
   const [userMenu, setUserMenu] = useState(false);
   const nav = useNavigate();
-  const getCtx = useServerFn(getMyContext);
   const stopImpFn = useServerFn(setImpersonation);
-  const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data, realIsSuper } = useMe();
 
-  const isSuper = !!data?.profile?.is_super_admin;
+  // Chrome (admin nav, impersonation banner, pill) tracks the REAL super
+  // admin status. `data` itself is already view-as overridden, so nav
+  // filtering, tier gating, and role-conditional UI naturally degrade.
+  const isSuper = realIsSuper;
   const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
   // Single source of truth: effectiveTier() returns "practice" for super
   // admins (unless impersonating). Every page uses the same helper so the
@@ -77,7 +78,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const currentTier: Tier = effectiveTier(data?.profile, data?.firm) as Tier;
   const currentTierRank = TIER_RANK[currentTier];
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const currentRole: Role = isSuper
+  // `data` already reflects view-as overrides (useMe flips is_super_admin to
+  // false and swaps in the chosen role when an override is active).
+  const currentRole: Role = data?.profile?.is_super_admin
     ? "principal"
     : ((data?.profile?.role as Role) ?? "team");
 
@@ -188,7 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             );
           })}
-          {isSuper && (
+          {isSuper && !!data?.profile?.is_super_admin && (
             <div className="mt-4 border-t border-border pt-3">
               {!collapsed && (
                 <div className="px-3 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-gold">
@@ -295,7 +298,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
-        {data?.firm && !isSuper && (
+        {data?.firm && !data?.profile?.is_super_admin && (
           <TrialBanner trialEndsAt={data.firm.trial_ends_at} status={data.firm.subscription_status} />
         )}
         <main className="flex-1">{children}</main>
@@ -307,29 +310,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         onClose={() => setUpgradeFor(null)}
       />
 
-      {isSuper && !impersonating && (
-        <div
-          aria-hidden
-          style={{
-            position: "fixed",
-            bottom: 16,
-            left: 16,
-            background: "#2C2C2C",
-            color: "#C59845",
-            fontFamily: "Jost, system-ui, sans-serif",
-            fontSize: 9,
-            fontWeight: 600,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            padding: "4px 10px",
-            borderRadius: 2,
-            pointerEvents: "none",
-            zIndex: 9999,
-          }}
-        >
-          Super Admin
-        </div>
-      )}
+      <ViewSwitcher realIsSuper={isSuper} realImpersonating={impersonating} />
     </div>
   );
 }

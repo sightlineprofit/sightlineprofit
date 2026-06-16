@@ -13,6 +13,7 @@ import { Toaster } from "sonner";
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { ViewAsProvider } from "@/lib/view-as";
 
 function NotFoundComponent() {
   return (
@@ -122,8 +123,10 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthSync />
-      <Outlet />
+      <ViewAsProvider>
+        <AuthSync />
+        <Outlet />
+      </ViewAsProvider>
       <Toaster
         position="top-center"
         toastOptions={{
