@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -491,13 +492,16 @@ export function BvAFull({
     try { await upd({ data: { hidden_metrics: next } }); qc.invalidateQueries({ queryKey: ["dashboard"] }); } catch {}
   }
 
+  const spans = (tier === "foundation"
+    ? (["week", "month", "quarter", "year"] as const)
+    : (["day", "week", "month", "quarter", "year"] as const));
   return (
     <div className="space-y-5">
-      <ManualHoursPanel />
+      <ManualHoursPanel tier={tier} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-md border border-border bg-white p-0.5">
-          {(["day", "week", "month", "quarter", "year"] as const).map((s) => (
+          {spans.map((s) => (
             <button key={s} onClick={() => setSpan(s)} className={cn("px-3 py-1.5 text-xs font-medium capitalize rounded-sm transition-colors", span === s ? "bg-goldp text-ch" : "text-ch/60 hover:text-ch")}>{s}</button>
           ))}
         </div>
@@ -588,7 +592,7 @@ function formatPeriodLabel(periodType: ManualPeriod, periodStart: string) {
 // without prop-threading. Trivial for a single dialog instance.
 let editEmitter: ((log: ManualLog) => void) | null = null;
 
-function ManualHoursPanel() {
+function ManualHoursPanel({ tier = "foundation" }: { tier?: "foundation" | "studio" | "practice" }) {
   const qc = useQueryClient();
   const upsert = useServerFn(upsertManualHourLog);
   const listFn = useServerFn(listManualHourLogs);
@@ -732,6 +736,15 @@ function ManualHoursPanel() {
           </PopoverContent>
         </Popover>
       </div>
+
+      {tier === "foundation" && (
+        <div className="-mt-2 mb-4 text-[11px] font-light text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+          Want to track time by project and client — day by day? That's Studio.{" "}
+          <Link to="/billing" className="underline decoration-dotted underline-offset-2 hover:text-ch">
+            See what's included →
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div>
