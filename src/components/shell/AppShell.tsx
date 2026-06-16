@@ -298,7 +298,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
-        {data?.firm && !isSuper && (
+        {data?.firm && !data?.profile?.is_super_admin && (
           <TrialBanner trialEndsAt={data.firm.trial_ends_at} status={data.firm.subscription_status} />
         )}
         <main className="flex-1">{children}</main>
