@@ -42,6 +42,81 @@ const GOLD = "#C59845";
 const DARK = "#2C2C2C";
 const CREAM = "#F5F0E8";
 
+/**
+ * Top-of-content banner shown while a view-as override is active. Rendered
+ * INSIDE the main content column so it spans only that area and never
+ * overlaps the sidebar.
+ */
+export function ViewSwitcherBanner({ realIsSuper, realImpersonating }: Props) {
+  const va = useViewAs();
+  const qc = useQueryClient();
+  const setImpFn = useServerFn(setImpersonation);
+  const listFirms = useServerFn(listAllFirms);
+  const firmsQuery = useQuery({
+    queryKey: ["admin", "firms-mini"],
+    queryFn: () => listFirms(),
+    enabled: realIsSuper && !realImpersonating && !!va.firmId,
+  });
+  if (!realIsSuper || realImpersonating || !va.isActive) return null;
+
+  const roleLabel = va.role
+    ? ROLES.find((r) => r.value === va.role)?.label.toUpperCase()
+    : null;
+  const tierLabel = va.tier ? va.tier.toUpperCase() : null;
+
+  async function exitAll() {
+    va.clearAll();
+    await setImpFn({ data: { firm_id: null } });
+    await qc.invalidateQueries();
+  }
+
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 100,
+        width: "100%",
+        height: 32,
+        background: GOLD,
+        color: DARK,
+        padding: "0 16px",
+        fontFamily: "Jost, system-ui, sans-serif",
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.1em",
+        textTransform: "uppercase",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
+      <span>
+        Viewing as: {roleLabel ?? "—"}
+        {tierLabel ? ` · ${tierLabel}` : ""}
+        {va.firmId && firmsQuery.data
+          ? ` · ${firmsQuery.data.find((f) => f.id === va.firmId)?.name ?? "firm"}`
+          : ""}
+      </span>
+      <button
+        type="button"
+        onClick={exitAll}
+        style={{
+          background: "transparent",
+          border: "none",
+          color: DARK,
+          cursor: "pointer",
+          fontWeight: 600,
+          letterSpacing: "0.1em",
+          fontSize: 10,
+        }}
+      >
+        Exit override ×
+      </button>
+    </div>
+  );
+}
+
 export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
   const [open, setOpen] = useState(false);
   const va = useViewAs();
@@ -97,52 +172,6 @@ export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
 
   return (
     <>
-      {/* Override banner */}
-      {overrideActive && (
-        <div
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 10000,
-            width: "100%",
-            background: GOLD,
-            color: DARK,
-            padding: "6px 16px",
-            fontFamily: "Jost, system-ui, sans-serif",
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <span>
-            Viewing as: {roleLabel ?? "—"}
-            {tierLabel ? ` · ${tierLabel}` : ""}
-            {va.firmId && firmsQuery.data
-              ? ` · ${firmsQuery.data.find((f) => f.id === va.firmId)?.name ?? "firm"}`
-              : ""}
-          </span>
-          <button
-            type="button"
-            onClick={exitAll}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: DARK,
-              cursor: "pointer",
-              fontWeight: 600,
-              letterSpacing: "0.1em",
-              fontSize: 10,
-            }}
-          >
-            Exit override ×
-          </button>
-        </div>
-      )}
-
       {/* Pill trigger */}
       <button
         type="button"
@@ -165,7 +194,9 @@ export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
             position: "fixed",
             bottom: 48,
             left: 16,
-            width: 280,
+            width: 248,
+            maxHeight: "70vh",
+            overflowY: "auto",
             background: DARK,
             border: "1px solid rgba(197,152,69,0.3)",
             borderRadius: 4,

@@ -25,7 +25,8 @@ import { effectiveTier, useMe } from "@/lib/role";
 import { supabase } from "@/integrations/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
-import { ViewSwitcher } from "@/components/shell/ViewSwitcher";
+import { ViewSwitcher, ViewSwitcherBanner } from "@/components/shell/ViewSwitcher";
+import { RestrictedPreview } from "@/components/shell/RestrictedPreview";
 import { cn } from "@/lib/utils";
 
 type Tier = "foundation" | "studio" | "practice";
@@ -59,6 +60,22 @@ const GROUP_LABELS: Record<NavItem["group"], string> = {
   general: "",
 };
 
+// Which routes each restricted role can actually reach. If the current
+// pathname isn't in the allow-list, we render a preview panel instead.
+const ROLE_ALLOWED_PATHS: Record<Role, string[] | "*"> = {
+  principal: "*",
+  admin: "*",
+  team: ["/time-calendar", "/projects", "/knowledge-base", "/settings", "/welcome"],
+  view_only: ["/projects", "/sop-library", "/knowledge-base", "/settings"],
+};
+
+function simulatedRouteRestriction(role: Role, pathname: string): Role | null {
+  const allowed = ROLE_ALLOWED_PATHS[role];
+  if (allowed === "*") return null;
+  const ok = allowed.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return ok ? null : role;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [upgradeFor, setUpgradeFor] = useState<Tier | null>(null);
@@ -84,8 +101,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? "principal"
     : ((data?.profile?.role as Role) ?? "team");
 
-  // Team-role route enforcement: redirect blocked paths to /time-calendar with a toast.
+  // Team-role route enforcement: redirect blocked paths to /time-calendar
+  // with a toast. Skipped for the real super admin even when previewing as
+  // team — view-as never reroutes the session; it just renders a preview.
   useEffect(() => {
+    if (isSuper) return;
     if (currentRole !== "team") return;
     const allowed = [
       "/time-calendar",
@@ -101,7 +121,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       toast.message("That section is managed by your firm principal.");
       nav({ to: "/time-calendar", replace: true });
     }
-  }, [pathname, currentRole, nav]);
+  }, [pathname, currentRole, nav, isSuper]);
+
+  // Compute whether the current path is restricted for the simulated role
+  // (only meaningful when a real super admin has a view-as override).
+  const overrideActive = isSuper && !data?.profile?.is_super_admin;
+  const restrictedRole = overrideActive
+    ? simulatedRouteRestriction(currentRole, pathname)
+    : null;
 
   const groups: NavItem["group"][] = ["foundation", "studio", "practice", "general"];
 
@@ -301,7 +328,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         {data?.firm && !data?.profile?.is_super_admin && (
           <TrialBanner trialEndsAt={data.firm.trial_ends_at} status={data.firm.subscription_status} />
         )}
-        <main className="flex-1">{children}</main>
+        <ViewSwitcherBanner realIsSuper={isSuper} realImpersonating={impersonating} />
+        <main className="flex-1">
+          {restrictedRole ? <RestrictedPreview role={restrictedRole} /> : children}
+        </main>
       </div>
 
       <UpgradeModal
