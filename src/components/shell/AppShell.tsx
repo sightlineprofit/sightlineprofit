@@ -60,6 +60,22 @@ const GROUP_LABELS: Record<NavItem["group"], string> = {
   general: "",
 };
 
+// Which routes each restricted role can actually reach. If the current
+// pathname isn't in the allow-list, we render a preview panel instead.
+const ROLE_ALLOWED_PATHS: Record<Role, string[] | "*"> = {
+  principal: "*",
+  admin: "*",
+  team: ["/time-calendar", "/projects", "/knowledge-base", "/settings", "/welcome"],
+  view_only: ["/projects", "/sop-library", "/knowledge-base", "/settings"],
+};
+
+function simulatedRouteRestriction(role: Role, pathname: string): Role | null {
+  const allowed = ROLE_ALLOWED_PATHS[role];
+  if (allowed === "*") return null;
+  const ok = allowed.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return ok ? null : role;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [upgradeFor, setUpgradeFor] = useState<Tier | null>(null);
