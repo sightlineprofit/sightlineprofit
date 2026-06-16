@@ -191,7 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             );
           })}
-          {isSuper && (
+          {isSuper && !!data?.profile?.is_super_admin && (
             <div className="mt-4 border-t border-border pt-3">
               {!collapsed && (
                 <div className="px-3 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-gold">
