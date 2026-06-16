@@ -738,7 +738,7 @@ function ManualHoursPanel({ tier = "foundation" }: { tier?: "foundation" | "stud
       </div>
 
       {tier === "foundation" && (
-        <div className="-mt-2 mb-4 text-[11px] font-light text-pale-oyster" style={{ fontFamily: "Jost, sans-serif" }}>
+        <div className="-mt-2 mb-4 text-[11px] font-light text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
           Want to track time by project and client — day by day? That's Studio.{" "}
           <Link to="/billing" className="underline decoration-dotted underline-offset-2 hover:text-ch">
             See what's included →
