@@ -116,7 +116,7 @@ function SettingsPage() {
 /* ─────────────── Profile (team / view_only) ─────────────── */
 function ProfileTab() {
   const qc = useQueryClient();
-  const { data } = useMe();
+  const { data, realIsSuper } = useMe();
   const p = data?.profile;
   const claim = useServerFn(claimPrincipalRole);
   const [claiming, setClaiming] = useState(false);
@@ -158,6 +158,7 @@ function ProfileTab() {
       </p>
       </div>
 
+      {!realIsSuper && (
       <div className="rounded-lg border border-gold/40 bg-goldp/40 p-6 space-y-3">
         <div>
           <h3 className="font-display text-lg text-ch">Claim principal access</h3>
@@ -176,6 +177,7 @@ function ProfileTab() {
           {claiming ? "Claiming…" : "Claim principal access"}
         </button>
       </div>
+      )}
     </div>
   );
 }
