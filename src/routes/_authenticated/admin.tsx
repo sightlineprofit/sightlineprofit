@@ -16,6 +16,12 @@ import {
   upsertKbItem,
   deleteKbItem,
 } from "@/lib/admin.functions";
+import {
+  getDemoFirmStatus,
+  enterDemoAsPrincipal,
+  resetDemoFirm,
+  loadDemoData,
+} from "@/lib/demo.functions";
 import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { cn } from "@/lib/utils";
@@ -29,7 +35,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
-type Tab = "firms" | "users" | "webhooks" | "kb" | "settings";
+type Tab = "firms" | "users" | "webhooks" | "kb" | "settings" | "demo";
 
 function AdminPage() {
   const getCtx = useServerFn(getMyContext);
@@ -46,6 +52,7 @@ function AdminPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "firms", label: "Firms" },
     { id: "users", label: "Users" },
+    { id: "demo", label: "Demo" },
     { id: "webhooks", label: "Webhook Log" },
     { id: "kb", label: "Knowledge Base" },
     { id: "settings", label: "App Settings" },
@@ -77,6 +84,7 @@ function AdminPage() {
 
       {tab === "firms" && <FirmsTab impersonatedFirmId={ctx.profile.impersonated_firm_id} />}
       {tab === "users" && <UsersTab />}
+      {tab === "demo" && <DemoTab />}
       {tab === "webhooks" && <WebhooksTab />}
       {tab === "kb" && <KbTab />}
       {tab === "settings" && <SettingsTab />}
