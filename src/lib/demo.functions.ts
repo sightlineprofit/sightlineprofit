@@ -507,17 +507,18 @@ export const loadDemoData = createServerFn({ method: "POST" })
     const checks = ["projects", "pipeline_projects", "expenses", "scenarios",
       "time_entries", "manual_hour_logs"];
     for (const tbl of checks) {
-      const { data: bad } = await supabaseAdmin
+      const ids =
+        tbl === "projects" ? [P1, P2, P3, P4] :
+        tbl === "pipeline_projects" ? [PIPE1] :
+        tbl === "scenarios" ? [SC1, SC2] :
+        tbl === "expenses" ? expenseSeeds.map((e) => expenseId(e.n)) :
+        [];
+      if (!ids.length) continue;
+      const { data: bad } = await (supabaseAdmin as any)
         .from(tbl)
         .select("id, firm_id")
         .neq("firm_id", DEMO_FIRM_ID)
-        .in("id",
-          tbl === "projects" ? [P1, P2, P3, P4] :
-          tbl === "pipeline_projects" ? [PIPE1] :
-          tbl === "scenarios" ? [SC1, SC2] :
-          tbl === "expenses" ? expenseSeeds.map((e) => expenseId(e.n)) :
-          [],
-        );
+        .in("id", ids);
       if (bad && bad.length) {
         throw new Error(`RLS validation failed: ${tbl} has rows outside demo firm.`);
       }
