@@ -1,8 +1,10 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Navigate } from "@tanstack/react-router";
 import { getMyContext } from "@/lib/firm.functions";
 import { useViewAs } from "@/lib/view-as";
+import { supabase } from "@/integrations/supabase/client";
 
 export type AppRole = "principal" | "admin" | "team" | "view_only";
 export type AppTier = "foundation" | "studio" | "practice";
@@ -10,7 +12,29 @@ export type AppTier = "foundation" | "studio" | "practice";
 export function useMe() {
   const getCtx = useServerFn(getMyContext);
   const va = useViewAs();
-  const query = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const query = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      // Skip the RPC entirely if there's no session — otherwise the server
+      // fn throws "Unauthorized: No authorization header provided" and blank
+      // -screens the app before the _authenticated layout can redirect.
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) return null;
+      return await getCtx();
+    },
+    retry: false,
+  });
+
+  // If the server rejects the token (expired/revoked), sign out cleanly and
+  // bounce to /login rather than leaving the app on a blank error boundary.
+  useEffect(() => {
+    const msg = (query.error as any)?.message ?? "";
+    if (typeof window !== "undefined" && /Unauthorized/i.test(msg)) {
+      supabase.auth.signOut().finally(() => {
+        window.location.replace("/login");
+      });
+    }
+  }, [query.error]);
 
   const realProfile = query.data?.profile ?? null;
   const realFirm = query.data?.firm ?? null;
