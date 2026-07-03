@@ -18,7 +18,8 @@ export const listAllFirms = createServerFn({ method: "GET" })
     await assertSuper(context.supabase, context.userId);
     const { data: firms } = await supabaseAdmin
       .from("firms")
-      .select("id, name, owner_id, subscription_tier, subscription_status, trial_ends_at, created_at")
+      .select("id, name, owner_id, subscription_tier, subscription_status, trial_ends_at, created_at, is_demo")
+      .eq("is_demo", false)
       .order("created_at", { ascending: false });
     if (!firms) return [];
     const ids = firms.map((f) => f.id);

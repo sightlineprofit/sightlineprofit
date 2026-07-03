@@ -281,7 +281,11 @@ export type Database = {
       firms: {
         Row: {
           created_at: string
+          data_status: string
           id: string
+          is_demo: boolean
+          last_demo_loaded_at: string | null
+          last_reset_at: string | null
           name: string
           owner_id: string
           stripe_customer_id: string | null
@@ -292,7 +296,11 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          data_status?: string
           id?: string
+          is_demo?: boolean
+          last_demo_loaded_at?: string | null
+          last_reset_at?: string | null
           name: string
           owner_id: string
           stripe_customer_id?: string | null
@@ -303,7 +311,11 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          data_status?: string
           id?: string
+          is_demo?: boolean
+          last_demo_loaded_at?: string | null
+          last_reset_at?: string | null
           name?: string
           owner_id?: string
           stripe_customer_id?: string | null

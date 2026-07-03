@@ -16,6 +16,12 @@ import {
   upsertKbItem,
   deleteKbItem,
 } from "@/lib/admin.functions";
+import {
+  getDemoFirmStatus,
+  enterDemoAsPrincipal,
+  resetDemoFirm,
+  loadDemoData,
+} from "@/lib/demo.functions";
 import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { cn } from "@/lib/utils";
@@ -29,7 +35,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
-type Tab = "firms" | "users" | "webhooks" | "kb" | "settings";
+type Tab = "firms" | "users" | "webhooks" | "kb" | "settings" | "demo";
 
 function AdminPage() {
   const getCtx = useServerFn(getMyContext);
@@ -46,6 +52,7 @@ function AdminPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "firms", label: "Firms" },
     { id: "users", label: "Users" },
+    { id: "demo", label: "Demo" },
     { id: "webhooks", label: "Webhook Log" },
     { id: "kb", label: "Knowledge Base" },
     { id: "settings", label: "App Settings" },
@@ -77,6 +84,7 @@ function AdminPage() {
 
       {tab === "firms" && <FirmsTab impersonatedFirmId={ctx.profile.impersonated_firm_id} />}
       {tab === "users" && <UsersTab />}
+      {tab === "demo" && <DemoTab />}
       {tab === "webhooks" && <WebhooksTab />}
       {tab === "kb" && <KbTab />}
       {tab === "settings" && <SettingsTab />}
@@ -562,6 +570,186 @@ function SettingsTab() {
           )} />
         </button>
       </div>
+    </div>
+  );
+}
+/* ============ Demo Account ============ */
+function DemoTab() {
+  const qc = useQueryClient();
+  const [confirm, setConfirm] = useState<null | "reset" | "load">(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const getStatus = useServerFn(getDemoFirmStatus);
+  const enter = useServerFn(enterDemoAsPrincipal);
+  const reset = useServerFn(resetDemoFirm);
+  const load = useServerFn(loadDemoData);
+
+  const { data: firm, isLoading } = useQuery({
+    queryKey: ["demo-firm"],
+    queryFn: () => getStatus(),
+  });
+
+  async function runReset() {
+    setBusy(true); setErr(null);
+    try {
+      await reset();
+      await qc.invalidateQueries({ queryKey: ["demo-firm"] });
+      setConfirm(null);
+    } catch (e: any) { setErr(e.message ?? String(e)); }
+    finally { setBusy(false); }
+  }
+  async function runLoad() {
+    setBusy(true); setErr(null);
+    try {
+      await load();
+      await qc.invalidateQueries({ queryKey: ["demo-firm"] });
+      setConfirm(null);
+    } catch (e: any) { setErr(e.message ?? String(e)); }
+    finally { setBusy(false); }
+  }
+  async function viewAsPrincipal() {
+    await enter();
+    try { sessionStorage.removeItem("sightline.viewAs.v1"); } catch {}
+    window.location.href = "/dashboard";
+  }
+
+  if (isLoading) return <p className="text-ch/60">Loading…</p>;
+  if (!firm) {
+    return (
+      <div className="rounded-lg border border-border bg-white p-6 text-sm text-ch/70">
+        Demo firm has not been provisioned yet. Contact engineering.
+      </div>
+    );
+  }
+
+  const isClean = firm.data_status === "clean";
+  const lastReset = firm.last_reset_at
+    ? new Date(firm.last_reset_at).toLocaleString()
+    : "Never";
+  const lastLoad = firm.last_demo_loaded_at
+    ? new Date(firm.last_demo_loaded_at).toLocaleString()
+    : "Never loaded";
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 28 }}>
+          Demo Account
+        </h2>
+        <p
+          className="text-ch/60"
+          style={{ fontFamily: "Jost, system-ui, sans-serif", fontSize: 13, fontWeight: 300 }}
+        >
+          Manage the demo firm used for testing and demonstrations.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-white p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-ch/50">Firm</div>
+            <div className="font-medium">{firm.name}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-wider text-ch/50">Tier</div>
+            <div className="font-medium">Practice</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-wider text-ch/50">Data status</div>
+            <span
+              className={cn(
+                "inline-block rounded-full px-2 py-0.5 text-xs font-medium",
+                isClean
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-goldp text-ch",
+              )}
+            >
+              {isClean ? "Clean" : "Has demo data"}
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-6 text-xs text-ch/60 pt-2 border-t border-border">
+          <div>Last reset: <span className="text-ch/80">{lastReset}</span></div>
+          <div>Last demo data loaded: <span className="text-ch/80">{lastLoad}</span></div>
+        </div>
+      </div>
+
+      {err && (
+        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          {err}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={viewAsPrincipal}
+          className="rounded-md bg-ch px-4 py-2 text-sm text-white hover:opacity-90"
+        >
+          View demo as principal →
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirm("reset")}
+          className="rounded-md border border-border bg-white px-4 py-2 text-sm text-ch hover:bg-creamd"
+        >
+          Reset to clean state
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirm("load")}
+          className="rounded-md bg-gold px-4 py-2 text-sm text-white hover:opacity-90"
+        >
+          Load demo data
+        </button>
+      </div>
+
+      {confirm && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50"
+          onClick={() => !busy && setConfirm(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-lg font-medium">
+              {confirm === "reset" ? "Reset demo firm?" : "Load demo data?"}
+            </h3>
+            <p className="mb-4 text-sm text-ch/70">
+              {confirm === "reset"
+                ? "This will permanently delete all data in Aldrich Studio — Demo and return it to a clean onboarding state. This cannot be undone."
+                : "This will populate Aldrich Studio — Demo with realistic sample data so you can demonstrate all features. Any existing demo data will be replaced."}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirm(null)}
+                className="rounded-md border border-border bg-white px-4 py-2 text-sm hover:bg-creamd"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={confirm === "reset" ? runReset : runLoad}
+                className={cn(
+                  "rounded-md px-4 py-2 text-sm text-white disabled:opacity-60",
+                  confirm === "reset" ? "bg-[#B85C5C]" : "bg-gold",
+                )}
+              >
+                {busy
+                  ? "Working…"
+                  : confirm === "reset"
+                  ? "Reset demo firm"
+                  : "Load demo data"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
