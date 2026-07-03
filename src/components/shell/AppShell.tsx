@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
@@ -81,6 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [upgradeFor, setUpgradeFor] = useState<Tier | null>(null);
   const [userMenu, setUserMenu] = useState(false);
   const nav = useNavigate();
+  const queryClient = useQueryClient();
   const stopImpFn = useServerFn(setImpersonation);
   const { data, realIsSuper } = useMe();
 
@@ -133,8 +135,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const groups: NavItem["group"][] = ["foundation", "studio", "practice", "general"];
 
   async function signOut() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
     await supabase.auth.signOut();
-    nav({ to: "/" });
+    nav({ to: "/login", replace: true });
   }
 
   async function stopImpersonating() {
