@@ -1129,9 +1129,6 @@ type ManualLog = {
   updated_at: string;
 };
 
-function isoDay(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function startOfWeekMonday(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
