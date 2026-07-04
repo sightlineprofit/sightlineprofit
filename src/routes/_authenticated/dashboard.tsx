@@ -366,7 +366,15 @@ function ProgressBar({ pct }: { pct: number }) {
   );
 }
 
-function HoursMetric({ weekBillable, target }: { weekBillable: number; target: number }) {
+function HoursMetric({
+  weekBillable,
+  target,
+  onOpenDetail,
+}: {
+  weekBillable: number;
+  target: number;
+  onOpenDetail?: () => void;
+}) {
   const remaining = Math.max(0, target - weekBillable);
   const pct = target > 0 ? (weekBillable / target) * 100 : 0;
   const onTarget = remaining <= 0;
@@ -381,6 +389,16 @@ function HoursMetric({ weekBillable, target }: { weekBillable: number; target: n
         {prettyNum(weekBillable)} of {prettyNum(target)} hrs logged this week
       </div>
       <ProgressBar pct={pct} />
+      {onOpenDetail && (
+        <button
+          type="button"
+          onClick={onOpenDetail}
+          className="mt-2 text-[10px] font-normal text-gold hover:underline"
+          style={{ letterSpacing: "0.02em" }}
+        >
+          See capacity detail →
+        </button>
+      )}
     </MetricCard>
   );
 }
@@ -424,7 +442,13 @@ function RevenueMetric({
   );
 }
 
-function RateHealthMetric({ c }: { c: ReturnType<typeof calc> }) {
+function RateHealthMetric({
+  c,
+  onOpenDetail,
+}: {
+  c: ReturnType<typeof calc>;
+  onOpenDetail?: () => void;
+}) {
   const health = c.rateHealth;
   const aligned = c.alignedRate;
   const billed = c.billedRate;
@@ -463,6 +487,18 @@ function RateHealthMetric({ c }: { c: ReturnType<typeof calc> }) {
       >
         {pillLabel}
       </span>
+      {onOpenDetail && (
+        <div>
+          <button
+            type="button"
+            onClick={onOpenDetail}
+            className="mt-2 text-[10px] font-normal text-gold hover:underline"
+            style={{ letterSpacing: "0.02em" }}
+          >
+            See full breakdown →
+          </button>
+        </div>
+      )}
     </MetricCard>
   );
 }
