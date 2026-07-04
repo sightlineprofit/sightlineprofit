@@ -46,7 +46,6 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
-  { to: "/settings", search: { panel: "rate" }, label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
   { to: "/time-calendar", label: "Time Calendar", icon: Calendar, tier: "studio", group: "studio" },
   { to: "/sightline", label: "Sightline", icon: LineChart, tier: "practice", group: "practice" },
   { to: "/sop-library", label: "SOP Library", icon: BookOpen, tier: "practice", group: "practice" },
