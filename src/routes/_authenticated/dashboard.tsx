@@ -84,12 +84,12 @@ function Dashboard() {
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   // Week nav (Monday-based)
-  const currentMonday = mondayOf(new Date());
+  const currentMonday = mondayOfWeek(new Date());
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, -1 = last week
   const selectedMonday = addDays(currentMonday, weekOffset * 7);
   const selectedSunday = addDays(selectedMonday, 6);
-  const weekStartIso = isoDate(selectedMonday);
-  const weekEndIso = isoDate(addDays(selectedMonday, 7));
+  const weekStartIso = isoDay(selectedMonday);
+  const weekEndIso = isoDay(addDays(selectedMonday, 7));
   const isCurrentWeek = weekOffset === 0;
 
   const trailingEntries = (data as any)?.capacity?.trailingEntries ?? [];
@@ -107,8 +107,8 @@ function Dashboard() {
     for (let i = 3; i >= 0; i--) {
       const s = addDays(selectedMonday, -i * 7);
       const e = addDays(s, 7);
-      const m = computeWindowHours(trailingEntries, manualLogsWindow, isoDate(s), isoDate(e));
-      weeks.push({ start: isoDate(s), end: isoDate(e), billable: m.billable, total: m.total });
+      const m = computeWindowHours(trailingEntries, manualLogsWindow, isoDay(s), isoDay(e));
+      weeks.push({ start: isoDay(s), end: isoDay(e), billable: m.billable, total: m.total });
     }
     return weeks;
   }, [trailingEntries, manualLogsWindow, selectedMonday]);
@@ -623,7 +623,7 @@ function QuickLogRow({
   manualLogsWindow: Array<{ period_start: string; billable_hrs: number; total_hrs_worked: number }>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(isoDate(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(isoDay(new Date()));
   const [total, setTotal] = useState<string>("");
   const [billable, setBillable] = useState<string>("");
   const totalN = Number(total || 0);
@@ -632,7 +632,7 @@ function QuickLogRow({
   const invalid = billableN > totalN;
   const canSubmit = totalN > 0 && !invalid;
   const today = new Date();
-  const monday = mondayOf(today);
+  const monday = mondayOfWeek(today);
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
   const dayHasEntries = new Set(
     trailingEntries.filter((t) => t.date === selectedDate).map((t) => t.date),
@@ -741,7 +741,7 @@ function QuickLogRow({
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="flex flex-wrap gap-1">
               {weekDays.map((d) => {
-                const iso = isoDate(d);
+                const iso = isoDay(d);
                 const isSel = iso === selectedDate;
                 return (
                   <button
@@ -1129,7 +1129,7 @@ type ManualLog = {
   updated_at: string;
 };
 
-function isoDate(d: Date) {
+function isoDay(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 function startOfWeekMonday(d: Date) {
@@ -1179,7 +1179,7 @@ function ManualHoursPanel({ tier = "foundation" }: { tier?: "foundation" | "stud
 
   const normalizedDate =
     periodType === "week" ? startOfWeekMonday(periodDate) : startOfMonthDate(periodDate);
-  const periodStartIso = isoDate(normalizedDate);
+  const periodStartIso = isoDay(normalizedDate);
 
   const { data: weekLogs } = useQuery({
     queryKey: ["manual-hours", "week"],
