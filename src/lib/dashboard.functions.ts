@@ -51,6 +51,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: trailingEntries },
       { data: sopTemplates },
       { data: sopPhases },
+      { data: manualLogsWindow },
     ] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -101,8 +102,6 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id)
         .gte("period_start", eightWeeksAgo.toISOString().slice(0, 10)),
     ]);
-    const manualLogs = (await Promise.resolve(arguments)) as unknown;
-    void manualLogs;
 
     const isBD = (status: string | null | undefined) =>
       status === "pursuit" || status === "pipeline";
