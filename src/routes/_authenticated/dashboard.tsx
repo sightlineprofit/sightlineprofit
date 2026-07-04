@@ -40,6 +40,7 @@ import { CapacityExpanded, type CapacityExpandedData } from "@/components/capaci
 import type { CapacityInputs } from "@/lib/capacity-math";
 import { RateInsightCard } from "@/components/dashboard/RateInsightCard";
 import { NarrativeStrip } from "@/components/dashboard/NarrativeStrip";
+import { RateBreakdownSlideOver, CapacitySlideOver, type PanelKind } from "@/components/dashboard/DashboardSlideOvers";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -156,6 +157,20 @@ function Dashboard() {
     return n;
   }, [data]);
 
+  // Committed hours across active projects (scoped_hrs sum)
+  const committedHrs = useMemo(() => {
+    const cap: any = (data as any)?.capacity;
+    if (!cap) return 0;
+    return (cap.projects ?? [])
+      .filter((p: any) => p.status === "active")
+      .reduce((s: number, p: any) => s + (Number(p.scoped_hrs) || 0), 0);
+  }, [data]);
+
+  const availableHrsPerWeek = Number(data?.config?.available_hrs_per_week ?? 0);
+  const targetMarginPct = Number(data?.config?.target_gross_margin_pct ?? 0);
+
+  const [openPanel, setOpenPanel] = useState<PanelKind>(null);
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-7xl px-8 py-10">
@@ -217,14 +232,18 @@ function Dashboard() {
         <SetupPrompt />
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <HoursMetric weekBillable={weekMetrics.billable} target={targetHrs} />
+          <HoursMetric
+            weekBillable={weekMetrics.billable}
+            target={targetHrs}
+            onOpenDetail={() => setOpenPanel("capacity")}
+          />
           <RevenueMetric
             weekBillable={weekMetrics.billable}
             target={targetHrs}
             rate={rateBilled}
             noData={weekMetrics.billable === 0 && weekMetrics.total === 0}
           />
-          <RateHealthMetric c={c} />
+          <RateHealthMetric c={c} onOpenDetail={() => setOpenPanel("rate")} />
         </div>
       )}
 
@@ -250,6 +269,22 @@ function Dashboard() {
         <FooterLink to="/knowledge-base">Knowledge base →</FooterLink>
         <FooterLink to="/setup">Rate & cost →</FooterLink>
       </div>
+
+      <RateBreakdownSlideOver
+        open={openPanel === "rate"}
+        onClose={() => setOpenPanel(null)}
+        c={c}
+        targetMarginPct={targetMarginPct}
+      />
+      <CapacitySlideOver
+        open={openPanel === "capacity"}
+        onClose={() => setOpenPanel(null)}
+        weekBillable={weekMetrics.billable}
+        target={targetHrs}
+        availableHrsPerWeek={availableHrsPerWeek}
+        trend={trend}
+        committedHrs={committedHrs}
+      />
     </div>
   );
 }
