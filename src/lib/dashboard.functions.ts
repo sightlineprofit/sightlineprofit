@@ -161,6 +161,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       bdWeekHours,
       committedRevenue,
       collectedRevenue,
+      manualLogsWindow: manualLogsWindow ?? [],
       capacity: {
         projects: capacityProjects ?? [],
         phases: phasesScoped,
