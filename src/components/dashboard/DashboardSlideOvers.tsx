@@ -291,7 +291,7 @@ export function RateBreakdownSlideOver({
   const go = (to: string, hash?: string) => {
     onClose();
     setTimeout(() => {
-      navigate({ to, hash });
+      navigate({ to, hash } as any);
     }, 240);
   };
 
@@ -463,7 +463,7 @@ export function CapacitySlideOver({
   const go = (to: string, hash?: string) => {
     onClose();
     setTimeout(() => {
-      navigate({ to, hash });
+      navigate({ to, hash } as any);
     }, 240);
   };
 
