@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getDashboardData, updateMetricPrefs, listKnowledge } from "@/lib/dashboard.functions";
 import { addExpense, upsertFirmConfig } from "@/lib/firm.functions";
@@ -255,7 +255,7 @@ function Dashboard() {
 }
 
 /* ───────── Date helpers ───────── */
-function mondayOf(d: Date): Date {
+function mondayOfWeek(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   const dow = x.getDay();
@@ -268,7 +268,7 @@ function addDays(d: Date, n: number): Date {
   x.setDate(x.getDate() + n);
   return x;
 }
-function isoDate(d: Date): string {
+function isoDay(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
