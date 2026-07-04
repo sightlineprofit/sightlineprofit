@@ -64,7 +64,7 @@ export function CapacityExpanded({ data }: { data: CapacityExpandedData }) {
           Set your billable hours target in Rate & Cost Architecture to unlock capacity tracking.
         </p>
         <Link
-          to="/setup"
+          to="/settings?panel=rate"
           className="mt-4 inline-block rounded-md bg-gold px-4 py-2 text-sm text-white"
         >
           Go to setup →
