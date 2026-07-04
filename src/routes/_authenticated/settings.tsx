@@ -378,7 +378,7 @@ function useFinancialDraft() {
   }, [cfg]);
 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function patch(p: Partial<typeof draft>) {
+  function patch(p: Record<string, string>) {
     setDraft(d => {
       const next = { ...d, ...p };
       if (timer.current) clearTimeout(timer.current);
