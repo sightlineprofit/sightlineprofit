@@ -538,7 +538,7 @@ function KbEditor({ item, onClose, onSave, saving }: { item: any; onClose: () =>
           <button
             type="button"
             disabled={saving}
-            onClick={() => onSave(f)}
+            onClick={() => onSave({ ...f, slug: f.slug ? slugify(f.slug) : slugify(f.title || "") })}
             className="rounded-md bg-gold px-4 py-2 text-sm text-white hover:bg-gold/90 disabled:opacity-50"
           >{saving ? "Saving…" : "Save"}</button>
         </div>
