@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getDashboardData, updateMetricPrefs, listKnowledge } from "@/lib/dashboard.functions";
 import { addExpense, upsertFirmConfig } from "@/lib/firm.functions";
@@ -66,7 +66,6 @@ function greeting() {
 function Dashboard() {
   const fetch = useServerFn(getDashboardData);
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetch() });
-  const [open, setOpen] = useState<TileId>(null);
   const firmId = data?.firm?.id as string | undefined;
   useRealtimeInvalidate(
     `dashboard-${firmId ?? "none"}`,
@@ -81,69 +80,94 @@ function Dashboard() {
   );
 
   const c = useMemo(() => calc(data?.config ?? null, data?.expenses ?? []), [data]);
-
-  // Build capacity payload (memo so both tile + expanded see the same instance)
-  const capacity = useMemo<{ tile: CapacityTileData; expanded: CapacityExpandedData } | null>(() => {
-    if (!data) return null;
-    const cap = (data as any).capacity;
-    if (!cap) return null;
-    const targetHrs = Number(data.config?.target_billable_hrs_per_week ?? 0) || 0;
-    const ratePerHr = Number(data.config?.rate_billed ?? 0) || 0;
-    const inputs: CapacityInputs = {
-      projects: cap.projects ?? [],
-      phases: cap.phases ?? [],
-      pipeline: cap.pipeline ?? [],
-      trailingEntries: cap.trailingEntries ?? [],
-      avgWeeklyNonBillable: Number(cap.avgWeeklyNonBillable ?? 0),
-      targetHrsPerWeek: targetHrs,
-      weeksPerYear: 48,
-      ratePerHr,
-    };
-    // Weekly hours per user (current week, billable only, non-BD)
-    const weeklyHoursByUser = new Map<string, number>();
-    // We don't have per-user current-week split in the existing payload; derive from trailingEntries
-    const startOfWeek = new Date();
-    startOfWeek.setHours(0, 0, 0, 0);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
-    const iso = startOfWeek.toISOString().slice(0, 10);
-    for (const t of cap.trailingEntries ?? []) {
-      if (t.billable && t.date >= iso && t.user_id) {
-        weeklyHoursByUser.set(t.user_id, (weeklyHoursByUser.get(t.user_id) ?? 0) + Number(t.hrs || 0));
-      }
-    }
-    return {
-      tile: {
-        inputs,
-        weekHours: data.weekHours ?? 0,
-        team: cap.team ?? [],
-        weeklyHoursByUser,
-        configSetup: targetHrs > 0,
-      },
-      expanded: {
-        inputs,
-        weekHours: data.weekHours ?? 0,
-        bdWeekHours: data.bdWeekHours ?? 0,
-        team: cap.team ?? [],
-        weeklyHoursByUser,
-        sopTemplates: cap.sopTemplates ?? [],
-        configSetup: targetHrs > 0,
-        annualRevenue: c.annualRevenue,
-        alignedAnnualRevenue: c.alignedRate * c.annualBillableHrs,
-      },
-    };
-  }, [data, c]);
-
   const firstName = (data?.profile?.name || data?.profile?.email || "").split(/[ @]/)[0] || "there";
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
+  // Week nav (Monday-based)
+  const currentMonday = mondayOfWeek(new Date());
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, -1 = last week
+  const selectedMonday = addDays(currentMonday, weekOffset * 7);
+  const selectedSunday = addDays(selectedMonday, 6);
+  const weekStartIso = isoDay(selectedMonday);
+  const weekEndIso = isoDay(addDays(selectedMonday, 7));
+  const isCurrentWeek = weekOffset === 0;
+
+  const trailingEntries = (data as any)?.capacity?.trailingEntries ?? [];
+  const manualLogsWindow = (data as any)?.manualLogsWindow ?? [];
+
+  // Deduped weekly billable/total for a [start,end) window
+  const weekMetrics = useMemo(
+    () => computeWindowHours(trailingEntries, manualLogsWindow, weekStartIso, weekEndIso),
+    [trailingEntries, manualLogsWindow, weekStartIso, weekEndIso],
+  );
+
+  // 4-week trend ending on selected week
+  const trend = useMemo(() => {
+    const weeks: { start: string; end: string; billable: number; total: number }[] = [];
+    for (let i = 3; i >= 0; i--) {
+      const s = addDays(selectedMonday, -i * 7);
+      const e = addDays(s, 7);
+      const m = computeWindowHours(trailingEntries, manualLogsWindow, isoDay(s), isoDay(e));
+      weeks.push({ start: isoDay(s), end: isoDay(e), billable: m.billable, total: m.total });
+    }
+    return weeks;
+  }, [trailingEntries, manualLogsWindow, selectedMonday]);
+
+  const targetHrs = Number(data?.config?.target_billable_hrs_per_week ?? 0);
+  const rateBilled = Number(data?.config?.rate_billed ?? 0);
+  const setupIncomplete = !targetHrs || !rateBilled;
+
+  // Active projects with actual vs scoped hours
+  const activeProjects = useMemo(() => {
+    const cap: any = (data as any)?.capacity;
+    if (!cap) return [];
+    const phasesByProject = new Map<string, { expected: number; actual: number; anyOver: boolean }>();
+    for (const ph of cap.phases ?? []) {
+      const pid = ph.project_id as string;
+      const rec = phasesByProject.get(pid) ?? { expected: 0, actual: 0, anyOver: false };
+      const exp = Number(ph.expected_hrs || 0);
+      const act = Number(ph.actual_hrs || 0);
+      rec.expected += exp;
+      rec.actual += act;
+      if (exp > 0 && act > exp) rec.anyOver = true;
+      phasesByProject.set(pid, rec);
+    }
+    return (cap.projects ?? [])
+      .filter((p: any) => p.status === "active")
+      .map((p: any) => {
+        const ph = phasesByProject.get(p.id as string) ?? { expected: 0, actual: 0, anyOver: false };
+        const scoped = Number(p.scoped_hrs || 0) || ph.expected;
+        const ratio = scoped > 0 ? ph.actual / scoped : 0;
+        let health: "healthy" | "watch" | "at_risk" = "healthy";
+        if (ratio > 0.9 || ph.anyOver) health = "at_risk";
+        else if (ratio >= 0.75) health = "watch";
+        return { id: p.id, name: p.name, ratio, health };
+      });
+  }, [data]);
+
+  // Growth signals active count
+  const growthSignalsActive = useMemo(() => {
+    const gs = (data?.config as any)?.growth_signals ?? {};
+    let n = 0;
+    for (const [k, v] of Object.entries(gs)) {
+      if (k === "updated_at") continue;
+      if (v === true || v === "yes") n++;
+    }
+    return n;
+  }, [data]);
+
   if (isLoading) {
-    return <div className="flex h-[50vh] items-center justify-center text-ch/50">Loading…</div>;
+    return (
+      <div className="mx-auto max-w-7xl px-8 py-10">
+        <DashboardSkeleton />
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto max-w-7xl px-8 py-10">
       {/* Header */}
-      <div className="mb-10">
+      <div className="mb-6">
         <h1 className="font-display text-5xl tracking-tight text-ch">
           {greeting()}, <span className="italic">{firstName}</span>
         </h1>
@@ -152,80 +176,614 @@ function Dashboard() {
         </p>
       </div>
 
-      {/* 3x2 grid */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        <Tile eyebrow="Budget vs Actual" title="This week" onOpen={() => setOpen("bva")}>
-          <BvAPreview
-            c={c}
-            weekHours={data?.weekHours ?? 0}
-            committed={data?.committedRevenue ?? 0}
-            collected={data?.collectedRevenue ?? 0}
-            basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
-          />
-        </Tile>
-        <Tile eyebrow="Rate" title="Rate Allocation" onOpen={() => setOpen("allocation")} accent>
-          <AllocationPreview c={c} />
-        </Tile>
-        <Tile eyebrow="Scenarios" title="Model a decision" onOpen={() => setOpen("scenario")}>
-          <ScenarioPreview lastName={data?.scenarios?.[0]?.name} />
-        </Tile>
-        {capacity ? (
-          <CapacityTile data={capacity.tile} onOpen={() => setOpen("capacity")} />
-        ) : (
-          <Tile eyebrow="Capacity" title="Firm capacity" onOpen={() => setOpen("capacity")}>
-            <div className="text-sm text-ch/50">Loading…</div>
-          </Tile>
+      {/* Week nav */}
+      <div className="mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setWeekOffset((w) => Math.max(-8, w - 1))}
+          className="rounded-[3px] border border-border bg-white px-2.5 py-1 text-xs text-ch transition-colors hover:border-gold disabled:opacity-35 disabled:cursor-not-allowed"
+          disabled={weekOffset <= -8}
+          aria-label="Previous week"
+        >
+          ←
+        </button>
+        <div className="text-xs font-medium text-ch">
+          {isCurrentWeek
+            ? "This week"
+            : `Week of ${fmtWeekLabel(selectedMonday)} — ${fmtWeekLabel(selectedSunday)}`}
+        </div>
+        <button
+          type="button"
+          onClick={() => setWeekOffset((w) => Math.min(0, w + 1))}
+          className="rounded-[3px] border border-border bg-white px-2.5 py-1 text-xs text-ch transition-colors hover:border-gold disabled:opacity-35 disabled:cursor-not-allowed"
+          disabled={isCurrentWeek}
+          aria-label="Next week"
+        >
+          →
+        </button>
+        {!isCurrentWeek && (
+          <button
+            type="button"
+            onClick={() => setWeekOffset(0)}
+            className="ml-auto text-[11px] text-gold hover:underline"
+          >
+            Today
+          </button>
         )}
-        <Tile eyebrow="Learn" title="Knowledge Base" onOpen={() => setOpen("kb")}>
-          <KnowledgePreview />
-        </Tile>
       </div>
 
-      {/* ── Moment 5: Narrative strip ── */}
-      <div className="mt-6">
-        <NarrativeStrip
-          weekHours={Number(data?.weekHours ?? 0)}
-          targetHrs={Number(data?.config?.target_billable_hrs_per_week ?? 0)}
-          billedRate={c.billedRate}
-          scopeWarningProjectName={null}
-          utilizationPct={(() => {
-            const target = Number(data?.config?.target_billable_hrs_per_week ?? 0);
-            return target > 0 ? (Number(data?.weekHours ?? 0) / target) * 100 : 0;
-          })()}
-        />
-        {/* ── Moment 1: First aligned rate insight card ── */}
-        {!(data?.config as any)?.rate_insight_shown &&
-          Number(data?.config?.rate_billed ?? 0) > 0 &&
-          c.alignedRate > 0 && (
-            <RateInsightCard
-              alignedRate={c.alignedRate}
-              billedRate={c.billedRate}
-              targetHrsPerWeek={Number(data?.config?.target_billable_hrs_per_week ?? 0)}
-            />
+      {/* Headline metrics */}
+      {setupIncomplete ? (
+        <SetupPrompt />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <HoursMetric weekBillable={weekMetrics.billable} target={targetHrs} />
+          <RevenueMetric
+            weekBillable={weekMetrics.billable}
+            target={targetHrs}
+            rate={rateBilled}
+            noData={weekMetrics.billable === 0 && weekMetrics.total === 0}
+          />
+          <RateHealthMetric c={c} />
+        </div>
+      )}
+
+      {/* Supporting tiles */}
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <ActiveProjectsTile projects={activeProjects} />
+        <FourWeekTrendTile trend={trend} target={targetHrs} rate={rateBilled} />
+      </div>
+
+      {/* Quick log */}
+      <div className="mt-3">
+        <QuickLogRow trailingEntries={trailingEntries} manualLogsWindow={manualLogsWindow} />
+      </div>
+
+      {/* Growth signals strip */}
+      <div className="mt-3">
+        <GrowthSignalsStrip active={growthSignalsActive} />
+      </div>
+
+      {/* Footer links */}
+      <div className="flex flex-wrap gap-6 pt-4 pb-2">
+        <FooterLink to="/setup">Scenario planning →</FooterLink>
+        <FooterLink to="/knowledge-base">Knowledge base →</FooterLink>
+        <FooterLink to="/setup">Rate & cost →</FooterLink>
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Date helpers ───────── */
+function mondayOfWeek(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const dow = x.getDay();
+  const diff = (dow + 6) % 7;
+  x.setDate(x.getDate() - diff);
+  return x;
+}
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function isoDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function fmtWeekLabel(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function computeWindowHours(
+  entries: Array<{ hrs: number; billable: boolean; date: string }>,
+  manualLogs: Array<{ period_start: string; billable_hrs: number; total_hrs_worked: number }>,
+  startIso: string,
+  endIso: string,
+) {
+  let entriesBillable = 0;
+  let entriesTotal = 0;
+  const datesWithEntries = new Set<string>();
+  for (const t of entries) {
+    if (t.date >= startIso && t.date < endIso) {
+      const h = Number(t.hrs || 0);
+      entriesTotal += h;
+      if (t.billable) entriesBillable += h;
+      datesWithEntries.add(t.date);
+    }
+  }
+  let manualBillable = 0;
+  let manualTotal = 0;
+  for (const l of manualLogs) {
+    if (l.period_start >= startIso && l.period_start < endIso) {
+      if (datesWithEntries.has(l.period_start)) continue; // dedupe: time entries win
+      manualBillable += Number(l.billable_hrs || 0);
+      manualTotal += Number(l.total_hrs_worked || 0);
+    }
+  }
+  return {
+    billable: entriesBillable + manualBillable,
+    total: entriesTotal + manualTotal,
+    datesWithEntries,
+  };
+}
+
+/* ───────── Headline metric cards ───────── */
+function MetricCard({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-[6px] border border-border bg-cream p-[20px_22px]" style={{ padding: "20px 22px", borderWidth: "0.5px" }}>
+      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-ch/50">{label}</p>
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+
+function ProgressBar({ pct }: { pct: number }) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const fill = clamped < 60 ? "var(--terra)" : clamped <= 85 ? "var(--gold)" : "var(--success)";
+  return (
+    <div className="mt-4 h-[5px] w-full overflow-hidden rounded-[3px]" style={{ background: "var(--creamd)" }}>
+      <div className="h-full transition-all duration-500 ease-out" style={{ width: `${clamped}%`, background: fill }} />
+    </div>
+  );
+}
+
+function HoursMetric({ weekBillable, target }: { weekBillable: number; target: number }) {
+  const remaining = Math.max(0, target - weekBillable);
+  const pct = target > 0 ? (weekBillable / target) * 100 : 0;
+  const onTarget = remaining <= 0;
+  const nearTarget = !onTarget && remaining <= 4;
+  const valueColor = onTarget ? "text-success" : nearTarget ? "text-gold" : "text-ch";
+  return (
+    <MetricCard label="Hours to target this week">
+      <div className={cn("font-display text-[40px] leading-none font-normal num", valueColor)}>
+        {onTarget ? "On target" : `${prettyNum(remaining)} hrs`}
+      </div>
+      <div className="mt-2 text-[11px] font-light text-ch/60">
+        {prettyNum(weekBillable)} of {prettyNum(target)} hrs logged this week
+      </div>
+      <ProgressBar pct={pct} />
+    </MetricCard>
+  );
+}
+
+function RevenueMetric({
+  weekBillable,
+  target,
+  rate,
+  noData,
+}: {
+  weekBillable: number;
+  target: number;
+  rate: number;
+  noData: boolean;
+}) {
+  const actual = weekBillable * rate;
+  const targetRev = target * rate;
+  const remaining = Math.max(0, targetRev - actual);
+  const pct = targetRev > 0 ? (actual / targetRev) * 100 : 0;
+  const onTarget = remaining <= 0 && targetRev > 0;
+  const near = !onTarget && remaining <= 500;
+  const valueColor = onTarget ? "text-success" : near ? "text-gold" : "text-ch";
+  return (
+    <MetricCard label="Revenue to target this week">
+      <div className={cn("font-display text-[40px] leading-none font-normal num", valueColor)}>
+        {onTarget ? "On target" : fmtUsd(remaining)}
+      </div>
+      <div className="mt-2 text-[11px] font-light text-ch/60">
+        {fmtUsd(actual)} of {fmtUsd(targetRev)} this week
+      </div>
+      <ProgressBar pct={pct} />
+      {noData && (
+        <div className="mt-3 text-[11px] text-ch/50">
+          Log your first hours this week to track progress.{" "}
+          <Link to="/time-calendar" className="text-gold hover:underline">
+            Go to time calendar →
+          </Link>
+        </div>
+      )}
+    </MetricCard>
+  );
+}
+
+function RateHealthMetric({ c }: { c: ReturnType<typeof calc> }) {
+  const health = c.rateHealth;
+  const aligned = c.alignedRate;
+  const billed = c.billedRate;
+  const breakEven = c.breakEvenRate;
+  let value: string;
+  let valueColor: string;
+  let secondary: string;
+  let pillLabel: string;
+  let pillStyle: React.CSSProperties;
+  if (health === "healthy") {
+    value = `+${fmtUsd(billed - aligned, { decimals: 0 })}/hr`;
+    valueColor = "text-success";
+    secondary = `${fmtUsd(billed, { decimals: 0 })} billed · ${fmtUsd(aligned, { decimals: 0 })} floor`;
+    pillLabel = "Above floor";
+    pillStyle = { background: "#EAF3DE", color: "#27500A" };
+  } else if (health === "below_floor") {
+    value = `-${fmtUsd(aligned - billed, { decimals: 0 })}/hr`;
+    valueColor = "text-gold";
+    secondary = `Below your ${fmtUsd(aligned, { decimals: 0 })} floor — consider raising your rate`;
+    pillLabel = "Below floor";
+    pillStyle = { background: "#FAEEDA", color: "#633806" };
+  } else {
+    value = `-${fmtUsd(breakEven - billed, { decimals: 0 })}/hr below break-even`;
+    valueColor = "text-danger";
+    secondary = `Below break-even (${fmtUsd(breakEven, { decimals: 0 })} minimum)`;
+    pillLabel = "Below break-even";
+    pillStyle = { background: "#FCEBEB", color: "#791F1F" };
+  }
+  return (
+    <MetricCard label="Rate health">
+      <div className={cn("font-display text-[40px] leading-none font-normal num", valueColor)}>{value}</div>
+      <div className="mt-2 text-[11px] font-light text-ch/60">{secondary}</div>
+      <span
+        className="mt-3 inline-block rounded-[2px] px-2 py-[3px] text-[9px] font-semibold uppercase tracking-wider"
+        style={pillStyle}
+      >
+        {pillLabel}
+      </span>
+    </MetricCard>
+  );
+}
+
+function prettyNum(n: number): string {
+  const v = Math.round(n * 10) / 10;
+  if (v === Math.floor(v)) return String(Math.floor(v));
+  return v.toFixed(1);
+}
+
+/* ───────── Supporting tiles ───────── */
+function ActiveProjectsTile({
+  projects,
+}: {
+  projects: Array<{ id: string; name: string; health: "healthy" | "watch" | "at_risk" }>;
+}) {
+  const needsAttention = projects.some((p) => p.health !== "healthy");
+  return (
+    <div className="rounded-[6px] bg-white p-5" style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}>
+      <div className="mb-3 text-[11px] font-medium text-ch">Active projects</div>
+      {projects.length === 0 ? (
+        <div className="text-[12px] text-ch/60">
+          No active projects yet.{" "}
+          <Link to="/projects" className="text-gold hover:underline">
+            Add your first project →
+          </Link>
+        </div>
+      ) : (
+        <>
+          <ul className="space-y-2">
+            {projects.map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-3">
+                <span className="truncate text-[12px] text-ch">{p.name}</span>
+                <HealthBadge health={p.health} />
+              </li>
+            ))}
+          </ul>
+          {needsAttention && (
+            <div className="mt-3">
+              <Link to="/projects" className="text-[11px] text-gold hover:underline">
+                View project details →
+              </Link>
+            </div>
           )}
-      </div>
+        </>
+      )}
+    </div>
+  );
+}
 
-      {/* Full views */}
-      <FullViewDialog open={open === "bva"} onClose={() => setOpen(null)} title="Budget vs Actual" wide>
-        <BvAFull
-          c={c}
-          weekHours={data?.weekHours ?? 0}
-          prefs={data?.prefs.hidden_metrics ?? []}
-          tier={effectiveTier(data?.profile, data?.firm)}
-          firmId={firmId}
-          committed={data?.committedRevenue ?? 0}
-          collected={data?.collectedRevenue ?? 0}
-          basis={(data?.config?.accounting_basis as "cash" | "accrual") ?? "cash"}
-        />
-      </FullViewDialog>
-      <FullViewDialog open={open === "allocation"} onClose={() => setOpen(null)} title="Rate Allocation" wide>
-        <AllocationFull c={c} expenses={data?.expenses ?? []} />
-      </FullViewDialog>
-      <FullViewDialog open={open === "scenario"} onClose={() => setOpen(null)} title="Scenario Planning" wide><ScenarioFull baseConfig={data?.config ?? null} expenses={data?.expenses ?? []} /></FullViewDialog>
-      <FullViewDialog open={open === "capacity"} onClose={() => setOpen(null)} title="Firm Capacity" wide>
-        {capacity && <CapacityExpanded data={capacity.expanded} />}
-      </FullViewDialog>
-      <FullViewDialog open={open === "kb"} onClose={() => setOpen(null)} title="Knowledge Base" wide><KnowledgeFull /></FullViewDialog>
+function HealthBadge({ health }: { health: "healthy" | "watch" | "at_risk" }) {
+  const map = {
+    healthy: { bg: "#EAF3DE", fg: "#27500A", label: "Healthy" },
+    watch: { bg: "#FAEEDA", fg: "#633806", label: "Watch" },
+    at_risk: { bg: "#FCEBEB", fg: "#791F1F", label: "At risk" },
+  } as const;
+  const s = map[health];
+  return (
+    <span
+      className="rounded-[2px] px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wider"
+      style={{ background: s.bg, color: s.fg }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
+function FourWeekTrendTile({
+  trend,
+  target,
+  rate,
+}: {
+  trend: Array<{ billable: number; total: number }>;
+  target: number;
+  rate: number;
+}) {
+  const avgBillable = trend.reduce((s, w) => s + w.billable, 0) / (trend.length || 1);
+  const avgRevenue = avgBillable * rate;
+  const utilization = target > 0 ? (avgBillable / target) * 100 : 0;
+  const weeksOnTarget = trend.filter((w) => target > 0 && w.billable >= target).length;
+  const onTargetColor =
+    weeksOnTarget >= 3 ? "text-success" : weeksOnTarget === 2 ? "text-gold" : "text-terra";
+  const rows = [
+    { label: "Avg billable hrs/week", value: `${prettyNum(avgBillable)} hrs`, color: "text-ch" },
+    { label: "Avg weekly revenue", value: fmtUsd(avgRevenue), color: "text-ch" },
+    { label: "Utilization", value: `${Math.round(utilization)}%`, color: "text-ch" },
+    { label: "Weeks on target", value: `${weeksOnTarget} of 4`, color: onTargetColor },
+  ];
+  return (
+    <div className="rounded-[6px] bg-white p-5" style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}>
+      <div className="mb-3 text-[11px] font-medium text-ch">4-week trend</div>
+      <div>
+        {rows.map((r, i) => (
+          <div
+            key={r.label}
+            className="flex items-center justify-between py-2"
+            style={{ borderBottom: i === rows.length - 1 ? "none" : "0.5px solid var(--border)" }}
+          >
+            <span className="text-[12px] text-ch/60">{r.label}</span>
+            <span className={cn("text-[12px] font-medium num", r.color)}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Growth signals strip ───────── */
+function GrowthSignalsStrip({ active }: { active: number }) {
+  let msg: string;
+  let color: string;
+  if (active >= 4) {
+    msg = "Strong signal — action needed";
+    color = "text-danger";
+  } else if (active >= 2) {
+    msg = "Growing case — review signals";
+    color = "text-gold";
+  } else {
+    msg = "No hire signal yet";
+    color = "text-ch/60";
+  }
+  return (
+    <Link
+      to="/growth-roadmap"
+      className="flex items-center justify-between rounded-[6px] bg-cream px-[18px] py-[14px] transition-colors hover:border-gold"
+      style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
+    >
+      <div>
+        <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-ch/50">Growth signals</div>
+        <div className="mt-0.5 text-[13px] font-medium text-ch num">{active} of 12 active</div>
+      </div>
+      <div className={cn("text-[11px]", color)}>{msg}</div>
+    </Link>
+  );
+}
+
+function FooterLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="text-[11px] font-normal text-ch/50 no-underline transition-colors duration-150 hover:text-gold hover:underline"
+    >
+      {children}
+    </Link>
+  );
+}
+
+function SetupPrompt() {
+  return (
+    <div className="rounded-[6px] bg-cream p-6" style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}>
+      <p className="text-[13px] font-light text-ch">
+        Complete your rate and cost setup to see your weekly targets.
+      </p>
+      <div className="mt-3">
+        <Link
+          to="/setup"
+          className="inline-block rounded-[2px] bg-gold px-4 py-2 text-[11px] font-medium text-white hover:opacity-90"
+        >
+          Finish setup →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div>
+      <div className="mb-6 space-y-2">
+        <div className="h-10 w-72 animate-pulse rounded bg-creamd" />
+        <div className="h-4 w-48 animate-pulse rounded bg-creamd" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="rounded-[6px] border border-border bg-cream p-6">
+            <div className="h-3 w-32 animate-pulse rounded bg-creamd" />
+            <div className="mt-4 h-10 w-40 animate-pulse rounded bg-creamd" />
+            <div className="mt-3 h-3 w-44 animate-pulse rounded bg-creamd" />
+            <div className="mt-4 h-[5px] w-full rounded bg-creamd" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ───────── Quick Log Row (compact, collapsible) ───────── */
+function QuickLogRow({
+  trailingEntries,
+  manualLogsWindow,
+}: {
+  trailingEntries: Array<{ hrs: number; billable: boolean; date: string }>;
+  manualLogsWindow: Array<{ period_start: string; billable_hrs: number; total_hrs_worked: number }>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(isoDay(new Date()));
+  const [total, setTotal] = useState<string>("");
+  const [billable, setBillable] = useState<string>("");
+  const totalN = Number(total || 0);
+  const billableN = Number(billable || 0);
+  const nonBillable = Math.max(0, totalN - billableN);
+  const invalid = billableN > totalN;
+  const canSubmit = totalN > 0 && !invalid;
+  const today = new Date();
+  const monday = mondayOfWeek(today);
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const dayHasEntries = new Set(
+    trailingEntries.filter((t) => t.date === selectedDate).map((t) => t.date),
+  );
+  const hasTimeEntriesForDate = dayHasEntries.has(selectedDate);
+
+  const upsert = useServerFn(upsertManualHourLog);
+  const qc = useQueryClient();
+  const mut = useMutation({
+    mutationFn: () =>
+      upsert({
+        data: {
+          period_type: "week", // manual_hour_logs schema doesn't allow "day"; use week with the picked date as the period_start
+          period_start: selectedDate,
+          total_hrs_worked: totalN,
+          billable_hrs: billableN,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Hours logged.");
+      setExpanded(false);
+      setTotal("");
+      setBillable("");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  void manualLogsWindow;
+
+  const dateLabel = new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="flex w-full items-center justify-between rounded-[6px] bg-cream px-4 py-[10px] text-left transition-colors hover:border-gold"
+        style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
+      >
+        <span className="text-[12px] text-ch/50">+ Log today's hours</span>
+        <span className="text-[11px] text-ch/50">{dateLabel}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-[6px] bg-cream p-4 transition-all"
+      style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
+    >
+      {hasTimeEntriesForDate ? (
+        <div className="text-[11px] text-ch/50">
+          Time calendar entries exist for this day — those are being used instead of a manual log.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-ch/50">Total hours</label>
+              <input
+                type="number"
+                min={0}
+                max={24}
+                step={0.5}
+                value={total}
+                placeholder="0"
+                onChange={(e) => setTotal(e.target.value)}
+                className="mt-1 w-full rounded-[3px] border border-border bg-white px-2 py-1.5 text-sm num"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-ch/50">Billable</label>
+              <input
+                type="number"
+                min={0}
+                max={24}
+                step={0.5}
+                value={billable}
+                placeholder="0"
+                onChange={(e) => setBillable(e.target.value)}
+                className={cn(
+                  "mt-1 w-full rounded-[3px] border bg-white px-2 py-1.5 text-sm num",
+                  invalid ? "border-danger" : "border-border",
+                )}
+              />
+              {invalid && (
+                <div className="mt-1 text-[10px] text-danger">Billable can't exceed total hours</div>
+              )}
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-ch/50">Non-billable</label>
+              <input
+                type="number"
+                readOnly
+                value={nonBillable}
+                className="mt-1 w-full rounded-[3px] border border-border px-2 py-1.5 text-sm num"
+                style={{ background: "var(--creamd)", color: "var(--muted-foreground)" }}
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1">
+              {weekDays.map((d) => {
+                const iso = isoDay(d);
+                const isSel = iso === selectedDate;
+                return (
+                  <button
+                    key={iso}
+                    type="button"
+                    onClick={() => setSelectedDate(iso)}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[10px] transition-colors",
+                      isSel
+                        ? "bg-ch text-cream"
+                        : "border border-border bg-white text-ch/70 hover:border-gold",
+                    )}
+                  >
+                    {d.toLocaleDateString("en-US", { weekday: "short" })}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setExpanded(false);
+                  setTotal("");
+                  setBillable("");
+                }}
+                className="text-[11px] text-ch/60 hover:text-ch"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!canSubmit || mut.isPending}
+                onClick={() => mut.mutate()}
+                className="rounded-[2px] bg-gold px-4 py-[7px] text-[10px] font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40 hover:opacity-90"
+              >
+                {mut.isPending ? "Logging…" : "Log hours"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -571,9 +1129,6 @@ type ManualLog = {
   updated_at: string;
 };
 
-function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
 function startOfWeekMonday(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -621,7 +1176,7 @@ function ManualHoursPanel({ tier = "foundation" }: { tier?: "foundation" | "stud
 
   const normalizedDate =
     periodType === "week" ? startOfWeekMonday(periodDate) : startOfMonthDate(periodDate);
-  const periodStartIso = isoDate(normalizedDate);
+  const periodStartIso = isoDay(normalizedDate);
 
   const { data: weekLogs } = useQuery({
     queryKey: ["manual-hours", "week"],
