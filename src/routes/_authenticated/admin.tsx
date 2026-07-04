@@ -434,6 +434,8 @@ function KbTab() {
 function KbEditor({ item, onClose, onSave, saving }: { item: any; onClose: () => void; onSave: (p: any) => void; saving: boolean }) {
   const [f, setF] = useState<any>(item);
   const tiers: ("foundation" | "studio" | "practice")[] = ["foundation", "studio", "practice"];
+  const slugify = (s: string) =>
+    s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
   function toggleTier(t: any) {
     setF((cur: any) => ({
       ...cur,
@@ -454,11 +456,28 @@ function KbEditor({ item, onClose, onSave, saving }: { item: any; onClose: () =>
         </div>
         <div className="space-y-3">
           <Field label="Title">
-            <input className={inputCls} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
+            <input
+              className={inputCls}
+              value={f.title}
+              onChange={(e) => {
+                const title = e.target.value;
+                setF((cur: any) => ({
+                  ...cur,
+                  title,
+                  slug: !cur.id && (!cur.slug || cur.slug === slugify(cur.title || "")) ? slugify(title) : cur.slug,
+                }));
+              }}
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Slug">
-              <input className={inputCls} value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} placeholder="how-rates-work" />
+              <input
+                className={inputCls}
+                value={f.slug}
+                onChange={(e) => setF({ ...f, slug: slugify(e.target.value) })}
+                onBlur={() => setF((cur: any) => ({ ...cur, slug: cur.slug ? slugify(cur.slug) : slugify(cur.title || "") }))}
+                placeholder="how-rates-work"
+              />
             </Field>
             <Field label="Type">
               <select className={inputCls} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
