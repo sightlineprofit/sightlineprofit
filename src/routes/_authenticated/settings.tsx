@@ -333,7 +333,7 @@ function FirmTab() {
               className="mt-1 accent-gold"
             />
             <div className="text-sm">
-              <div className="font-medium text-ch">Cash basis <span className="text-xs text-ch/50 font-normal">(most common for small firms)</span></div>
+              <div className="font-medium text-ch">Cash basis</div>
               <div className="text-ch/60 mt-0.5">
                 I count revenue when a client pays me. An invoice sent but not yet paid doesn't
                 count as revenue until the money arrives.

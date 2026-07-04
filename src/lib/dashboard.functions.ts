@@ -72,7 +72,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id),
       supabase
         .from("project_phases")
-        .select("id, project_id, name, expected_hrs, billable, sort_order"),
+        .select("id, project_id, name, expected_hrs, actual_hrs, billable, sort_order"),
       supabase
         .from("pipeline_projects")
         .select("id, name, estimated_hrs, estimated_start, probability_pct")
@@ -95,7 +95,14 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .from("sop_phases")
         .select("template_id, expected_hrs")
         .eq("firm_id", profile.firm_id),
+      supabase
+        .from("manual_hour_logs")
+        .select("id, user_id, period_type, period_start, total_hrs_worked, billable_hrs, non_billable_hrs")
+        .eq("firm_id", profile.firm_id)
+        .gte("period_start", eightWeeksAgo.toISOString().slice(0, 10)),
     ]);
+    const manualLogs = (await Promise.resolve(arguments)) as unknown;
+    void manualLogs;
 
     const isBD = (status: string | null | undefined) =>
       status === "pursuit" || status === "pipeline";
