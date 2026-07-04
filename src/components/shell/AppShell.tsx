@@ -41,11 +41,12 @@ type NavItem = {
   tier: Tier;
   group: "foundation" | "studio" | "practice" | "general";
   allowRoles?: Role[];
+  search?: Record<string, string>;
 };
 
 const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
-  { to: "/setup", label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
+  { to: "/settings", search: { panel: "rate" }, label: "Rate & Cost", icon: Calculator, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
   { to: "/time-calendar", label: "Time Calendar", icon: Calendar, tier: "studio", group: "studio" },
   { to: "/sightline", label: "Sightline", icon: LineChart, tier: "practice", group: "practice" },
   { to: "/sop-library", label: "SOP Library", icon: BookOpen, tier: "practice", group: "practice" },
@@ -211,7 +212,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                             {content}
                           </button>
                         ) : (
-                          <Link to={item.to} className={baseClass} title={collapsed ? item.label : undefined}>
+                          <Link to={item.to as any} search={item.search as any} className={baseClass} title={collapsed ? item.label : undefined}>
                             {content}
                           </Link>
                         )}

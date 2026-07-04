@@ -419,8 +419,8 @@ export function RateBreakdownSlideOver({
       </div>
 
       <EditPromptFooter
-        primary={{ label: "Edit your rate →", to: "/setup" }}
-        secondary={{ label: "Run a scenario →", to: "/setup", hash: "scenarios" }}
+        primary={{ label: "Edit your rate →", to: "/settings?panel=rate" }}
+        secondary={{ label: "Run a scenario →", to: "/settings?panel=rate", hash: "scenarios" }}
         onNavigate={go}
       />
     </Shell>
@@ -597,7 +597,7 @@ export function CapacitySlideOver({
       </div>
 
       <EditPromptFooter
-        primary={{ label: "Edit capacity settings →", to: "/setup" }}
+        primary={{ label: "Edit capacity settings →", to: "/settings?panel=rate" }}
         secondary={{ label: "View time calendar →", to: "/calendar" }}
         onNavigate={go}
       />

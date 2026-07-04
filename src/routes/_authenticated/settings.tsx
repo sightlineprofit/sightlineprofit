@@ -1,67 +1,84 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  getMyContext,
-  updateFirm,
-  listTeam,
-  inviteTeamMember,
-  resendInvitation,
-  listActivityGroups,
-  addActivityGroup,
-  deleteActivityGroup,
-  upsertFirmConfig,
-  listExpenses,
-  updateTeamMember,
-  setPreferredHome,
-  claimPrincipalRole,
+  DollarSign, Receipt, Calculator, User, Building2, Users,
+  CreditCard, Bell, SlidersHorizontal, Lock, X, Plus, Trash2,
+} from "lucide-react";
+import {
+  getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
+  upsertFirmConfig, listExpenses, addExpense, deleteExpense,
+  updateTeamMember, setPreferredHome,
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
-import { computeBurden } from "@/lib/cost";
 import { ModulePage } from "@/components/shell/ModulePage";
-import { Trash2, ChevronDown, ChevronRight, Info } from "lucide-react";
+import { calc, type Expense } from "@/lib/finance";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+
+type PanelId =
+  | "comp" | "opex" | "rate"
+  | "profile" | "firm" | "team" | "billing"
+  | "notifications" | "preferences" | "security";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Sightline" }] }),
+  validateSearch: (s: Record<string, unknown>) => ({
+    panel: (s.panel as PanelId | undefined) ?? undefined,
+  }),
   component: SettingsPage,
 });
 
-const TABS_FULL = [
-  { id: "firm", label: "Firm" },
-  { id: "team", label: "Team" },
-  { id: "activities", label: "Activity Groups" },
-  { id: "billing", label: "Billing" },
-  { id: "notifications", label: "Notifications" },
-] as const;
-const TABS_LIMITED = [
-  { id: "profile", label: "Profile" },
-] as const;
-type TabId =
-  | (typeof TABS_FULL)[number]["id"]
-  | (typeof TABS_LIMITED)[number]["id"];
+/* ────────────────────────────── shared UI ────────────────────────────── */
 
 const inputCls =
-  "w-full rounded-md border border-input bg-white px-3 py-2 text-sm text-ch placeholder:text-ch/40 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20";
-const btnCls =
-  "inline-flex items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-goldl disabled:opacity-50";
+  "w-full rounded-[5px] border border-border bg-white px-2.5 py-[7px] text-[12px] text-ch placeholder:text-ch/40 focus:border-gold focus:outline-none focus:ring-1 focus:ring-gold/30";
+const selectCls = inputCls + " cursor-pointer appearance-none pr-6 bg-no-repeat bg-[right_8px_center] " +
+  "[background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='none' stroke='%23777' stroke-width='1.2' d='M1 1l4 4 4-4'/></svg>\")]";
+const goldBtn =
+  "inline-flex items-center justify-center rounded-[4px] bg-gold px-4 py-[7px] text-[11px] font-medium text-white hover:bg-goldl disabled:opacity-50";
 const ghostBtn =
-  "inline-flex items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-medium text-ch transition-colors hover:bg-creamd";
+  "inline-flex items-center justify-center rounded-[4px] border border-border bg-white px-3 py-[7px] text-[11px] text-ch/70 hover:bg-cream";
+const darkBtn =
+  "inline-flex items-center justify-center rounded-[4px] bg-ch px-3 py-[6px] text-[11px] font-medium text-white hover:opacity-90";
+const dangerGhostBtn =
+  "inline-flex items-center rounded-[4px] border border-danger/60 bg-white px-3 py-[6px] text-[11px] text-danger hover:bg-danger/5";
+
+const fieldLabel = "mb-1 block text-[10px] font-medium uppercase tracking-[0.09em] text-ch/60";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <label className={fieldLabel}>{label}</label>
+      {children}
+    </div>
+  );
+}
+function Row2({ children }: { children: React.ReactNode }) {
+  return <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">{children}</div>;
+}
+function SaveRow({ onCancel, onSave, saveLabel = "Save", saving }: {
+  onCancel?: () => void; onSave?: () => void; saveLabel?: string; saving?: boolean;
+}) {
+  return (
+    <div className="mt-3 flex justify-end gap-2">
+      {onCancel && <button type="button" className={ghostBtn} onClick={onCancel}>Cancel</button>}
+      <button type="button" className={goldBtn} onClick={onSave} disabled={saving}>
+        {saving ? "Saving…" : saveLabel}
+      </button>
+    </div>
+  );
+}
+
+/* ────────────────────────────── page ────────────────────────────── */
 
 function SettingsPage() {
   const { data, isLoading } = useMe();
   const role = effectiveRole(data?.profile);
   const isAdmin = role === "principal" || role === "admin";
-  const tabs = isAdmin ? TABS_FULL : TABS_LIMITED;
-  const [tab, setTab] = useState<TabId>(isAdmin ? "firm" : "profile");
+
   if (isLoading) {
     return (
       <ModulePage title="Settings">
@@ -69,993 +86,898 @@ function SettingsPage() {
       </ModulePage>
     );
   }
-  return (
-    <ModulePage eyebrow="Studio" title="Settings" description="Configure your firm, team, and account.">
-      <div className="flex flex-wrap gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "border-b-2 px-4 py-2.5 text-sm transition-colors",
-              tab === t.id
-                ? "border-gold text-ch font-medium"
-                : "border-transparent text-ch/60 hover:text-ch",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="pt-8">
-        {isAdmin && tab === "firm" && <FirmTab />}
-        {isAdmin && tab === "team" && <TeamTab />}
-        {isAdmin && tab === "activities" && <ActivityGroupsTab />}
-        {isAdmin && tab === "billing" && <BillingTab />}
-        {isAdmin && tab === "notifications" && <NotificationsTab />}
-        {!isAdmin && tab === "profile" && <ProfileTab />}
-      </div>
-      {isAdmin && (
-        <div className="mt-10 border-t border-border pt-6">
-          <Link
-            to={"/dashboard/annual-summary" as any}
-            className="inline-flex items-center gap-2 text-sm text-gold hover:text-goldl"
-          >
-            View your year in Sightline →
-          </Link>
-          <p className="mt-1 text-xs text-ch/50">
-            A summary of rate progress, project outcomes, capacity decisions, and value identified.
-          </p>
+
+  if (!isAdmin) {
+    // Team / view_only: profile only, no tile grid.
+    return (
+      <div className="min-h-screen bg-cream px-8 pt-7 pb-16">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-gold">Settings</p>
+        <h1 className="mt-1 font-display text-[28px] font-normal text-ch">Your profile</h1>
+        <p className="mt-1 mb-5 text-[12px] font-light text-ch/60">Your name and contact info.</p>
+        <div className="max-w-2xl rounded-[8px] border border-border bg-white p-6">
+          <ProfilePanelBody />
         </div>
-      )}
-    </ModulePage>
-  );
+      </div>
+    );
+  }
+
+  return <AdminSettings />;
 }
 
-/* ─────────────── Profile (team / view_only) ─────────────── */
-function ProfileTab() {
-  const qc = useQueryClient();
-  const { data, realIsSuper } = useMe();
-  const p = data?.profile;
-  const claim = useServerFn(claimPrincipalRole);
-  const [claiming, setClaiming] = useState(false);
+function AdminSettings() {
+  const { panel } = Route.useSearch();
+  const navigate = useNavigate();
+  const [active, setActive] = useState<PanelId | null>(panel ?? null);
 
-  async function handleClaim() {
-    setClaiming(true);
-    try {
-      const res = await claim();
-      if (res.alreadyPrincipal) {
-        toast.message("You're already a principal.");
-      } else {
-        toast.success("Principal access granted. All modules unlocked.");
-      }
-      await qc.invalidateQueries({ queryKey: ["me"] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not claim principal access");
-    } finally {
-      setClaiming(false);
-    }
+  // Sync from URL if it changes externally
+  useEffect(() => { setActive(panel ?? null); }, [panel]);
+
+  function open(id: PanelId) {
+    const next = active === id ? null : id;
+    setActive(next);
+    navigate({ to: "/settings", search: next ? { panel: next } : {}, replace: true });
+  }
+  function close() {
+    setActive(null);
+    navigate({ to: "/settings", search: {}, replace: true });
   }
 
   return (
-    <div className="max-w-xl space-y-6">
-      <div className="rounded-lg border border-border bg-white p-6 space-y-4">
-      <div>
-        <label className="mb-1.5 block text-sm text-ch/70">Name</label>
-        <input className={inputCls} value={p?.name ?? ""} readOnly />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-sm text-ch/70">Email</label>
-        <input className={inputCls} value={p?.email ?? ""} readOnly />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-sm text-ch/70">Role</label>
-        <input className={inputCls} value={p?.role ?? ""} readOnly />
-      </div>
-      <p className="text-xs text-ch/50">
-        Your firm principal manages financial settings, the team roster, and billing.
+    <div className="min-h-screen bg-cream px-8 pt-7 pb-16">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-gold">Settings</p>
+      <h1 className="mt-1 font-display text-[28px] font-normal leading-tight text-ch">Your account</h1>
+      <p className="mt-1 mb-5 text-[12px] font-light text-ch/60">
+        Click any section to view or update it.
       </p>
+
+      <GroupLabel>Financial architecture</GroupLabel>
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        <FinancialTiles active={active} onOpen={open} />
       </div>
 
-      {!realIsSuper && (
-      <div className="rounded-lg border border-gold/40 bg-goldp/40 p-6 space-y-3">
-        <div>
-          <h3 className="font-display text-lg text-ch">Claim principal access</h3>
-          <p className="mt-1 text-sm text-ch/70">
-            If you're the firm owner but your role is showing as <strong>{p?.role ?? "team"}</strong>,
-            you can promote yourself to principal to unlock all modules. This only works if you
-            own the firm or no principal exists yet.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleClaim}
-          disabled={claiming}
-          className={btnCls}
-        >
-          {claiming ? "Claiming…" : "Claim principal access"}
-        </button>
+      <GroupLabel className="mt-5">Account</GroupLabel>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+        <AccountTiles active={active} onOpen={open} />
       </div>
+
+      {active && (
+        <div className="mt-3 rounded-[8px] border border-border bg-white px-7 pt-6 pb-6">
+          {active === "comp" && <CompPanel onClose={close} />}
+          {active === "opex" && <OpexPanel onClose={close} />}
+          {active === "rate" && <RatePanel onClose={close} />}
+          {active === "profile" && <PanelShell title="Profile" subtitle="Your name and contact info." onClose={close}><ProfilePanelBody /></PanelShell>}
+          {active === "firm" && <FirmPanel onClose={close} />}
+          {active === "team" && <TeamPanel onClose={close} />}
+          {active === "billing" && <BillingPanel onClose={close} />}
+          {active === "notifications" && <NotificationsPanel onClose={close} />}
+          {active === "preferences" && <PreferencesPanel onClose={close} />}
+          {active === "security" && <SecurityPanel onClose={close} />}
+        </div>
       )}
     </div>
   );
 }
 
-/* ─────────────── Firm ─────────────── */
-function FirmTab() {
+function GroupLabel({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("mt-5 mb-2.5 border-b border-border pb-1.5 text-[9px] font-medium uppercase tracking-[0.1em] text-ch/60", className)}>
+      {children}
+    </div>
+  );
+}
+
+/* ────────────────────────────── tiles ────────────────────────────── */
+
+type Status = { tone: "ok" | "warn" | "muted"; text: string };
+type TileDef = {
+  id: PanelId; name: string; desc: string;
+  icon: typeof User; gold?: boolean; status: Status;
+};
+
+function Tile({ t, active, onOpen }: { t: TileDef; active: PanelId | null; onOpen: (id: PanelId) => void }) {
+  const isActive = active === t.id;
+  const Icon = t.icon;
+  const dot =
+    t.status.tone === "ok" ? "#639922"
+    : t.status.tone === "warn" ? "#BA7517"
+    : "var(--border)";
+  const textColor =
+    t.status.tone === "ok" ? "#27500A"
+    : t.status.tone === "warn" ? "#633806"
+    : "rgba(44,44,44,0.55)";
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(t.id)}
+      className={cn(
+        "text-left rounded-[8px] border border-border bg-white px-4 pt-3.5 pb-3 transition-colors hover:border-gold",
+        isActive && "border-gold bg-[#FFFDF9]",
+      )}
+    >
+      <Icon size={18} className={cn("mb-2 block", t.gold ? "text-gold" : "text-ch/60")} />
+      <div className="text-[12px] font-medium text-ch">{t.name}</div>
+      <div className="mt-0.5 text-[10px] font-light leading-[1.4] text-ch/60">{t.desc}</div>
+      <div className="mt-2.5 flex items-center gap-1.5 border-t border-border pt-2.5">
+        <span className="h-[5px] w-[5px] rounded-full" style={{ backgroundColor: dot }} />
+        <span className="text-[10px] font-medium" style={{ color: textColor }}>{t.status.text}</span>
+      </div>
+    </button>
+  );
+}
+
+function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id: PanelId) => void }) {
+  const getCtx = useServerFn(getMyContext);
+  const listExp = useServerFn(listExpenses);
+  const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => listExp() });
+
+  const cfg = ctx?.config ?? null;
+  const c = useMemo(() => calc(cfg, (expenses ?? []) as Expense[]), [cfg, expenses]);
+
+  const compStatus: Status = cfg?.comp_draw_annual
+    ? { tone: "ok", text: `$${Math.round((cfg.comp_draw_annual ?? 0) / 1000)}k draw · $${Math.round(c.compTotal / 1000)}k total` }
+    : { tone: "muted", text: "Not configured" };
+
+  const expenseCount = expenses?.length ?? 0;
+  const opexStatus: Status = expenseCount > 0
+    ? { tone: "ok", text: `${expenseCount} expenses · $${Math.round((c.opexRecurring + c.opexOneTime) / 1000)}k/yr` }
+    : { tone: "muted", text: "No expenses added" };
+
+  let rateStatus: Status;
+  if (cfg?.rate_billed && cfg?.target_billable_hrs_per_week) {
+    const label = `${cfg.target_billable_hrs_per_week} hrs/wk · $${Math.round(cfg.rate_billed)}/hr`;
+    rateStatus =
+      c.rateHealth === "healthy" ? { tone: "ok", text: `${label} · Above floor` }
+      : c.rateHealth === "below_floor" ? { tone: "warn", text: `${label} · Below floor` }
+      : { tone: "warn", text: "Below break-even" };
+  } else {
+    rateStatus = { tone: "muted", text: "Not configured" };
+  }
+
+  const tiles: TileDef[] = [
+    { id: "comp", name: "Owner compensation", desc: "Everything you take out of the firm in a year.", icon: DollarSign, gold: true, status: compStatus },
+    { id: "opex", name: "Operating expenses", desc: "Fixed and recurring costs of running the firm.", icon: Receipt, gold: true, status: opexStatus },
+    { id: "rate", name: "Capacity and rate", desc: "How many hours you sell and what you charge.", icon: Calculator, gold: true, status: rateStatus },
+  ];
+  return <>{tiles.map(t => <Tile key={t.id} t={t} active={active} onOpen={onOpen} />)}</>;
+}
+
+function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id: PanelId) => void }) {
+  const getCtx = useServerFn(getMyContext);
+  const list = useServerFn(listTeam);
+  const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data: team } = useQuery({ queryKey: ["team"], queryFn: () => list() });
+
+  const firmName = ctx?.firm?.name;
+  const memberCount = team?.members?.length ?? 0;
+  const pendingCount = team?.invites?.length ?? 0;
+
+  const tier = ctx?.firm?.subscription_tier as string | undefined;
+  const status = ctx?.firm?.subscription_status as string | undefined;
+  const trialEnds = ctx?.firm?.trial_ends_at;
+  const trialDays = trialEnds ? Math.max(0, Math.ceil((new Date(trialEnds).getTime() - Date.now()) / 86400000)) : 0;
+  const tierPrice: Record<string, string> = { studio: "$69", practice: "$129" };
+  const tierName: Record<string, string> = { foundation: "Foundation", studio: "Sightline", practice: "Practice" };
+
+  const billingStatus: Status =
+    status === "trialing" ? { tone: "warn", text: `Trial · ${trialDays} days remaining` }
+    : status === "active" && tier ? { tone: "ok", text: `${tierName[tier] ?? tier} · ${tierPrice[tier] ?? ""}${tierPrice[tier] ? "/mo" : ""}` }
+    : { tone: "muted", text: "No active plan" };
+
+  const teamStatus: Status =
+    pendingCount > 0 ? { tone: "warn", text: `${pendingCount} invite${pendingCount === 1 ? "" : "s"} pending` }
+    : memberCount > 1 ? { tone: "ok", text: `${memberCount} members` }
+    : { tone: "muted", text: "Solo — no team yet" };
+
+  const tiles: TileDef[] = [
+    { id: "profile", name: "Profile", desc: "Your name and contact info.", icon: User, status: { tone: "ok", text: "Complete" } },
+    { id: "firm", name: "Firm", desc: "Firm name and business configuration.", icon: Building2, status: firmName ? { tone: "ok", text: "Complete" } : { tone: "muted", text: "Not set" } },
+    { id: "team", name: "Team", desc: "Members, roles, and invitations.", icon: Users, status: teamStatus },
+    { id: "billing", name: "Billing", desc: "Your current plan and payment method.", icon: CreditCard, status: billingStatus },
+    { id: "notifications", name: "Notifications", desc: "Alerts and email preferences.", icon: Bell, status: { tone: "muted", text: "Default settings" } },
+    { id: "preferences", name: "Preferences", desc: "Display and regional settings.", icon: SlidersHorizontal, status: { tone: "muted", text: "Default settings" } },
+    { id: "security", name: "Security", desc: "Password and account access.", icon: Lock, status: { tone: "ok", text: "Secure" } },
+  ];
+  return <>{tiles.map(t => <Tile key={t.id} t={t} active={active} onOpen={onOpen} />)}</>;
+}
+
+/* ────────────────────────────── panel shell ────────────────────────────── */
+
+function PanelShell({ title, subtitle, onClose, children }: {
+  title: string; subtitle?: string; onClose: () => void; children: React.ReactNode;
+}) {
+  return (
+    <>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <div className="text-[14px] font-medium text-ch">{title}</div>
+          {subtitle && <div className="mt-0.5 text-[11px] text-ch/60">{subtitle}</div>}
+        </div>
+        <button type="button" onClick={onClose} className="text-ch/50 hover:text-ch">
+          <X size={16} />
+        </button>
+      </div>
+      {children}
+    </>
+  );
+}
+
+/* ────────────────────────────── financial panels ────────────────────────────── */
+
+function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
+  title: string; subtitle: string; onClose: () => void; left: React.ReactNode;
+  cfg: any; expenses: Expense[];
+}) {
+  const c = useMemo(() => calc(cfg, expenses), [cfg, expenses]);
+  const rateStatus =
+    c.rateHealth === "healthy" ? "Above floor"
+    : c.rateHealth === "below_floor" ? "Below floor"
+    : "Below break-even";
+  const budgetRevenue = (cfg?.rate_billed ?? 0) * (cfg?.target_billable_hrs_per_week ?? 0) * 52;
+  const rows: [string, string, boolean?][] = [
+    ["Billed rate", `$${Math.round(c.billedRate)}/hr`, true],
+    ["Rate health", rateStatus],
+    ["Margin", `+$${Math.round(c.marginAboveFloor)}/hr`, true],
+    ["Break-even", `$${Math.round(c.breakEvenRate)}/hr`],
+    ["Cost floor", `$${Math.round(c.totalCost).toLocaleString()}`],
+    ["Budget revenue", `$${Math.round(budgetRevenue).toLocaleString()}`],
+  ];
+  return (
+    <PanelShell title={title} subtitle={subtitle} onClose={onClose}>
+      <div className="grid gap-6 lg:grid-cols-[1fr_220px]">
+        <div>{left}</div>
+        <aside>
+          <div className="rounded-[7px] border border-border bg-cream p-3.5 lg:sticky lg:top-5">
+            <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-gold">Live output</p>
+            <h3 className="mt-0.5 mb-3 font-display text-[18px] text-ch">Your numbers</h3>
+            <div className="text-[9px] uppercase tracking-[0.1em] text-ch/60">Aligned rate</div>
+            <div className="font-display text-[32px] leading-none text-ch">${Math.round(c.alignedRate)}</div>
+            <div className="mt-1 text-[10px] text-ch/60 mb-2.5">Your floor.</div>
+            <div className="border-t border-border">
+              {rows.map(([label, value, gold], i) => (
+                <div key={label} className={cn("flex justify-between py-1 text-[11px]", i < rows.length - 1 && "border-b border-border")}>
+                  <span className="text-ch/60">{label}</span>
+                  <span className={cn("font-medium", gold ? "text-gold" : "text-ch")}>{value}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2.5 text-[10px] text-ch/60">Changes save automatically.</p>
+          </div>
+        </aside>
+      </div>
+    </PanelShell>
+  );
+}
+
+function useFinancialDraft() {
   const qc = useQueryClient();
   const getCtx = useServerFn(getMyContext);
+  const listExp = useServerFn(listExpenses);
+  const saveCfg = useServerFn(upsertFirmConfig);
+  const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => listExp() });
+  const cfg = ctx?.config ?? null;
+
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (!cfg || hydrated.current) return;
+    setDraft({
+      comp_draw_annual: cfg.comp_draw_annual?.toString() ?? "",
+      comp_ptax_pct: cfg.comp_ptax_pct?.toString() ?? "15.3",
+      comp_health_annual: cfg.comp_health_annual?.toString() ?? "",
+      comp_retire_annual: cfg.comp_retire_annual?.toString() ?? "",
+      comp_distribution_annual: cfg.comp_distribution_annual?.toString() ?? "",
+      comp_reserve_target_annual: cfg.comp_reserve_target_annual?.toString() ?? "",
+      available_hrs_per_week: cfg.available_hrs_per_week?.toString() ?? "",
+      target_billable_hrs_per_week: cfg.target_billable_hrs_per_week?.toString() ?? "",
+      target_gross_margin_pct: cfg.target_gross_margin_pct?.toString() ?? "",
+      rate_billed: cfg.rate_billed?.toString() ?? "",
+    });
+    hydrated.current = true;
+  }, [cfg]);
+
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function patch(p: Record<string, string>) {
+    setDraft(d => {
+      const next = { ...d, ...p };
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(async () => {
+        const payload: Record<string, number | null> = {};
+        const keys = [
+          "comp_draw_annual","comp_ptax_pct","comp_health_annual","comp_retire_annual",
+          "comp_distribution_annual","comp_reserve_target_annual",
+          "available_hrs_per_week","target_billable_hrs_per_week",
+          "target_gross_margin_pct","rate_billed",
+        ];
+        for (const k of keys) {
+          const v = next[k] ?? "";
+          const n = v === "" ? null : Number(v);
+          payload[k] = n !== null && Number.isFinite(n) ? n : null;
+        }
+        try {
+          await saveCfg({ data: payload as any });
+          qc.invalidateQueries({ queryKey: ["me"] });
+          qc.invalidateQueries({ queryKey: ["dashboard"] });
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Could not save. Try again.");
+        }
+      }, 700);
+      return next;
+    });
+  }
+
+  const num = (k: string) => {
+    const v = draft[k] ?? "";
+    return v === "" ? null : Number(v);
+  };
+  const liveConfig = {
+    comp_draw_annual: num("comp_draw_annual"),
+    comp_ptax_pct: num("comp_ptax_pct"),
+    comp_health_annual: num("comp_health_annual"),
+    comp_retire_annual: num("comp_retire_annual"),
+    comp_distribution_annual: num("comp_distribution_annual"),
+    comp_reserve_target_annual: num("comp_reserve_target_annual"),
+    available_hrs_per_week: num("available_hrs_per_week"),
+    target_billable_hrs_per_week: num("target_billable_hrs_per_week"),
+    target_gross_margin_pct: num("target_gross_margin_pct"),
+    rate_billed: num("rate_billed"),
+    actual_billed_rate: null,
+    business_structure: cfg?.business_structure ?? "sole_prop",
+  };
+  return { draft, patch, liveConfig, cfg, expenses: (expenses ?? []) as Expense[] };
+}
+
+function NumInput({ value, onChange, prefix, suffix, placeholder }: {
+  value: string; onChange: (v: string) => void; prefix?: string; suffix?: string; placeholder?: string;
+}) {
+  return (
+    <div className="relative">
+      {prefix && <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-[12px] text-ch/40">{prefix}</span>}
+      <input
+        type="number" step="any" min={0} value={value} placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(inputCls, prefix && "pl-6", suffix && "pr-7")}
+      />
+      {suffix && <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-[12px] text-ch/40">{suffix}</span>}
+    </div>
+  );
+}
+
+function CompPanel({ onClose }: { onClose: () => void }) {
+  const { draft, patch, liveConfig, expenses, cfg } = useFinancialDraft();
+  const salary = Number(draft.comp_draw_annual) || 0;
+  const ptax = (salary * (Number(draft.comp_ptax_pct) || 0)) / 100;
+  const isSCorp = cfg?.business_structure === "s_corp";
+  const dist = isSCorp ? Number(draft.comp_distribution_annual) || 0 : 0;
+  const reserve = isSCorp ? Number(draft.comp_reserve_target_annual) || 0 : 0;
+  const health = Number(draft.comp_health_annual) || 0;
+  const retire = Number(draft.comp_retire_annual) || 0;
+  const total = salary + ptax + dist + reserve + health + retire;
+
+  return (
+    <FinancialLayout
+      title="Owner compensation"
+      subtitle="Everything you take out of the firm in a year."
+      onClose={onClose}
+      cfg={liveConfig} expenses={expenses}
+      left={
+        <>
+          <Row2>
+            <Field label="Annual salary / owner draw">
+              <NumInput value={draft.comp_draw_annual ?? ""} onChange={(v) => patch({ comp_draw_annual: v })} prefix="$" />
+            </Field>
+            <Field label="Self-employment tax %">
+              <NumInput value={draft.comp_ptax_pct ?? ""} onChange={(v) => patch({ comp_ptax_pct: v })} suffix="%" />
+            </Field>
+          </Row2>
+          <Row2>
+            <Field label="Annual health insurance">
+              <NumInput value={draft.comp_health_annual ?? ""} onChange={(v) => patch({ comp_health_annual: v })} prefix="$" />
+            </Field>
+            <Field label="Retirement contribution">
+              <NumInput value={draft.comp_retire_annual ?? ""} onChange={(v) => patch({ comp_retire_annual: v })} prefix="$" />
+            </Field>
+          </Row2>
+          {isSCorp && (
+            <Row2>
+              <Field label="Distribution / owner bonus">
+                <NumInput value={draft.comp_distribution_annual ?? ""} onChange={(v) => patch({ comp_distribution_annual: v })} prefix="$" placeholder="0" />
+              </Field>
+              <Field label="Reserve target (S-Corp)">
+                <NumInput value={draft.comp_reserve_target_annual ?? ""} onChange={(v) => patch({ comp_reserve_target_annual: v })} prefix="$" placeholder="0" />
+              </Field>
+            </Row2>
+          )}
+          <div className="mt-1 flex justify-between border-t border-border pt-2.5 text-[12px]">
+            <span className="text-ch/60">Compensation subtotal</span>
+            <span className="font-medium text-ch">${Math.round(total).toLocaleString()}</span>
+          </div>
+        </>
+      }
+    />
+  );
+}
+
+function OpexPanel({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const { liveConfig, expenses } = useFinancialDraft();
+  const addExp = useServerFn(addExpense);
+  const delExp = useServerFn(deleteExpense);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", amount: "", frequency: "monthly" as Expense["frequency"] });
+
+  const annualTotal = expenses.reduce((sum, e) => {
+    const amt = Number(e.amount) || 0;
+    if (e.frequency === "annual") return sum + amt;
+    if (e.frequency === "monthly") return sum + amt * 12;
+    if (e.frequency === "quarterly") return sum + amt * 4;
+    const m = Number(e.amort_months) || 12;
+    return sum + (amt / m) * 12;
+  }, 0);
+
+  async function save() {
+    if (!form.name || !form.amount) return;
+    try {
+      await addExp({ data: { name: form.name, amount: Number(form.amount), frequency: form.frequency, recurring: form.frequency !== "onetime" } as any });
+      setForm({ name: "", amount: "", frequency: "monthly" });
+      setAdding(false);
+      qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Expense added.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not save."); }
+  }
+  async function remove(id: string) {
+    await delExp({ data: { id } });
+    qc.invalidateQueries({ queryKey: ["expenses"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+  }
+
+  return (
+    <FinancialLayout
+      title="Operating expenses"
+      subtitle="Fixed and recurring costs of running the firm."
+      onClose={onClose} cfg={liveConfig} expenses={expenses}
+      left={
+        <>
+          <div className="mb-2.5 overflow-hidden rounded-[6px] border border-border bg-white">
+            <div className="grid grid-cols-[1fr_100px_100px_28px] bg-creamd/60 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-ch/60">
+              <span>Expense</span><span>Amount</span><span>Frequency</span><span></span>
+            </div>
+            {expenses.map((e, i) => (
+              <div key={e.id} className={cn("grid grid-cols-[1fr_100px_100px_28px] items-center px-3 py-[7px] text-[11px]", i < expenses.length - 1 && "border-b border-border")}>
+                <span className="text-ch">{e.name}</span>
+                <span className="text-ch">${Number(e.amount).toLocaleString()}</span>
+                <span className="text-ch/60 capitalize">{e.frequency}</span>
+                <button onClick={() => remove(e.id)} className="text-ch/40 hover:text-danger"><X size={13} /></button>
+              </div>
+            ))}
+            {!expenses.length && !adding && <div className="px-3 py-4 text-center text-[11px] text-ch/50">No expenses yet.</div>}
+          </div>
+
+          {adding ? (
+            <div className="rounded-[6px] border border-border bg-cream p-3">
+              <div className="mb-2 flex gap-2">
+                <input className={cn(inputCls, "flex-1")} placeholder="Expense name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <div className="relative w-[100px]">
+                  <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-[12px] text-ch/40">$</span>
+                  <input type="number" className={cn(inputCls, "pl-6")} placeholder="Amount" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                </div>
+                <select className={cn(selectCls, "w-[110px]")} value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value as Expense["frequency"] })}>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annual">Annual</option>
+                  <option value="onetime">One-time</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" className={ghostBtn} onClick={() => { setAdding(false); setForm({ name: "", amount: "", frequency: "monthly" }); }}>Cancel</button>
+                <button type="button" className={goldBtn} onClick={save}>Save</button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 text-[11px] text-gold hover:underline">
+              <Plus size={13} /> Add expense
+            </button>
+          )}
+
+          <div className="mt-3 flex justify-between border-t border-border pt-2.5 text-[12px]">
+            <span className="text-ch/60">Annual operating total</span>
+            <span className="font-medium text-ch">${Math.round(annualTotal).toLocaleString()}</span>
+          </div>
+        </>
+      }
+    />
+  );
+}
+
+function RatePanel({ onClose }: { onClose: () => void }) {
+  const { draft, patch, liveConfig, expenses } = useFinancialDraft();
+  const avail = Number(draft.available_hrs_per_week) || 0;
+  const target = Number(draft.target_billable_hrs_per_week) || 0;
+  const utilization = avail > 0 ? (target / avail) * 100 : 0;
+  return (
+    <FinancialLayout
+      title="Capacity and rate"
+      subtitle="How many hours you sell and what you charge."
+      onClose={onClose} cfg={liveConfig} expenses={expenses}
+      left={
+        <>
+          <Row2>
+            <Field label="Available hours / week">
+              <NumInput value={draft.available_hrs_per_week ?? ""} onChange={(v) => patch({ available_hrs_per_week: v })} />
+            </Field>
+            <Field label="Target billable hrs / week">
+              <NumInput value={draft.target_billable_hrs_per_week ?? ""} onChange={(v) => patch({ target_billable_hrs_per_week: v })} />
+            </Field>
+          </Row2>
+          <Row2>
+            <Field label="Target gross margin %">
+              <NumInput value={draft.target_gross_margin_pct ?? ""} onChange={(v) => patch({ target_gross_margin_pct: v })} suffix="%" />
+            </Field>
+            <Field label="Your billed rate ($/hr)">
+              <NumInput value={draft.rate_billed ?? ""} onChange={(v) => patch({ rate_billed: v })} prefix="$" />
+            </Field>
+          </Row2>
+          <div className="rounded-[4px] border border-border bg-creamd/50 px-3 py-2.5 text-[11px] text-ch">
+            <span className="text-ch/60">Utilization target: </span>
+            <span className="font-medium">{utilization.toFixed(0)}%</span>
+            <span className="text-ch/50"> ({target} of {avail} hrs/week)</span>
+          </div>
+        </>
+      }
+    />
+  );
+}
+
+/* ────────────────────────────── account panels ────────────────────────────── */
+
+function ProfilePanelBody() {
+  const qc = useQueryClient();
+  const { data } = useMe();
+  const p = data?.profile;
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [phone, setPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!p) return;
+    const parts = (p.name || "").split(" ");
+    setFirst(parts[0] ?? ""); setLast(parts.slice(1).join(" "));
+    setPhone((p as any).phone ?? "");
+  }, [p?.id]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const name = [first, last].filter(Boolean).join(" ");
+      const { error } = await supabase.from("profiles").update({ name }).eq("id", p!.id);
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      toast.success("Profile saved.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not save. Try again."); }
+    finally { setSaving(false); }
+  }
+  return (
+    <>
+      <Row2>
+        <Field label="First name"><input className={inputCls} value={first} onChange={(e) => setFirst(e.target.value)} /></Field>
+        <Field label="Last name"><input className={inputCls} value={last} onChange={(e) => setLast(e.target.value)} /></Field>
+      </Row2>
+      <Field label="Email address"><input className={inputCls} value={p?.email ?? ""} readOnly /></Field>
+      <Field label="Phone (optional)"><input className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+      <SaveRow onSave={save} saving={saving} />
+    </>
+  );
+}
+
+function FirmPanel({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data } = useMe();
   const upd = useServerFn(updateFirm);
   const updCfg = useServerFn(upsertFirmConfig);
-  const expensesFn = useServerFn(listExpenses);
-  const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
-  const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => expensesFn() });
+  const saveHome = useServerFn(setPreferredHome);
   const [name, setName] = useState(data?.firm?.name ?? "");
+  const [structure, setStructure] = useState((data?.config?.business_structure as string) ?? "sole_prop");
+  const [basis, setBasis] = useState((data?.config?.accounting_basis as string) ?? "cash");
+  const [home, setHome] = useState(((data?.profile as any)?.preferred_home as string) ?? "dashboard");
+  const [state, setState] = useState((data?.firm as any)?.state ?? "");
   const [saving, setSaving] = useState(false);
 
-  // Accounting basis + S-Corp / advanced compensation
-  const cfg = data?.config ?? null;
-  const [basis, setBasis] = useState<"cash" | "accrual">(
-    (cfg?.accounting_basis as "cash" | "accrual") || "cash",
-  );
-  const [structure, setStructure] = useState<"sole_prop" | "s_corp" | "other">(
-    (cfg?.business_structure as "sole_prop" | "s_corp" | "other") || "sole_prop",
-  );
-  const [salary, setSalary] = useState<string>(
-    cfg?.comp_draw_annual != null ? String(cfg.comp_draw_annual) : "",
-  );
-  const [ptaxPct, setPtaxPct] = useState<string>(
-    cfg?.comp_ptax_pct != null ? String(cfg.comp_ptax_pct) : "15.3",
-  );
-  const [distribution, setDistribution] = useState<string>(
-    cfg?.comp_distribution_annual != null ? String(cfg.comp_distribution_annual) : "",
-  );
-  const [reserve, setReserve] = useState<string>(
-    cfg?.comp_reserve_target_annual != null ? String(cfg.comp_reserve_target_annual) : "",
-  );
-  type ReserveMode = "months_1" | "months_2" | "months_3" | "months_6" | "months_12" | "custom";
-  const [reserveMode, setReserveMode] = useState<ReserveMode>(
-    ((cfg as { comp_reserve_mode?: string } | null)?.comp_reserve_mode as ReserveMode) || "custom",
-  );
-  const [advancedOpen, setAdvancedOpen] = useState(structure === "s_corp");
-
-  // Re-sync local state when context loads
-  // (useMemo trick keeps it cheap; runs only on data identity change)
-  useMemo(() => {
-    if (!cfg) return;
-    setBasis((cfg.accounting_basis as "cash" | "accrual") || "cash");
-    setStructure((cfg.business_structure as "sole_prop" | "s_corp" | "other") || "sole_prop");
-    setSalary(cfg.comp_draw_annual != null ? String(cfg.comp_draw_annual) : "");
-    setPtaxPct(cfg.comp_ptax_pct != null ? String(cfg.comp_ptax_pct) : "15.3");
-    setDistribution(
-      cfg.comp_distribution_annual != null ? String(cfg.comp_distribution_annual) : "",
-    );
-    setReserve(
-      cfg.comp_reserve_target_annual != null ? String(cfg.comp_reserve_target_annual) : "",
-    );
-    setReserveMode(
-      (((cfg as { comp_reserve_mode?: string }).comp_reserve_mode as ReserveMode) || "custom"),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.config]);
-
-  // Annual OpEx total derived from expenses
-  const annualOpex = useMemo(() => {
-    const rows = expenses ?? [];
-    let total = 0;
-    for (const e of rows) {
-      const amt = Number(e.amount) || 0;
-      switch (e.frequency) {
-        case "annual": total += amt; break;
-        case "monthly": total += amt * 12; break;
-        case "quarterly": total += amt * 4; break;
-        case "onetime": {
-          const months = Number(e.amort_months) || 12;
-          total += (amt / months) * 12;
-          break;
-        }
-      }
-    }
-    return total;
-  }, [expenses]);
-  const monthlyOpex = annualOpex / 12;
-
-  const reserveMonths: Record<ReserveMode, number | null> = {
-    months_1: 1, months_2: 2, months_3: 3, months_6: 6, months_12: 12, custom: null,
-  };
-  const computedReserve =
-    reserveMode === "custom" ? Number(reserve) || 0 : (reserveMonths[reserveMode] ?? 0) * monthlyOpex;
-
-  const salaryNum = Number(salary) || 0;
-  const ptaxOnSalary = (salaryNum * (Number(ptaxPct) || 0)) / 100;
-  const distNum = Number(distribution) || 0;
-  const reserveNum = computedReserve;
-  const totalPackage = salaryNum + ptaxOnSalary + distNum + reserveNum;
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
+  async function save() {
     setSaving(true);
     try {
       await upd({ data: { name } });
-      await updCfg({
-        data: {
-          accounting_basis: basis,
-          business_structure: structure,
-          comp_draw_annual: salaryNum || null,
-          comp_ptax_pct: Number(ptaxPct) || null,
-          comp_distribution_annual: structure === "s_corp" ? distNum || null : null,
-          comp_reserve_target_annual: structure === "s_corp" ? reserveNum || null : null,
-          comp_reserve_mode: reserveMode,
-        },
-      });
-      toast.success("Firm updated");
+      await updCfg({ data: { business_structure: structure as any, accounting_basis: basis as any } });
+      await saveHome({ data: { preferred_home: home as any } });
       qc.invalidateQueries({ queryKey: ["me"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
+      toast.success("Firm saved.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not save. Try again."); }
+    finally { setSaving(false); }
   }
 
   return (
-    <form onSubmit={save} className="max-w-2xl space-y-8 rounded-lg border border-border bg-white p-6">
-      <div>
-        <label className="mb-1.5 block text-sm text-ch/70">Firm name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} required />
-      </div>
-
-      {/* ─────────── Accounting basis ─────────── */}
-      <section className="space-y-3 border-t border-border pt-6">
-        <div className="flex items-center gap-2">
-          <h3 className="font-display text-lg text-ch">How does your firm count revenue?</h3>
-          <HoverCard openDelay={150}>
-            <HoverCardTrigger asChild>
-              <button type="button" aria-label="About accounting basis">
-                <Info className="h-3.5 w-3.5 text-ch/40" />
-              </button>
-            </HoverCardTrigger>
-            <HoverCardContent className="text-xs leading-relaxed">
-              Drives how the dashboard counts revenue. Most solo designers and small studios
-              use cash basis. Ask your accountant if you're unsure.
-            </HoverCardContent>
-          </HoverCard>
-        </div>
-        <div className="space-y-2">
-          <label className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer">
-            <input
-              type="radio"
-              name="basis"
-              value="cash"
-              checked={basis === "cash"}
-              onChange={() => setBasis("cash")}
-              className="mt-1 accent-gold"
-            />
-            <div className="text-sm">
-              <div className="font-medium text-ch">Cash basis</div>
-              <div className="text-ch/60 mt-0.5">
-                I count revenue when a client pays me. An invoice sent but not yet paid doesn't
-                count as revenue until the money arrives.
-              </div>
-            </div>
-          </label>
-          <label className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer">
-            <input
-              type="radio"
-              name="basis"
-              value="accrual"
-              checked={basis === "accrual"}
-              onChange={() => setBasis("accrual")}
-              className="mt-1 accent-gold"
-            />
-            <div className="text-sm">
-              <div className="font-medium text-ch">Accrual basis</div>
-              <div className="text-ch/60 mt-0.5">
-                I count revenue when I earn it — when work is delivered or invoiced, regardless
-                of when payment arrives.
-              </div>
-            </div>
-          </label>
-        </div>
-      </section>
-
-      {/* ─────────── Owner compensation ─────────── */}
-      <section className="space-y-3 border-t border-border pt-6">
-        <h3 className="font-display text-lg text-ch">Owner compensation</h3>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs uppercase tracking-wider text-ch/50">
-              {structure === "s_corp" ? "W-2 reasonable salary (annual)" : "Annual salary / draw"}
-            </label>
-            <input
-              type="number"
-              min={0}
-              step="1000"
-              value={salary}
-              onChange={(e) => setSalary(e.target.value)}
-              className={inputCls}
-            />
-            {structure === "s_corp" && (
-              <p className="mt-1 text-xs text-ch/50">Subject to payroll/SE tax.</p>
-            )}
-          </div>
-          <div>
-            <label className="mb-1 block text-xs uppercase tracking-wider text-ch/50">
-              Payroll / SE tax %
-            </label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              step="0.1"
-              value={ptaxPct}
-              onChange={(e) => setPtaxPct(e.target.value)}
-              className={inputCls}
-            />
-          </div>
-        </div>
-
-        <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-sm text-ch/70 hover:text-ch"
-            >
-              {advancedOpen ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
-              <span className="font-medium">S-Corp / Advanced compensation</span>
-              <span className="text-xs text-ch/40">
-                — Operating as an S-Corp? Factor in distributions and business reserve separately.
-              </span>
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-4 space-y-4 rounded-md border border-border bg-cream/40 p-4">
-            <div>
-              <div className="mb-2 text-xs uppercase tracking-wider text-ch/50">Business structure</div>
-              <div className="space-y-1.5">
-                {[
-                  { id: "sole_prop", label: "Sole proprietor / Single-member LLC" },
-                  { id: "s_corp", label: "S-Corporation" },
-                  { id: "other", label: "Other" },
-                ].map((opt) => (
-                  <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="structure"
-                      value={opt.id}
-                      checked={structure === opt.id}
-                      onChange={() => setStructure(opt.id as typeof structure)}
-                      className="accent-gold"
-                    />
-                    <span className="text-ch/80">{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {structure === "s_corp" && (
-              <>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-ch/50">
-                      S-Corp distribution
-                      <HoverCard openDelay={150}>
-                        <HoverCardTrigger asChild>
-                          <button type="button" aria-label="About distribution">
-                            <Info className="h-3 w-3 text-ch/40" />
-                          </button>
-                        </HoverCardTrigger>
-                        <HoverCardContent className="text-xs leading-relaxed">
-                          S-Corp owners can take profits as distributions rather than salary.
-                          Distributions avoid self-employment tax, which reduces your total tax
-                          burden — but the IRS requires your W-2 salary to be reasonable for
-                          your role.
-                        </HoverCardContent>
-                      </HoverCard>
-                    </div>
-                    <input
-                      type="number"
-                      min={0}
-                      step="1000"
-                      value={distribution}
-                      onChange={(e) => setDistribution(e.target.value)}
-                      className={inputCls}
-                    />
-                    <p className="mt-1 text-xs text-ch/50">
-                      Shareholder income. Not subject to self-employment tax.
-                    </p>
-                  </div>
-                  <div>
-                    <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-ch/50">
-                      Business reserve target
-                      <HoverCard openDelay={150}>
-                        <HoverCardTrigger asChild>
-                          <button type="button" aria-label="About business reserve">
-                            <Info className="h-3 w-3 text-ch/40" />
-                          </button>
-                        </HoverCardTrigger>
-                        <HoverCardContent className="text-xs leading-relaxed">
-                          A business reserve is money kept in the firm for slow periods,
-                          unexpected costs, or equipment. Most financial advisors recommend
-                          3–6 months of operating expenses. Including this in your rate means
-                          you're actively building toward it with every hour you bill.
-                        </HoverCardContent>
-                      </HoverCard>
-                    </div>
-                    <select
-                      value={reserveMode}
-                      onChange={(e) => setReserveMode(e.target.value as typeof reserveMode)}
-                      className={inputCls}
-                    >
-                      <option value="months_1">1 month of operating expenses</option>
-                      <option value="months_2">2 months of operating expenses</option>
-                      <option value="months_3">3 months of operating expenses</option>
-                      <option value="months_6">6 months of operating expenses</option>
-                      <option value="months_12">12 months of operating expenses</option>
-                      <option value="custom">Custom amount</option>
-                    </select>
-                    {reserveMode === "custom" ? (
-                      <input
-                        type="number"
-                        min={0}
-                        step="1000"
-                        value={reserve}
-                        onChange={(e) => setReserve(e.target.value)}
-                        className={`${inputCls} mt-2`}
-                        placeholder="Reserve target ($)"
-                      />
-                    ) : (
-                      <p className="mt-2 text-xs text-ch/60">
-                        {reserveMonths[reserveMode]} {(reserveMonths[reserveMode] ?? 0) === 1 ? "month" : "months"} ×{" "}
-                        ${monthlyOpex.toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo ={" "}
-                        <span className="font-medium text-ch">
-                          ${computedReserve.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </span>
-                        {annualOpex === 0 && (
-                          <span className="block mt-0.5 text-ch/50">
-                            Add operating expenses to compute this automatically.
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-md border border-border bg-white p-3 text-sm">
-                  <div className="flex justify-between text-ch/70">
-                    <span>W-2 salary</span>
-                    <span className="num text-ch">${salaryNum.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-ch/70">
-                    <span>SE tax on salary</span>
-                    <span className="num text-ch">${ptaxOnSalary.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  </div>
-                  <div className="flex justify-between text-ch/70">
-                    <span>Distribution (no SE tax)</span>
-                    <span className="num text-ch">${distNum.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-ch/70">
-                    <span>Business reserve</span>
-                    <span className="num text-ch">${reserveNum.toLocaleString()}</span>
-                  </div>
-                  <div className="mt-2 flex justify-between border-t border-border pt-2 font-medium">
-                    <span className="text-ch">Total package</span>
-                    <span className="num font-display text-lg text-ch">${totalPackage.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  </div>
-                </div>
-              </>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
-      </section>
-
-      <button type="submit" className={btnCls} disabled={saving}>
-        {saving ? "Saving…" : "Save changes"}
-      </button>
-
-      <DefaultHomeSection />
-    </form>
+    <PanelShell title="Firm" subtitle="Firm name and business configuration." onClose={onClose}>
+      <Field label="Firm name"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Row2>
+        <Field label="Business structure">
+          <select className={selectCls} value={structure} onChange={(e) => setStructure(e.target.value)}>
+            <option value="sole_prop">Sole proprietor</option>
+            <option value="s_corp">S-Corp</option>
+            <option value="other">LLC</option>
+          </select>
+        </Field>
+        <Field label="Accounting basis">
+          <select className={selectCls} value={basis} onChange={(e) => setBasis(e.target.value)}>
+            <option value="cash">Cash basis</option>
+            <option value="accrual">Accrual basis</option>
+          </select>
+        </Field>
+      </Row2>
+      <Row2>
+        <Field label="Default home screen">
+          <select className={selectCls} value={home} onChange={(e) => setHome(e.target.value)}>
+            <option value="dashboard">Dashboard</option>
+            <option value="calendar">Time Calendar</option>
+            <option value="sightline">Projects</option>
+          </select>
+        </Field>
+        <Field label="State of incorporation">
+          <select className={selectCls} value={state} onChange={(e) => setState(e.target.value)}>
+            <option value="">Select…</option>
+            {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </Field>
+      </Row2>
+      <SaveRow onCancel={onClose} onSave={save} saving={saving} />
+    </PanelShell>
   );
 }
 
-/* ─────────────── Default home (principal/admin) ─────────────── */
-function DefaultHomeSection() {
-  const qc = useQueryClient();
-  const { data } = useMe();
-  const saveHome = useServerFn(setPreferredHome);
-  const current = (data?.profile?.preferred_home as
-    | "dashboard"
-    | "calendar"
-    | "sightline"
-    | null
-    | undefined) ?? "dashboard";
-  const [val, setVal] = useState<"dashboard" | "calendar" | "sightline">(current);
+const US_STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming"];
 
-  // Resync when profile loads
-  useMemo(() => {
-    setVal(current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.profile?.preferred_home]);
-
-  async function pick(next: "dashboard" | "calendar" | "sightline") {
-    setVal(next);
-    try {
-      await saveHome({ data: { preferred_home: next } });
-      await qc.invalidateQueries({ queryKey: ["me"] });
-      toast.success("Home screen updated.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not save");
-    }
-  }
-
-  const options: { id: "dashboard" | "calendar" | "sightline"; label: string }[] = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "calendar", label: "Time Calendar" },
-    { id: "sightline", label: "Projects (Sightline)" },
-  ];
-
-  return (
-    <section className="space-y-3 border-t border-border pt-6">
-      <h3 className="font-display text-lg text-ch">Default home screen</h3>
-      <p className="text-xs text-ch/60">
-        Where you land after signing in. Takes effect on next login.
-      </p>
-      <div className="space-y-2">
-        {options.map((o) => (
-          <label
-            key={o.id}
-            className="flex items-start gap-3 rounded-md border border-border bg-cream/40 p-3 cursor-pointer"
-          >
-            <input
-              type="radio"
-              name="preferred_home"
-              value={o.id}
-              checked={val === o.id}
-              onChange={() => pick(o.id)}
-              className="mt-1 accent-gold"
-            />
-            <div className="text-sm font-medium text-ch">{o.label}</div>
-          </label>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ─────────────── Team ─────────────── */
-const ROLES = ["principal", "admin", "team", "view_only"] as const;
-type MemberForm = {
-  name: string; email: string; role: (typeof ROLES)[number];
-  billable_rate: string; cost_rate: string;
-  expected_hrs_per_week: string; weeks_per_year: string; billable_pct: string;
-  compensation_type: "hourly" | "salaried";
-  annual_base_salary: string; employer_payroll_tax_pct: string;
-  annual_benefits: string; other_annual_costs: string;
-};
-
-const emptyMember: MemberForm = {
-  name: "", email: "", role: "team",
-  billable_rate: "", cost_rate: "",
-  expected_hrs_per_week: "40", weeks_per_year: "48", billable_pct: "70",
-  compensation_type: "hourly",
-  annual_base_salary: "", employer_payroll_tax_pct: "7.65",
-  annual_benefits: "", other_annual_costs: "",
-};
-
-function TeamTab() {
+function TeamPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const list = useServerFn(listTeam);
   const invite = useServerFn(inviteTeamMember);
   const update = useServerFn(updateTeamMember);
   const resend = useServerFn(resendInvitation);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
-  const [adding, setAdding] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState<MemberForm>(emptyMember);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"team" | "admin" | "view_only">("team");
+  const [sending, setSending] = useState(false);
 
-  function refresh() { qc.invalidateQueries({ queryKey: ["team"] }); qc.invalidateQueries({ queryKey: ["calendar"] }); }
+  function refresh() { qc.invalidateQueries({ queryKey: ["team"] }); }
 
-  function startEdit(m: NonNullable<typeof data>["members"][number]) {
-    setAdding(false);
-    setEditId(m.id);
-    setForm({
-      name: m.name || "",
-      email: m.email,
-      role: m.role as (typeof ROLES)[number],
-      billable_rate: m.billable_rate != null ? String(m.billable_rate) : "",
-      cost_rate: m.cost_rate != null ? String(m.cost_rate) : "",
-      expected_hrs_per_week: m.expected_hrs_per_week != null ? String(m.expected_hrs_per_week) : "40",
-      weeks_per_year: m.weeks_per_year != null ? String(m.weeks_per_year) : "48",
-      billable_pct: m.billable_pct != null ? String(m.billable_pct) : "70",
-      compensation_type: (m.compensation_type as "hourly" | "salaried") || "hourly",
-      annual_base_salary: m.annual_base_salary != null ? String(m.annual_base_salary) : "",
-      employer_payroll_tax_pct: m.employer_payroll_tax_pct != null ? String(m.employer_payroll_tax_pct) : "7.65",
-      annual_benefits: m.annual_benefits != null ? String(m.annual_benefits) : "",
-      other_annual_costs: m.other_annual_costs != null ? String(m.other_annual_costs) : "",
-    });
-  }
-
-  function startAdd() { setEditId(null); setForm(emptyMember); setAdding(true); }
-  function cancel() { setAdding(false); setEditId(null); setForm(emptyMember); }
-
-  const burden = computeBurden({
-    compensation_type: form.compensation_type,
-    cost_rate: Number(form.cost_rate) || 0,
-    annual_base_salary: Number(form.annual_base_salary) || 0,
-    employer_payroll_tax_pct: Number(form.employer_payroll_tax_pct) || 0,
-    annual_benefits: Number(form.annual_benefits) || 0,
-    other_annual_costs: Number(form.other_annual_costs) || 0,
-    expected_hrs_per_week: Number(form.expected_hrs_per_week) || 0,
-    weeks_per_year: Number(form.weeks_per_year) || 0,
-  });
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function send() {
+    if (!email) return;
+    setSending(true);
     try {
-      const payload = {
-        name: form.name || null,
-        role: form.role,
-        billable_rate: form.billable_rate ? Number(form.billable_rate) : null,
-        cost_rate: form.compensation_type === "hourly" && form.cost_rate ? Number(form.cost_rate) : null,
-        expected_hrs_per_week: form.expected_hrs_per_week ? Number(form.expected_hrs_per_week) : null,
-        weeks_per_year: form.weeks_per_year ? Number(form.weeks_per_year) : null,
-        billable_pct: form.billable_pct ? Number(form.billable_pct) : null,
-        compensation_type: form.compensation_type,
-        annual_base_salary: form.compensation_type === "salaried" && form.annual_base_salary
-          ? Number(form.annual_base_salary) : null,
-        employer_payroll_tax_pct: form.employer_payroll_tax_pct ? Number(form.employer_payroll_tax_pct) : null,
-        annual_benefits: form.annual_benefits ? Number(form.annual_benefits) : null,
-        other_annual_costs: form.other_annual_costs ? Number(form.other_annual_costs) : null,
-      };
-      if (editId) {
-        await update({ data: { id: editId, ...payload } });
-        toast.success("Member updated");
-      } else {
-        await invite({ data: { ...payload, email: form.email } });
-        toast.success("Invitation sent");
-      }
-      cancel();
+      await invite({ data: { email, role } as any });
+      toast.success("Invitation sent.");
+      setEmail("");
       refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    }
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not send."); }
+    finally { setSending(false); }
   }
 
-  const showForm = adding || editId;
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-white">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h3 className="font-display text-xl">Team members</h3>
-          <button type="button" onClick={showForm ? cancel : startAdd} className={btnCls}>
-            {showForm ? "Cancel" : "Add member"}
-          </button>
-        </div>
-        {showForm && (
-          <form onSubmit={submit} className="grid grid-cols-2 gap-4 border-b border-border bg-cream/40 p-5">
-            <Field label="Name">
-              <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </Field>
-            <Field label="Email">
-              <input
-                type="email" required disabled={!!editId}
-                className={cn(inputCls, editId && "opacity-60")}
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </Field>
-            <Field label="Role">
-              <select className={inputCls} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as (typeof ROLES)[number] })}>
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </Field>
-            <Field label="Billable rate ($/hr)">
-              <input type="number" min={0} step="1" className={inputCls} value={form.billable_rate} onChange={(e) => setForm({ ...form, billable_rate: e.target.value })} />
-            </Field>
-
-            <div className="col-span-2">
-              <div className="mb-1.5 block text-xs uppercase tracking-wider text-ch/50">Compensation type</div>
-              <div className="flex gap-4 text-sm">
-                {(["hourly", "salaried"] as const).map((t) => (
-                  <label key={t} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio" name="comp_type" value={t}
-                      checked={form.compensation_type === t}
-                      onChange={() => setForm({ ...form, compensation_type: t })}
-                      className="accent-gold"
-                    />
-                    <span className="capitalize text-ch/80">{t}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {form.compensation_type === "hourly" ? (
-              <Field label="Cost rate ($/hr)">
-                <input type="number" min={0} step="1" className={inputCls} value={form.cost_rate} onChange={(e) => setForm({ ...form, cost_rate: e.target.value })} />
-              </Field>
-            ) : (
-              <Field label="Annual base salary ($)">
-                <input type="number" min={0} step="1000" className={inputCls} value={form.annual_base_salary} onChange={(e) => setForm({ ...form, annual_base_salary: e.target.value })} />
-              </Field>
-            )}
-            <Field label="Payroll tax % (employer share)">
-              <input type="number" min={0} max={100} step="0.01" className={inputCls} value={form.employer_payroll_tax_pct} onChange={(e) => setForm({ ...form, employer_payroll_tax_pct: e.target.value })} />
-            </Field>
-            <Field label="Benefits (annual $)">
-              <input type="number" min={0} step="100" className={inputCls} value={form.annual_benefits} onChange={(e) => setForm({ ...form, annual_benefits: e.target.value })} />
-            </Field>
-            <Field label="Other annual costs ($)">
-              <input type="number" min={0} step="100" className={inputCls} value={form.other_annual_costs} onChange={(e) => setForm({ ...form, other_annual_costs: e.target.value })} />
-            </Field>
-            <Field label="Expected hrs / week">
-              <input type="number" min={0} max={168} className={inputCls} value={form.expected_hrs_per_week} onChange={(e) => setForm({ ...form, expected_hrs_per_week: e.target.value })} />
-            </Field>
-            <Field label="Weeks / year">
-              <input type="number" min={0} max={52} className={inputCls} value={form.weeks_per_year} onChange={(e) => setForm({ ...form, weeks_per_year: e.target.value })} />
-            </Field>
-            <Field label="Billable % of hours">
-              <input type="number" min={0} max={100} className={inputCls} value={form.billable_pct} onChange={(e) => setForm({ ...form, billable_pct: e.target.value })} />
-            </Field>
-
-            <div className="col-span-2 rounded-md border border-border bg-white p-3 text-sm">
-              <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider text-ch/50">
-                Fully burdened cost
-                <HoverCard openDelay={150}>
-                  <HoverCardTrigger asChild>
-                    <button type="button" aria-label="About fully burdened cost">
-                      <Info className="h-3 w-3 text-ch/40" />
-                    </button>
-                  </HoverCardTrigger>
-                  <HoverCardContent className="text-xs leading-relaxed">
-                    The true cost of this team member including their wages, your share of
-                    payroll taxes, and any benefits or equipment costs. This is the number
-                    used in project profitability calculations — not just their wage.
-                  </HoverCardContent>
-                </HoverCard>
-              </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-ch/70">
-                <span>{form.compensation_type === "salaried" ? "Base salary" : "Base wages"}</span>
-                <span className="num text-right text-ch">${burden.base.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
-                <span>Payroll tax</span>
-                <span className="num text-right text-ch">${burden.ptax.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
-                <span>Benefits</span>
-                <span className="num text-right text-ch">${burden.benefits.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
-                <span>Other costs</span>
-                <span className="num text-right text-ch">${burden.other.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
-              </div>
-              <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border pt-2 text-center">
-                <div><div className="text-[10px] uppercase tracking-wider text-ch/50">/ year</div><div className="num font-display text-lg text-ch">${burden.yr.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wider text-ch/50">/ week</div><div className="num font-display text-lg text-ch">${burden.wk.toLocaleString(undefined,{maximumFractionDigits:0})}</div></div>
-                <div><div className="text-[10px] uppercase tracking-wider text-ch/50">/ hour</div><div className="num font-display text-lg text-ch">${burden.hr.toFixed(2)}</div></div>
-              </div>
-            </div>
-
-            <div className="col-span-2 flex items-center justify-end gap-2 border-t border-border pt-4">
-              <button type="button" onClick={cancel} className={ghostBtn}>Cancel</button>
-              <button type="submit" className={btnCls}>{editId ? "Save changes" : "Send invitation"}</button>
-            </div>
-          </form>
-        )}
-        <div className="divide-y divide-border">
-          {data?.members?.map((m) => (
-            <div key={m.id} className="flex items-center justify-between px-5 py-3">
-              <button type="button" onClick={() => startEdit(m)} className="text-left">
-                <div className="text-sm font-medium text-ch hover:text-gold">{m.name || m.email}</div>
-                <div className="text-xs text-ch/50">{m.email} · {m.role}</div>
-              </button>
-              <div className="flex items-center gap-4">
-                {m.accepted_at && (
-                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-emerald-700">
-                    Active · joined {new Date(m.accepted_at).toLocaleDateString()}
-                  </span>
-                )}
-                <div className="text-right text-xs text-ch/60">
-                  <div>{m.billable_rate ? `$${m.billable_rate}/hr billed` : "—"}</div>
-                  <div className="text-ch/50">
-                    {m.burdened_hourly_rate
-                      ? `$${Number(m.burdened_hourly_rate).toFixed(2)}/hr burdened`
-                      : m.cost_rate ? `$${m.cost_rate}/hr cost` : ""}
-                  </div>
-                </div>
-                <button type="button" onClick={() => startEdit(m)} className={ghostBtn + " px-3 py-1.5 text-xs"}>Edit</button>
-              </div>
-            </div>
-          ))}
-          {data?.invites?.map((i) => {
-            const days = i.invited_at
-              ? Math.max(0, Math.floor((Date.now() - new Date(i.invited_at).getTime()) / 86400000))
-              : 0;
-            return (
-              <div key={i.id} className="flex items-center justify-between px-5 py-3 bg-cream/40">
-                <div>
-                  <div className="text-sm font-medium text-ch">{i.name || i.email}</div>
-                  <div className="text-xs text-ch/50">
-                    {i.email} · {i.role} · Invited {days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex items-center rounded-full bg-goldp px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-ch/70">
-                    Invited · pending
-                  </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const r = await resend({ data: { id: i.id } });
-                        toast.success(`Invitation resent to ${r.email}.`);
-                        qc.invalidateQueries({ queryKey: ["team"] });
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Could not resend.");
-                      }
-                    }}
-                    className="text-xs text-gold hover:underline"
-                  >
-                    Resend invitation
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {!data?.members?.length && !data?.invites?.length && (
-            <div className="px-5 py-8 text-center text-sm text-ch/50">No team members yet.</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-xs uppercase tracking-wider text-ch/50">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-/* ─────────────── Activity Groups ─────────────── */
-const PRESET_COLORS = ["#B8860B", "#5C8A6E", "#C4714A", "#B85C5C", "#6B7AA1", "#8E6B9C", "#3F6F66", "#A07549"];
-function ActivityGroupsTab() {
-  const qc = useQueryClient();
-  const list = useServerFn(listActivityGroups);
-  const add = useServerFn(addActivityGroup);
-  const del = useServerFn(deleteActivityGroup);
-  const { data } = useQuery({ queryKey: ["activity_groups"], queryFn: () => list() });
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(PRESET_COLORS[0]);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function changeRole(id: string, r: string) {
     try {
-      await add({ data: { name, color } });
-      setName("");
-      qc.invalidateQueries({ queryKey: ["activity_groups"] });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    }
+      await update({ data: { id, role: r as any } });
+      toast.success("Role updated.");
+      refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not update."); }
   }
 
-  async function remove(id: string) {
-    await del({ data: { id } });
-    qc.invalidateQueries({ queryKey: ["activity_groups"] });
-  }
+  const initials = (name: string, email: string) =>
+    (name || email).split(/\s+/).map(s => s[0]).slice(0, 2).join("").toUpperCase();
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-white p-5">
-        <h3 className="font-display text-xl">Add activity group</h3>
-        <p className="mt-1 text-sm text-ch/60">Used across all time entries — design, admin, business development, etc.</p>
-        <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[200px]">
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-ch/50">Name</label>
-            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-ch/50">Color</label>
-            <div className="flex gap-1.5">
-              {PRESET_COLORS.map((c) => (
-                <button
-                  type="button"
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className={cn("h-7 w-7 rounded-full border-2 transition-transform", color === c ? "border-ch scale-110" : "border-transparent")}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
+    <PanelShell title="Team" subtitle="Members, roles, and invitations." onClose={onClose}>
+      <div className="mb-3 overflow-hidden rounded-[6px] border border-border bg-white">
+        {data?.members?.map((m, i) => (
+          <div key={m.id} className={cn("flex items-center gap-2.5 px-3 py-2.5", i < (data?.members?.length ?? 0) - 1 && "border-b border-border")}>
+            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials(m.name || "", m.email)}</div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-medium text-ch">{m.name || m.email}</div>
+              <div className="truncate text-[10px] text-ch/60">{m.email}</div>
             </div>
+            {m.role === "principal" ? (
+              <span className="text-[10px] text-ch/60">Principal</span>
+            ) : (
+              <select className={cn(selectCls, "w-[110px] py-[3px] text-[10px]")} value={m.role} onChange={(e) => changeRole(m.id, e.target.value)}>
+                <option value="admin">Admin</option>
+                <option value="team">Team</option>
+                <option value="view_only">View only</option>
+              </select>
+            )}
           </div>
-          <button type="submit" className={btnCls}>Add</button>
-        </form>
+        ))}
+        {data?.invites?.map((i) => (
+          <div key={i.id} className="flex items-center gap-2.5 border-t border-border bg-cream/50 px-3 py-2.5">
+            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-creamd/50 text-[9px] text-ch/50">{initials("", i.email)}</div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] text-ch/60">{i.email}</div>
+              <div className="truncate text-[10px] text-ch/50">{i.role}</div>
+            </div>
+            <span className="rounded-[3px] bg-[#FAEEDA] px-1.5 py-[2px] text-[10px] font-medium text-[#633806]">Pending</span>
+            <button
+              type="button"
+              onClick={async () => { try { await resend({ data: { id: i.id } }); toast.success("Resent."); refresh(); } catch { toast.error("Could not resend."); } }}
+              className="text-[10px] text-ch/60 hover:text-gold"
+            >Resend</button>
+          </div>
+        ))}
+        {!data?.members?.length && !data?.invites?.length && (
+          <div className="px-3 py-6 text-center text-[11px] text-ch/50">No team members yet.</div>
+        )}
       </div>
-      <div className="rounded-lg border border-border bg-white">
-        <div className="divide-y divide-border">
-          {data?.map((g) => (
-            <div key={g.id} className="flex items-center justify-between px-5 py-3">
-              <div className="flex items-center gap-3">
-                <span className="h-4 w-4 rounded-full" style={{ backgroundColor: g.color }} />
-                <span className="text-sm text-ch">{g.name}</span>
-              </div>
-              <button onClick={() => remove(g.id)} className="text-ch/40 hover:text-danger">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {!data?.length && (
-            <div className="px-5 py-8 text-center text-sm text-ch/50">No activity groups yet.</div>
-          )}
+
+      <div className="rounded-[6px] border border-border bg-cream/70 p-3">
+        <div className="mb-2 text-[11px] font-medium text-ch">Invite a team member</div>
+        <div className="mb-2 flex gap-2">
+          <input type="email" className={cn(inputCls, "flex-1")} placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <select className={cn(selectCls, "w-[110px]")} value={role} onChange={(e) => setRole(e.target.value as any)}>
+            <option value="team">Team</option>
+            <option value="admin">Admin</option>
+            <option value="view_only">View only</option>
+          </select>
         </div>
+        <p className="mb-2.5 text-[10px] leading-[1.5] text-ch/60">
+          Team: time calendar and assigned projects only. Admin: full access except billing. View only: read-only.
+        </p>
+        <button type="button" onClick={send} disabled={sending} className={darkBtn}>
+          {sending ? "Sending…" : "Send invitation"}
+        </button>
       </div>
+    </PanelShell>
+  );
+}
+
+function BillingPanel({ onClose }: { onClose: () => void }) {
+  const { data } = useMe();
+  const tier = (data?.firm?.subscription_tier as string) ?? "foundation";
+  const status = data?.firm?.subscription_status;
+  const tierPrice: Record<string, string> = { studio: "$69/mo", practice: "$129/mo" };
+  const tierName: Record<string, string> = { foundation: "Foundation (Trial)", studio: "Sightline", practice: "Practice" };
+  const nextBill = (data?.firm as any)?.current_period_end ?? "—";
+  return (
+    <PanelShell title="Billing" subtitle="Your current plan and payment method." onClose={onClose}>
+      <Row2>
+        <Field label="Current plan"><input readOnly className={inputCls} value={`${tierName[tier] ?? tier} · ${tierPrice[tier] ?? ""}`} /></Field>
+        <Field label="Next billing date"><input readOnly className={inputCls} value={typeof nextBill === "string" ? nextBill : new Date(nextBill).toLocaleDateString()} /></Field>
+      </Row2>
+      <Field label="Payment method"><input readOnly className={inputCls} value={(data?.firm as any)?.payment_method_last4 ? `•••• ${(data?.firm as any).payment_method_last4}` : "No card on file"} /></Field>
+      <div className="mt-3 flex justify-end gap-2">
+        <Link to="/billing" className={ghostBtn}>Manage payment</Link>
+        {tier === "studio" && <Link to="/billing" className={darkBtn}>Upgrade to Practice</Link>}
+      </div>
+      {status === "trialing" && <p className="mt-2 text-[10px] text-ch/60">Currently on trial.</p>}
+    </PanelShell>
+  );
+}
+
+function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between border-b border-border py-2 last:border-0">
+      <div className="pr-4">
+        <div className="text-[12px] text-ch">{label}</div>
+        <div className="text-[10px] text-ch/60">{desc}</div>
+      </div>
+      <button
+        type="button" onClick={() => onChange(!on)}
+        className={cn("relative h-[18px] w-[32px] rounded-[9px] transition-colors", on ? "bg-gold" : "bg-border")}
+      >
+        <span className={cn("absolute top-[3px] h-[12px] w-[12px] rounded-full bg-white transition-all", on ? "left-[17px]" : "left-[3px]")} />
+      </button>
     </div>
   );
 }
 
-/* ─────────────── Billing ─────────────── */
-function BillingTab() {
-  const getCtx = useServerFn(getMyContext);
-  const { data } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
-  const tier = data?.firm?.subscription_tier ?? "foundation";
-  const status = data?.firm?.subscription_status ?? "trialing";
-  const trialEnds = data?.firm?.trial_ends_at;
-  const days = trialEnds ? Math.max(0, Math.ceil((new Date(trialEnds).getTime() - Date.now()) / 86400000)) : 0;
-
+function NotificationsPanel({ onClose }: { onClose: () => void }) {
+  const [prefs, setPrefs] = useState({ weekly: true, scope: true, floor: true, growth: false, team: false });
+  const [saving, setSaving] = useState(false);
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-white p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-gold">Current plan</p>
-            <h3 className="mt-1 font-display text-3xl tracking-tight capitalize">{tier}</h3>
-            <p className="mt-1 text-sm text-ch/60 capitalize">{status} {status === "trialing" && `· ${days} days remaining`}</p>
-          </div>
-          <Link to="/billing" className={btnCls}>Manage subscription</Link>
-        </div>
+    <PanelShell title="Notifications" subtitle="Alerts and email preferences." onClose={onClose}>
+      <ToggleRow label="Weekly summary email" desc="Hours, revenue, and rate health each Monday" on={prefs.weekly} onChange={(v) => setPrefs({ ...prefs, weekly: v })} />
+      <ToggleRow label="Scope warnings" desc="Alert when projects approach their budget" on={prefs.scope} onChange={(v) => setPrefs({ ...prefs, scope: v })} />
+      <ToggleRow label="Below-floor rate alert" desc="Notify if billed rate drops below aligned rate" on={prefs.floor} onChange={(v) => setPrefs({ ...prefs, floor: v })} />
+      <ToggleRow label="Growth signal updates" desc="Weekly digest when hiring signals change" on={prefs.growth} onChange={(v) => setPrefs({ ...prefs, growth: v })} />
+      <ToggleRow label="Team time entry reminders" desc="Remind team members to log hours by Friday" on={prefs.team} onChange={(v) => setPrefs({ ...prefs, team: v })} />
+      <div className="mt-4 flex justify-end">
+        <button type="button" className={goldBtn} onClick={() => { setSaving(true); setTimeout(() => { setSaving(false); toast.success("Notifications saved."); }, 300); }} disabled={saving}>
+          {saving ? "Saving…" : "Save preferences"}
+        </button>
       </div>
-      <div className="rounded-lg border border-border bg-white p-6">
-        <h3 className="font-display text-xl">Payment method</h3>
-        <p className="mt-1 text-sm text-ch/60">No card on file. Add one to continue after your trial.</p>
-        <Link to="/billing" className={`${ghostBtn} mt-4`}>Add billing details</Link>
-      </div>
-    </div>
+    </PanelShell>
   );
 }
 
-/* ─────────────── Notifications ─────────────── */
-function NotificationsTab() {
-  const [prefs, setPrefs] = useState({
-    weeklyDigest: true,
-    targetAlerts: true,
-    teamInvites: true,
-    productUpdates: false,
-  });
-  const rows: { key: keyof typeof prefs; label: string; desc: string }[] = [
-    { key: "weeklyDigest", label: "Weekly digest", desc: "Every Monday — how last week tracked against your targets." },
-    { key: "targetAlerts", label: "Off-target alerts", desc: "When billable hours fall meaningfully below target." },
-    { key: "teamInvites", label: "Team activity", desc: "New invites accepted, member changes." },
-    { key: "productUpdates", label: "Product updates", desc: "New features, occasional and quiet." },
-  ];
+function PreferencesPanel({ onClose }: { onClose: () => void }) {
+  const [fy, setFy] = useState("January");
+  const [week, setWeek] = useState("Monday");
+  const [currency, setCurrency] = useState("USD");
+  const [df, setDf] = useState("MM/DD/YYYY");
+  const [showBreakEven, setShowBreakEven] = useState(true);
+  const [showFloor, setShowFloor] = useState(true);
   return (
-    <div className="max-w-2xl rounded-lg border border-border bg-white divide-y divide-border">
-      {rows.map((r) => (
-        <label key={r.key} className="flex items-start justify-between gap-6 p-5 cursor-pointer">
-          <div>
-            <div className="text-sm font-medium text-ch">{r.label}</div>
-            <div className="text-xs text-ch/60 mt-0.5">{r.desc}</div>
-          </div>
-          <input
-            type="checkbox"
-            checked={prefs[r.key]}
-            onChange={(e) => setPrefs({ ...prefs, [r.key]: e.target.checked })}
-            className="mt-1 h-4 w-4 accent-gold"
-          />
-        </label>
-      ))}
-    </div>
+    <PanelShell title="Preferences" subtitle="Display and regional settings." onClose={onClose}>
+      <Row2>
+        <Field label="Fiscal year start">
+          <select className={selectCls} value={fy} onChange={(e) => setFy(e.target.value)}>
+            {["January","February","March","April","May","June","July","August","September","October","November","December"].map(m => <option key={m}>{m}</option>)}
+          </select>
+        </Field>
+        <Field label="Week starts on">
+          <select className={selectCls} value={week} onChange={(e) => setWeek(e.target.value)}>
+            <option>Monday</option><option>Sunday</option>
+          </select>
+        </Field>
+      </Row2>
+      <Row2>
+        <Field label="Currency">
+          <select className={selectCls} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            <option value="USD">USD — US Dollar</option>
+            <option value="CAD">CAD — Canadian Dollar</option>
+            <option value="GBP">GBP — British Pound</option>
+            <option value="EUR">EUR — Euro</option>
+            <option value="AUD">AUD — Australian Dollar</option>
+          </select>
+        </Field>
+        <Field label="Date format">
+          <select className={selectCls} value={df} onChange={(e) => setDf(e.target.value)}>
+            <option>MM/DD/YYYY</option><option>DD/MM/YYYY</option><option>YYYY-MM-DD</option>
+          </select>
+        </Field>
+      </Row2>
+      <div className="my-3.5 border-t border-border" />
+      <div className="mb-2.5 text-[11px] font-medium text-ch">Dashboard display</div>
+      <ToggleRow label="Show break-even rate" desc="Display break-even tile on your dashboard" on={showBreakEven} onChange={setShowBreakEven} />
+      <ToggleRow label="Show annual cost floor" desc="Display annual cost floor in rate breakdown" on={showFloor} onChange={setShowFloor} />
+      <SaveRow onCancel={onClose} onSave={() => toast.success("Preferences saved.")} />
+    </PanelShell>
+  );
+}
+
+function SecurityPanel({ onClose }: { onClose: () => void }) {
+  const [curr, setCurr] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function update() {
+    if (next !== confirm) return toast.error("Passwords do not match.");
+    if (next.length < 8) return toast.error("Password must be at least 8 characters.");
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: next });
+      if (error) throw error;
+      setCurr(""); setNext(""); setConfirm("");
+      toast.success("Password updated.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not update."); }
+    finally { setSaving(false); }
+  }
+  return (
+    <PanelShell title="Security" subtitle="Password and account access." onClose={onClose}>
+      <Field label="Current password"><input type="password" className={inputCls} value={curr} onChange={(e) => setCurr(e.target.value)} /></Field>
+      <Row2>
+        <Field label="New password"><input type="password" className={inputCls} value={next} onChange={(e) => setNext(e.target.value)} /></Field>
+        <Field label="Confirm password"><input type="password" className={inputCls} value={confirm} onChange={(e) => setConfirm(e.target.value)} /></Field>
+      </Row2>
+      <div className="flex justify-end gap-2">
+        <button type="button" className={ghostBtn} onClick={() => { setCurr(""); setNext(""); setConfirm(""); }}>Cancel</button>
+        <button type="button" className={goldBtn} onClick={update} disabled={saving}>{saving ? "Updating…" : "Update password"}</button>
+      </div>
+
+      <div className="mt-4 border-t border-danger/40 pt-3.5">
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-danger">Danger zone</div>
+        <p className="mb-2.5 text-[11px] leading-[1.5] text-ch/60">
+          Deleting your account removes all firm data, projects, and time entries permanently. This cannot be undone.
+        </p>
+        <button type="button" className={dangerGhostBtn} onClick={() => toast.error("Please contact support to delete your account.")}>
+          <Trash2 size={12} className="mr-1" /> Delete my account
+        </button>
+      </div>
+    </PanelShell>
   );
 }

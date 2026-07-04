@@ -265,9 +265,9 @@ function Dashboard() {
 
       {/* Footer links */}
       <div className="flex flex-wrap gap-6 pt-4 pb-2">
-        <FooterLink to="/setup">Scenario planning →</FooterLink>
+        <FooterLink to="/settings?panel=rate">Scenario planning →</FooterLink>
         <FooterLink to="/knowledge-base">Knowledge base →</FooterLink>
-        <FooterLink to="/setup">Rate & cost →</FooterLink>
+        <FooterLink to="/settings?panel=rate">Rate & cost →</FooterLink>
       </div>
 
       <RateBreakdownSlideOver
@@ -638,7 +638,7 @@ function GrowthSignalsStrip({ active }: { active: number }) {
 function FooterLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link
-      to={to}
+      to={to as any}
       className="text-[11px] font-normal text-ch/50 no-underline transition-colors duration-150 hover:text-gold hover:underline"
     >
       {children}
@@ -654,7 +654,7 @@ function SetupPrompt() {
       </p>
       <div className="mt-3">
         <Link
-          to="/setup"
+          to={"/settings?panel=rate" as any}
           className="inline-block rounded-[2px] bg-gold px-4 py-2 text-[11px] font-medium text-white hover:opacity-90"
         >
           Finish setup →
