@@ -506,7 +506,40 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
   const { data: me } = useMe();
   const { liveConfig, expenses, cfg } = useFinancialDraft();
   const listOwn = useServerFn(listOwnerCompensations);
+  const updCfg = useServerFn(upsertFirmConfig);
   const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+
+  // Simple ↔ Advanced mode is a UI preference only.
+  const [mode, setMode] = useState<"simple" | "advanced">(() => {
+    if (typeof window === "undefined") return "simple";
+    return (localStorage.getItem("comp_panel_mode") as "simple" | "advanced") || "simple";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("comp_panel_mode", mode);
+  }, [mode]);
+
+  // Live-editing of business structure in advanced mode.
+  const savedStructure = (cfg?.business_structure as string | null) ?? null;
+  const [structure, setStructure] = useState<string | null>(savedStructure);
+  useEffect(() => { setStructure(savedStructure); }, [savedStructure]);
+
+  async function onStructureChange(next: string) {
+    setStructure(next);
+    try {
+      await updCfg({ data: { business_structure: next as any } });
+      qc.invalidateQueries({ queryKey: ["dash"] });
+      qc.invalidateQueries({ queryKey: ["financialDraft"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save structure.");
+    }
+  }
+
+  // One-time review note when user first switches to advanced.
+  const [reviewNote, setReviewNote] = useState(false);
+  function toggleMode(next: "simple" | "advanced") {
+    if (next === "advanced" && mode !== "advanced") setReviewNote(true);
+    setMode(next);
+  }
 
   const principals = ownerData?.principals ?? [];
   const compByProfile = new Map<string, OwnerCompensationRow>();
@@ -549,27 +582,68 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
     return compByProfile.get(p.id) ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, reserve_target: null };
   });
 
-  const cfgWithOverride = { ...(liveConfig as any), __ownerCompOverride: liveRows };
+  // In advanced mode with a structure selected, override the config's structure live.
+  const cfgForCalc: any =
+    mode === "advanced"
+      ? { ...(liveConfig as any), business_structure: structure, __ownerCompOverride: liveRows }
+      : { ...(liveConfig as any), business_structure: null, __ownerCompOverride: liveRows };
 
   return (
     <FinancialLayout
       title="Owner compensation"
       subtitle="Everything you take out of the firm in a year."
       onClose={onClose}
-      cfg={cfgWithOverride} expenses={expenses}
+      cfg={cfgForCalc} expenses={expenses}
       left={
         <>
-          <div className="mb-2.5 text-[11px] font-medium text-ch">Principal compensation</div>
+          <div className="mb-2.5 flex items-center justify-between">
+            <span className="text-[11px] font-medium text-ch">Principal compensation</span>
+            <div className="inline-flex overflow-hidden rounded-[4px] border border-border text-[10px]">
+              <button
+                type="button"
+                onClick={() => toggleMode("simple")}
+                className={cn("px-2.5 py-[3px]", mode === "simple" ? "bg-ch text-white" : "bg-white text-ch/60 hover:bg-cream")}
+              >Simple</button>
+              <button
+                type="button"
+                onClick={() => toggleMode("advanced")}
+                className={cn("px-2.5 py-[3px]", mode === "advanced" ? "bg-ch text-white" : "bg-white text-ch/60 hover:bg-cream")}
+              >Advanced</button>
+            </div>
+          </div>
+          {mode === "advanced" && (
+            <div className="mb-3 rounded-[6px] border border-border bg-cream/40 p-3">
+              <div className={fieldLabel}>Business structure</div>
+              <select
+                className={selectCls}
+                value={structure ?? ""}
+                onChange={(e) => onStructureChange(e.target.value)}
+              >
+                <option value="" disabled>Select structure…</option>
+                <option value="sole_prop">Sole proprietor / LLC</option>
+                <option value="s_corp">S-Corporation</option>
+                <option value="partnership">Partnership</option>
+                <option value="c_corp">C-Corporation</option>
+              </select>
+              <p className="mt-2 text-[10px] leading-[1.5] text-ch/60">{structureExplainer(structure)}</p>
+              {reviewNote && (
+                <p className="mt-2 text-[10px] leading-[1.5] text-gold">
+                  We've pre-filled these fields from your initial setup. Review each value — especially if your structure splits salary from distributions.
+                </p>
+              )}
+            </div>
+          )}
           <div className="space-y-2.5">
             {sorted.map((p: any) => (
               <PrincipalCard
                 key={p.id}
                 principal={p}
                 isMe={p.id === myId}
-                isSCorp={cfg?.business_structure === "s_corp"}
+                mode={mode}
+                structure={mode === "advanced" ? structure : null}
                 value={drafts[p.id]}
                 savedValue={compByProfile.get(p.id) ?? null}
-                onChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                onChange={(v) => { setDrafts((d) => ({ ...d, [p.id]: v })); if (reviewNote) setReviewNote(false); }}
                 onSaved={() => qc.invalidateQueries({ queryKey: ["ownerComp"] })}
               />
             ))}
