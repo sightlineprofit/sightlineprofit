@@ -210,15 +210,54 @@ function Tile({ t, active, onOpen }: { t: TileDef; active: PanelId | null; onOpe
 function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id: PanelId) => void }) {
   const getCtx = useServerFn(getMyContext);
   const listExp = useServerFn(listExpenses);
+  const listOwn = useServerFn(listOwnerCompensations);
+  const listT = useServerFn(listTeam);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
   const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => listExp() });
+  const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
 
   const cfg = ctx?.config ?? null;
-  const c = useMemo(() => calc(cfg, (expenses ?? []) as Expense[]), [cfg, expenses]);
+  const ownerRows = (ownerData?.comp ?? []) as OwnerCompensationRow[];
+  const principalCount = ownerData?.principals?.length ?? 0;
+  const teamMembers = (teamData?.members ?? []).filter((m: any) => m.role !== "principal");
+  const teamBurdens = teamMembers.map((m: any) => ({
+    burdened_weekly_cost: m.burdened_weekly_cost,
+    weeks_per_year: m.weeks_per_year,
+  }));
+  const c = useMemo(
+    () => calc(cfg, (expenses ?? []) as Expense[], { ownerComp: ownerRows, teamProfiles: teamBurdens }),
+    [cfg, expenses, ownerRows, teamBurdens],
+  );
 
-  const compStatus: Status = cfg?.comp_draw_annual
-    ? { tone: "ok", text: `$${Math.round((cfg.comp_draw_annual ?? 0) / 1000)}k draw · $${Math.round(c.compTotal / 1000)}k total` }
-    : { tone: "muted", text: "Not configured" };
+  // Owner comp tile status hint (multi-principal aware).
+  const configuredRows = ownerRows.filter((r) => Number(r.comp_draw_annual) > 0);
+  let compStatus: Status;
+  if (principalCount === 0 || configuredRows.length === 0) {
+    compStatus = { tone: "muted", text: "Not configured" };
+  } else if (principalCount === 1 && configuredRows.length === 1) {
+    const row = configuredRows[0];
+    const drawK = Math.round((Number(row.comp_draw_annual) || 0) / 1000);
+    compStatus = { tone: "ok", text: `$${drawK}k draw · $${Math.round(c.compTotal / 1000)}k total` };
+  } else if (principalCount === configuredRows.length) {
+    compStatus = { tone: "ok", text: `${principalCount} principals · $${Math.round(c.compTotal / 1000)}k combined` };
+  } else {
+    compStatus = { tone: "warn", text: `${configuredRows.length} of ${principalCount} principals configured` };
+  }
+
+  // Team cost tile status hint.
+  const teamCount = teamMembers.length;
+  const teamConfigured = teamMembers.filter((m: any) => Number(m.burdened_weekly_cost) > 0).length;
+  let teamCostStatus: Status;
+  if (teamCount === 0) {
+    teamCostStatus = { tone: "muted", text: "No team members" };
+  } else if (teamConfigured === 0) {
+    teamCostStatus = { tone: "muted", text: `${teamCount} not configured` };
+  } else if (teamConfigured === teamCount) {
+    teamCostStatus = { tone: "ok", text: `${teamCount} members · $${Math.round(c.teamCostTotal / 1000)}k/yr` };
+  } else {
+    teamCostStatus = { tone: "warn", text: `${teamConfigured} of ${teamCount} configured` };
+  }
 
   const expenseCount = expenses?.length ?? 0;
   const opexStatus: Status = expenseCount > 0
@@ -240,6 +279,7 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
     { id: "comp", name: "Owner compensation", desc: "Everything you take out of the firm in a year.", icon: DollarSign, gold: true, status: compStatus },
     { id: "opex", name: "Operating expenses", desc: "Fixed and recurring costs of running the firm.", icon: Receipt, gold: true, status: opexStatus },
     { id: "rate", name: "Capacity and rate", desc: "How many hours you sell and what you charge.", icon: Calculator, gold: true, status: rateStatus },
+    { id: "team_cost", name: "Team cost", desc: "Fully burdened cost of your team members.", icon: Users, gold: true, status: teamCostStatus },
   ];
   return <>{tiles.map(t => <Tile key={t.id} t={t} active={active} onOpen={onOpen} />)}</>;
 }
