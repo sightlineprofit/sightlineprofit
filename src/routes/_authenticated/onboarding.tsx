@@ -235,13 +235,86 @@ function Onboarding() {
                 <p className="mt-1 text-sm text-ch/60">Your real compensation — not what's left over.</p>
               </header>
               <Row>
-                <Field label="Owner's draw (annual)" prefix="$" value={draw} onChange={setDraw} />
-                <Field label="Self-employment / payroll tax" suffix="%" value={ptax} onChange={setPtax} />
+                <Field
+                  label="Regular salary or draw (annual)"
+                  prefix="$"
+                  value={salary}
+                  onChange={setSalary}
+                  tip={{
+                    term: "Regular salary or draw",
+                    definition:
+                      "The amount you consistently pay yourself — whether that's a W-2 salary, owner's draw, or guaranteed payment. This is your personal income floor from the firm.",
+                  }}
+                />
+                <Field
+                  label="Additional distributions (annual)"
+                  prefix="$"
+                  value={distributions}
+                  onChange={setDistributions}
+                  tip={{
+                    term: "Additional distributions",
+                    definition:
+                      "Profit you take out on top of your regular pay — bonuses, S-Corp distributions, or variable draws. Enter what you realistically plan to take, not just what's left over. Leave at zero if not applicable.",
+                  }}
+                />
               </Row>
               <Row>
-                <Field label="Health insurance (annual)" prefix="$" value={health} onChange={setHealth} />
-                <Field label="Retirement contribution (annual)" prefix="$" value={retire} onChange={setRetire} />
+                <Field
+                  label="Health insurance (annual)"
+                  prefix="$"
+                  value={health}
+                  onChange={setHealth}
+                  tip={{
+                    term: "Health insurance",
+                    definition:
+                      "What the firm pays for your health, dental, and vision coverage each year.",
+                  }}
+                />
+                <Field
+                  label="Retirement contribution (annual)"
+                  prefix="$"
+                  value={retire}
+                  onChange={setRetire}
+                  tip={{
+                    term: "Retirement contribution",
+                    definition:
+                      "Your annual contribution to a SEP-IRA, Solo 401k, or similar retirement account funded through the firm.",
+                  }}
+                />
               </Row>
+              <Field
+                label="Tax and payroll rate"
+                suffix="%"
+                value={ptax}
+                onChange={setPtax}
+                tip={{
+                  term: "Tax and payroll rate",
+                  definition:
+                    "The percentage applied to your compensation to cover employment taxes. Sole proprietors typically use 15.3% (self-employment tax). S-Corp owners may use a lower effective rate. You can refine this in Settings once you're set up. 15.3% is a safe starting point for most designers.",
+                }}
+              />
+              <div
+                className="mt-3 flex items-center justify-between"
+                style={{
+                  background: "#FAF7F2",
+                  border: "0.5px solid var(--border, #E5DFD3)",
+                  borderRadius: 4,
+                  padding: "10px 14px",
+                }}
+              >
+                <span style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#777" }}>
+                  Total (salary + distributions + benefits + tax)
+                </span>
+                <span
+                  className="tabular-nums"
+                  style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: "#BA7517" }}
+                >
+                  ${Math.round(compTotal).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-xs text-ch/50">
+                Empty fields default to zero. You can refine everything in Settings once you're set up.
+              </p>
             </div>
           )}
 
@@ -428,10 +501,12 @@ function Onboarding() {
               </header>
               <div className="grid grid-cols-2 gap-6 text-sm">
                 <Summary title="Compensation" rows={[
-                  ["Draw", `$${Number(draw).toLocaleString()}/yr`],
-                  ["Payroll tax", `${ptax}%`],
+                  ["Salary / draw", `$${Number(salary).toLocaleString()}/yr`],
+                  ["Distributions", `$${Number(distributions || 0).toLocaleString()}/yr`],
+                  ["Tax & payroll", `${ptax}%`],
                   ["Health", `$${Number(health).toLocaleString()}/yr`],
                   ["Retirement", `$${Number(retire).toLocaleString()}/yr`],
+                  ["Total", `$${Math.round(compTotal).toLocaleString()}/yr`],
                 ]} />
                 <Summary title="Capacity" rows={[
                   ["Available hrs/wk", availHrs],
