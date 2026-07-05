@@ -8,6 +8,7 @@ import {
   upsertFirmConfig,
   addExpense,
   inviteTeamMember,
+  upsertOwnerCompensation,
 } from "@/lib/firm.functions";
 import { FieldLabel, inputClass, primaryBtnClass, ghostBtnClass } from "@/components/auth/AuthShell";
 import { InfoTip } from "@/components/dashboard/InfoTip";
@@ -43,15 +44,26 @@ function Onboarding() {
   const saveConfig = useServerFn(upsertFirmConfig);
   const saveExpense = useServerFn(addExpense);
   const sendInvite = useServerFn(inviteTeamMember);
+  const saveOwnerComp = useServerFn(upsertOwnerCompensation);
   const { data: ctx } = useQuery({ queryKey: ["me-onboarding"], queryFn: () => getCtx() });
 
   const [step, setStep] = useState(0);
 
-  // Compensation
-  const [draw, setDraw] = useState<string>("120000");
+  // Compensation (simplified — 4 fields + tax rate)
+  const [salary, setSalary] = useState<string>("120000");
+  const [distributions, setDistributions] = useState<string>("");
+  const [health, setHealth] = useState<string>("");
+  const [retire, setRetire] = useState<string>("");
   const [ptax, setPtax] = useState<string>("15.3");
-  const [health, setHealth] = useState<string>("8400");
-  const [retire, setRetire] = useState<string>("6000");
+
+  const compTotal = useMemo(() => {
+    const s = Number(salary) || 0;
+    const d = Number(distributions) || 0;
+    const h = Number(health) || 0;
+    const r = Number(retire) || 0;
+    const t = Number(ptax) || 0;
+    return (s + d) * (1 + t / 100) + h + r;
+  }, [salary, distributions, health, retire, ptax]);
 
   // Capacity / target
   const [availHrs, setAvailHrs] = useState<string>("40");
@@ -135,15 +147,27 @@ function Onboarding() {
   const finish = async () => {
     setSaving(true);
     try {
+      const drawCombined = (Number(salary) || 0) + (Number(distributions) || 0);
       await saveConfig({
         data: {
-          comp_draw_annual: Number(draw) || null,
+          // Mirror simplified comp to firm_config for back-compat with older callers.
+          comp_draw_annual: drawCombined || null,
           comp_ptax_pct: Number(ptax) || null,
           comp_health_annual: Number(health) || null,
           comp_retire_annual: Number(retire) || null,
           available_hrs_per_week: Number(availHrs) || null,
           target_billable_hrs_per_week: Number(billHrs) || null,
           target_gross_margin_pct: Number(targetMargin) || null,
+        },
+      });
+      // Write the per-principal compensation row so the finance calc uses it.
+      await saveOwnerComp({
+        data: {
+          comp_draw_annual: drawCombined || null,
+          distribution_annual: Number(distributions) || null,
+          health_insurance_annual: Number(health) || null,
+          retirement_annual: Number(retire) || null,
+          payroll_tax_pct: Number(ptax) || null,
         },
       });
       for (const e of expenses) {
