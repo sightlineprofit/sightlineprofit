@@ -52,6 +52,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: sopTemplates },
       { data: sopPhases },
       { data: manualLogsWindow },
+      { data: ownerComp },
+      { data: teamBurdens },
     ] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -101,6 +103,15 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .select("id, user_id, period_type, period_start, total_hrs_worked, billable_hrs, non_billable_hrs")
         .eq("firm_id", profile.firm_id)
         .gte("period_start", eightWeeksAgo.toISOString().slice(0, 10)),
+      supabase
+        .from("owner_compensation")
+        .select("*")
+        .eq("firm_id", profile.firm_id),
+      supabase
+        .from("profiles")
+        .select("id, role, burdened_weekly_cost, weeks_per_year")
+        .eq("firm_id", profile.firm_id)
+        .in("role", ["admin", "team", "view_only"]),
     ]);
 
     const isBD = (status: string | null | undefined) =>
@@ -162,6 +173,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
       committedRevenue,
       collectedRevenue,
       manualLogsWindow: manualLogsWindow ?? [],
+      ownerComp: ownerComp ?? [],
+      teamBurdens: teamBurdens ?? [],
       capacity: {
         projects: capacityProjects ?? [],
         phases: phasesScoped,

@@ -80,7 +80,14 @@ function Dashboard() {
     !!firmId,
   );
 
-  const c = useMemo(() => calc(data?.config ?? null, data?.expenses ?? []), [data]);
+  const c = useMemo(
+    () =>
+      calc(data?.config ?? null, data?.expenses ?? [], {
+        ownerComp: (data as any)?.ownerComp ?? [],
+        teamProfiles: (data as any)?.teamBurdens ?? [],
+      }),
+    [data],
+  );
   const firstName = (data?.profile?.name || data?.profile?.email || "").split(/[ @]/)[0] || "there";
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 

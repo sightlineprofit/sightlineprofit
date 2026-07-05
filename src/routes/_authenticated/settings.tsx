@@ -11,15 +11,16 @@ import {
   getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
   upsertFirmConfig, listExpenses, addExpense, deleteExpense,
   updateTeamMember, setPreferredHome,
+  listOwnerCompensations, upsertOwnerCompensation,
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { ModulePage } from "@/components/shell/ModulePage";
-import { calc, type Expense } from "@/lib/finance";
+import { calc, type Expense, type OwnerCompensationRow } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 type PanelId =
-  | "comp" | "opex" | "rate"
+  | "comp" | "opex" | "rate" | "team_cost"
   | "profile" | "firm" | "team" | "billing"
   | "notifications" | "preferences" | "security";
 
@@ -131,7 +132,7 @@ function AdminSettings() {
       </p>
 
       <GroupLabel>Financial architecture</GroupLabel>
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-2 lg:grid-cols-4">
         <FinancialTiles active={active} onOpen={open} />
       </div>
 
@@ -145,6 +146,7 @@ function AdminSettings() {
           {active === "comp" && <CompPanel onClose={close} />}
           {active === "opex" && <OpexPanel onClose={close} />}
           {active === "rate" && <RatePanel onClose={close} />}
+          {active === "team_cost" && <TeamCostPanel onClose={close} />}
           {active === "profile" && <PanelShell title="Profile" subtitle="Your name and contact info." onClose={close}><ProfilePanelBody /></PanelShell>}
           {active === "firm" && <FirmPanel onClose={close} />}
           {active === "team" && <TeamPanel onClose={close} />}
@@ -208,15 +210,54 @@ function Tile({ t, active, onOpen }: { t: TileDef; active: PanelId | null; onOpe
 function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id: PanelId) => void }) {
   const getCtx = useServerFn(getMyContext);
   const listExp = useServerFn(listExpenses);
+  const listOwn = useServerFn(listOwnerCompensations);
+  const listT = useServerFn(listTeam);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
   const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => listExp() });
+  const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
 
   const cfg = ctx?.config ?? null;
-  const c = useMemo(() => calc(cfg, (expenses ?? []) as Expense[]), [cfg, expenses]);
+  const ownerRows = (ownerData?.comp ?? []) as OwnerCompensationRow[];
+  const principalCount = ownerData?.principals?.length ?? 0;
+  const teamMembers = (teamData?.members ?? []).filter((m: any) => m.role !== "principal");
+  const teamBurdens = teamMembers.map((m: any) => ({
+    burdened_weekly_cost: m.burdened_weekly_cost,
+    weeks_per_year: m.weeks_per_year,
+  }));
+  const c = useMemo(
+    () => calc(cfg, (expenses ?? []) as Expense[], { ownerComp: ownerRows, teamProfiles: teamBurdens }),
+    [cfg, expenses, ownerRows, teamBurdens],
+  );
 
-  const compStatus: Status = cfg?.comp_draw_annual
-    ? { tone: "ok", text: `$${Math.round((cfg.comp_draw_annual ?? 0) / 1000)}k draw · $${Math.round(c.compTotal / 1000)}k total` }
-    : { tone: "muted", text: "Not configured" };
+  // Owner comp tile status hint (multi-principal aware).
+  const configuredRows = ownerRows.filter((r) => Number(r.comp_draw_annual) > 0);
+  let compStatus: Status;
+  if (principalCount === 0 || configuredRows.length === 0) {
+    compStatus = { tone: "muted", text: "Not configured" };
+  } else if (principalCount === 1 && configuredRows.length === 1) {
+    const row = configuredRows[0];
+    const drawK = Math.round((Number(row.comp_draw_annual) || 0) / 1000);
+    compStatus = { tone: "ok", text: `$${drawK}k draw · $${Math.round(c.compTotal / 1000)}k total` };
+  } else if (principalCount === configuredRows.length) {
+    compStatus = { tone: "ok", text: `${principalCount} principals · $${Math.round(c.compTotal / 1000)}k combined` };
+  } else {
+    compStatus = { tone: "warn", text: `${configuredRows.length} of ${principalCount} principals configured` };
+  }
+
+  // Team cost tile status hint.
+  const teamCount = teamMembers.length;
+  const teamConfigured = teamMembers.filter((m: any) => Number(m.burdened_weekly_cost) > 0).length;
+  let teamCostStatus: Status;
+  if (teamCount === 0) {
+    teamCostStatus = { tone: "muted", text: "No team members" };
+  } else if (teamConfigured === 0) {
+    teamCostStatus = { tone: "muted", text: `${teamCount} not configured` };
+  } else if (teamConfigured === teamCount) {
+    teamCostStatus = { tone: "ok", text: `${teamCount} members · $${Math.round(c.teamCostTotal / 1000)}k/yr` };
+  } else {
+    teamCostStatus = { tone: "warn", text: `${teamConfigured} of ${teamCount} configured` };
+  }
 
   const expenseCount = expenses?.length ?? 0;
   const opexStatus: Status = expenseCount > 0
@@ -238,6 +279,7 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
     { id: "comp", name: "Owner compensation", desc: "Everything you take out of the firm in a year.", icon: DollarSign, gold: true, status: compStatus },
     { id: "opex", name: "Operating expenses", desc: "Fixed and recurring costs of running the firm.", icon: Receipt, gold: true, status: opexStatus },
     { id: "rate", name: "Capacity and rate", desc: "How many hours you sell and what you charge.", icon: Calculator, gold: true, status: rateStatus },
+    { id: "team_cost", name: "Team cost", desc: "Fully burdened cost of your team members.", icon: Users, gold: true, status: teamCostStatus },
   ];
   return <>{tiles.map(t => <Tile key={t.id} t={t} active={active} onOpen={onOpen} />)}</>;
 }
@@ -308,7 +350,22 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
   title: string; subtitle: string; onClose: () => void; left: React.ReactNode;
   cfg: any; expenses: Expense[];
 }) {
-  const c = useMemo(() => calc(cfg, expenses), [cfg, expenses]);
+  const listOwn = useServerFn(listOwnerCompensations);
+  const listT = useServerFn(listTeam);
+  const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
+  const ownerComp = (cfg?.__ownerCompOverride as OwnerCompensationRow[] | undefined)
+    ?? ((ownerData?.comp ?? []) as OwnerCompensationRow[]);
+  const teamProfiles = (teamData?.members ?? [])
+    .filter((m: any) => m.role !== "principal")
+    .map((m: any) => ({
+      burdened_weekly_cost: m.burdened_weekly_cost,
+      weeks_per_year: m.weeks_per_year,
+    }));
+  const c = useMemo(
+    () => calc(cfg, expenses, { ownerComp, teamProfiles }),
+    [cfg, expenses, ownerComp, teamProfiles],
+  );
   const rateStatus =
     c.rateHealth === "healthy" ? "Above floor"
     : c.rateHealth === "below_floor" ? "Below floor"
@@ -445,55 +502,365 @@ function NumInput({ value, onChange, prefix, suffix, placeholder }: {
 }
 
 function CompPanel({ onClose }: { onClose: () => void }) {
-  const { draft, patch, liveConfig, expenses, cfg } = useFinancialDraft();
-  const salary = Number(draft.comp_draw_annual) || 0;
-  const ptax = (salary * (Number(draft.comp_ptax_pct) || 0)) / 100;
-  const isSCorp = cfg?.business_structure === "s_corp";
-  const dist = isSCorp ? Number(draft.comp_distribution_annual) || 0 : 0;
-  const reserve = isSCorp ? Number(draft.comp_reserve_target_annual) || 0 : 0;
-  const health = Number(draft.comp_health_annual) || 0;
-  const retire = Number(draft.comp_retire_annual) || 0;
-  const total = salary + ptax + dist + reserve + health + retire;
+  const qc = useQueryClient();
+  const { data: me } = useMe();
+  const { liveConfig, expenses, cfg } = useFinancialDraft();
+  const listOwn = useServerFn(listOwnerCompensations);
+  const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+
+  const principals = ownerData?.principals ?? [];
+  const compByProfile = new Map<string, OwnerCompensationRow>();
+  for (const r of (ownerData?.comp ?? []) as any[]) {
+    compByProfile.set(r.profile_id as string, r as OwnerCompensationRow);
+  }
+
+  // Sort: current user first, then by name.
+  const myId = me?.profile?.id;
+  const sorted = [...principals].sort((a: any, b: any) => {
+    if (a.id === myId) return -1;
+    if (b.id === myId) return 1;
+    return (a.name || a.email).localeCompare(b.name || b.email);
+  });
+
+  // Live editing state — one draft per principal id (only my own is editable).
+  const [drafts, setDrafts] = useState<Record<string, OwnerCompensationRow>>({});
+  useEffect(() => {
+    const next: Record<string, OwnerCompensationRow> = {};
+    for (const p of principals as any[]) {
+      const existing = compByProfile.get(p.id);
+      next[p.id] = existing ?? {
+        profile_id: p.id,
+        comp_draw_annual: null,
+        payroll_tax_pct: 15.3,
+        health_insurance_annual: null,
+        retirement_annual: null,
+        distribution_annual: null,
+        reserve_target: null,
+        reserve_months: null,
+      };
+    }
+    setDrafts(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerData?.comp?.length, principals.length]);
+
+  // Merge drafts back for live-calc: use my draft (live), others use saved rows.
+  const liveRows: OwnerCompensationRow[] = principals.map((p: any) => {
+    if (p.id === myId) return drafts[p.id] ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, reserve_target: null };
+    return compByProfile.get(p.id) ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, reserve_target: null };
+  });
+
+  const cfgWithOverride = { ...(liveConfig as any), __ownerCompOverride: liveRows };
 
   return (
     <FinancialLayout
       title="Owner compensation"
       subtitle="Everything you take out of the firm in a year."
       onClose={onClose}
-      cfg={liveConfig} expenses={expenses}
+      cfg={cfgWithOverride} expenses={expenses}
       left={
         <>
+          <div className="mb-2.5 text-[11px] font-medium text-ch">Principal compensation</div>
+          <div className="space-y-2.5">
+            {sorted.map((p: any) => (
+              <PrincipalCard
+                key={p.id}
+                principal={p}
+                isMe={p.id === myId}
+                isSCorp={cfg?.business_structure === "s_corp"}
+                value={drafts[p.id]}
+                savedValue={compByProfile.get(p.id) ?? null}
+                onChange={(v) => setDrafts((d) => ({ ...d, [p.id]: v }))}
+                onSaved={() => qc.invalidateQueries({ queryKey: ["ownerComp"] })}
+              />
+            ))}
+          </div>
+          {principals.length === 1 && (
+            <p className="mt-3 text-[10px] leading-[1.5] text-ch/55">
+              Co-owned firm? A second principal can join using the invite flow in Account → Team.
+              Invite them with the Principal role and their compensation card will appear here.
+            </p>
+          )}
+        </>
+      }
+    />
+  );
+}
+
+function PrincipalCard({ principal, isMe, isSCorp, value, savedValue, onChange, onSaved }: {
+  principal: any; isMe: boolean; isSCorp: boolean;
+  value: OwnerCompensationRow | undefined;
+  savedValue: OwnerCompensationRow | null;
+  onChange: (v: OwnerCompensationRow) => void;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const save = useServerFn(upsertOwnerCompensation);
+
+  const v = value ?? {
+    comp_draw_annual: null, payroll_tax_pct: 15.3,
+    health_insurance_annual: null, retirement_annual: null,
+    distribution_annual: null, reserve_target: null,
+  };
+  const display = savedValue ?? (v as OwnerCompensationRow);
+  const configured = Number(display.comp_draw_annual) > 0;
+
+  const salary = Number(v.comp_draw_annual) || 0;
+  const ptax = (salary * (Number(v.payroll_tax_pct) || 0)) / 100;
+  const health = Number(v.health_insurance_annual) || 0;
+  const retire = Number(v.retirement_annual) || 0;
+  const dist = Number(v.distribution_annual) || 0;
+  const reserve = Number(v.reserve_target) || 0;
+  const total = salary + ptax + health + retire + (isSCorp ? dist + reserve : 0);
+
+  const initials = ((principal.name || principal.email) as string)
+    .split(/\s+/).map((s: string) => s[0]).slice(0, 2).join("").toUpperCase();
+
+  async function onSave() {
+    if (!isMe) return;
+    setSaving(true);
+    try {
+      await save({
+        data: {
+          comp_draw_annual: v.comp_draw_annual,
+          payroll_tax_pct: v.payroll_tax_pct,
+          health_insurance_annual: v.health_insurance_annual,
+          retirement_annual: v.retirement_annual,
+          distribution_annual: v.distribution_annual,
+          reserve_target: v.reserve_target,
+        } as any,
+      });
+      toast.success("Compensation saved.");
+      onSaved();
+      setOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save.");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="overflow-hidden rounded-[7px] border border-border bg-white">
+      <button
+        type="button"
+        onClick={() => isMe && setOpen(!open)}
+        className={cn(
+          "flex w-full items-center gap-3 px-3.5 py-2.5 text-left",
+          isMe ? "cursor-pointer hover:bg-cream/50" : "cursor-default",
+        )}
+      >
+        <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials}</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-medium text-ch">
+            {principal.name || principal.email}
+            <span className="ml-1.5 text-[10px] font-normal text-ch/60">
+              · Principal{isMe && " · (You)"}
+            </span>
+          </div>
+          <div
+            className="mt-0.5 text-[10px]"
+            style={{ color: configured ? "rgba(44,44,44,0.6)" : "#BA7517" }}
+          >
+            {configured
+              ? `$${Math.round((Number(display.comp_draw_annual) || 0) / 1000)}k draw · $${Math.round(computeCardTotal(display, isSCorp) / 1000)}k total`
+              : (isMe ? "Not configured — click to add" : "Not configured")}
+          </div>
+        </div>
+        {isMe && (
+          <span className="text-[10px] text-ch/40">{open ? "▲" : "▼"}</span>
+        )}
+      </button>
+
+      {open && isMe && (
+        <div className="border-t border-border px-3.5 py-3">
           <Row2>
             <Field label="Annual salary / owner draw">
-              <NumInput value={draft.comp_draw_annual ?? ""} onChange={(v) => patch({ comp_draw_annual: v })} prefix="$" />
+              <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
             </Field>
             <Field label="Self-employment tax %">
-              <NumInput value={draft.comp_ptax_pct ?? ""} onChange={(v) => patch({ comp_ptax_pct: v })} suffix="%" />
+              <NumInput value={v.payroll_tax_pct?.toString() ?? "15.3"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
             </Field>
           </Row2>
           <Row2>
             <Field label="Annual health insurance">
-              <NumInput value={draft.comp_health_annual ?? ""} onChange={(v) => patch({ comp_health_annual: v })} prefix="$" />
+              <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" />
             </Field>
             <Field label="Retirement contribution">
-              <NumInput value={draft.comp_retire_annual ?? ""} onChange={(v) => patch({ comp_retire_annual: v })} prefix="$" />
+              <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" />
             </Field>
           </Row2>
           {isSCorp && (
             <Row2>
               <Field label="Distribution / owner bonus">
-                <NumInput value={draft.comp_distribution_annual ?? ""} onChange={(v) => patch({ comp_distribution_annual: v })} prefix="$" placeholder="0" />
+                <NumInput value={v.distribution_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, distribution_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
               </Field>
-              <Field label="Reserve target (S-Corp)">
-                <NumInput value={draft.comp_reserve_target_annual ?? ""} onChange={(v) => patch({ comp_reserve_target_annual: v })} prefix="$" placeholder="0" />
+              <Field label="Reserve target (annual)">
+                <NumInput value={v.reserve_target?.toString() ?? ""} onChange={(x) => onChange({ ...v, reserve_target: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
               </Field>
             </Row2>
           )}
           <div className="mt-1 flex justify-between border-t border-border pt-2.5 text-[12px]">
-            <span className="text-ch/60">Compensation subtotal</span>
+            <span className="text-ch/60">Total compensation</span>
             <span className="font-medium text-ch">${Math.round(total).toLocaleString()}</span>
           </div>
-        </>
+          <SaveRow onCancel={() => setOpen(false)} onSave={onSave} saving={saving} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function computeCardTotal(r: OwnerCompensationRow, isSCorp: boolean): number {
+  const salary = Number(r.comp_draw_annual) || 0;
+  const ptax = (salary * (Number(r.payroll_tax_pct) || 0)) / 100;
+  const health = Number(r.health_insurance_annual) || 0;
+  const retire = Number(r.retirement_annual) || 0;
+  const dist = Number(r.distribution_annual) || 0;
+  const reserve = Number(r.reserve_target) || 0;
+  return salary + ptax + health + retire + (isSCorp ? dist + reserve : 0);
+}
+
+/* ────────────────────────── Team cost panel ────────────────────────── */
+
+function TeamCostPanel({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const { liveConfig, expenses } = useFinancialDraft();
+  const listT = useServerFn(listTeam);
+  const update = useServerFn(updateTeamMember);
+  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
+  const members = (teamData?.members ?? []).filter((m: any) => m.role !== "principal");
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+  useEffect(() => {
+    const next: Record<string, any> = {};
+    for (const m of members) {
+      next[m.id] = {
+        compensation_type: m.compensation_type ?? "hourly",
+        cost_rate: m.cost_rate,
+        annual_base_salary: m.annual_base_salary,
+        employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? 7.65,
+        annual_benefits: m.annual_benefits,
+        other_annual_costs: m.other_annual_costs,
+        expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
+        weeks_per_year: m.weeks_per_year ?? 48,
+      };
+    }
+    setDrafts(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members.length]);
+
+  async function save(m: any) {
+    const d = drafts[m.id];
+    if (!d) return;
+    try {
+      await update({ data: { id: m.id, ...d } as any });
+      toast.success("Team member saved.");
+      qc.invalidateQueries({ queryKey: ["team"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      setOpenId(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save.");
+    }
+  }
+
+  const initials = (name: string, email: string) =>
+    (name || email).split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase();
+
+  return (
+    <FinancialLayout
+      title="Team cost"
+      subtitle="Fully burdened annual cost of each team member."
+      onClose={onClose}
+      cfg={liveConfig} expenses={expenses}
+      left={
+        members.length === 0 ? (
+          <div className="rounded-[7px] border border-border bg-cream/50 px-4 py-6 text-center text-[11px] text-ch/60">
+            No team members yet.
+            <br />
+            Add team members from <span className="text-gold">Account → Team</span> and they will appear here.
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {members.map((m: any) => {
+              const d = drafts[m.id] ?? {};
+              const configured = Number(m.burdened_weekly_cost) > 0;
+              const open = openId === m.id;
+              return (
+                <div key={m.id} className="overflow-hidden rounded-[7px] border border-border bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(open ? null : m.id)}
+                    className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-cream/50"
+                  >
+                    <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials(m.name, m.email)}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] font-medium text-ch">
+                        {m.name || m.email}
+                        <span className="ml-1.5 text-[10px] font-normal text-ch/60 capitalize">· {m.role.replace("_", " ")}</span>
+                      </div>
+                      <div className="mt-0.5 text-[10px]" style={{ color: configured ? "rgba(44,44,44,0.6)" : "#BA7517" }}>
+                        {configured
+                          ? `$${Math.round(Number(m.burdened_hourly_rate) || 0)}/hr burdened · $${Math.round((Number(m.burdened_weekly_cost) || 0) * (Number(m.weeks_per_year) || 48) / 1000)}k/yr`
+                          : "Not configured"}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-ch/40">{open ? "▲" : "▼"}</span>
+                  </button>
+                  {open && (
+                    <div className="border-t border-border px-3.5 py-3">
+                      <Row2>
+                        <Field label="Compensation type">
+                          <select
+                            className={selectCls}
+                            value={d.compensation_type ?? "hourly"}
+                            onChange={(e) => setDrafts((s) => ({ ...s, [m.id]: { ...d, compensation_type: e.target.value } }))}
+                          >
+                            <option value="hourly">Hourly</option>
+                            <option value="salaried">Salaried</option>
+                          </select>
+                        </Field>
+                        <Field label="Employer payroll tax %">
+                          <NumInput value={d.employer_payroll_tax_pct?.toString() ?? "7.65"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, employer_payroll_tax_pct: v === "" ? null : Number(v) } }))} suffix="%" />
+                        </Field>
+                      </Row2>
+                      {d.compensation_type === "salaried" ? (
+                        <Row2>
+                          <Field label="Annual base salary">
+                            <NumInput value={d.annual_base_salary?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, annual_base_salary: v === "" ? null : Number(v) } }))} prefix="$" />
+                          </Field>
+                          <Field label="Weeks per year">
+                            <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, weeks_per_year: v === "" ? null : Number(v) } }))} />
+                          </Field>
+                        </Row2>
+                      ) : (
+                        <Row2>
+                          <Field label="Hourly cost rate">
+                            <NumInput value={d.cost_rate?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, cost_rate: v === "" ? null : Number(v) } }))} prefix="$" />
+                          </Field>
+                          <Field label="Weeks per year">
+                            <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, weeks_per_year: v === "" ? null : Number(v) } }))} />
+                          </Field>
+                        </Row2>
+                      )}
+                      <Row2>
+                        <Field label="Annual benefits">
+                          <NumInput value={d.annual_benefits?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, annual_benefits: v === "" ? null : Number(v) } }))} prefix="$" placeholder="0" />
+                        </Field>
+                        <Field label="Other annual costs">
+                          <NumInput value={d.other_annual_costs?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, other_annual_costs: v === "" ? null : Number(v) } }))} prefix="$" placeholder="0" />
+                        </Field>
+                      </Row2>
+                      <Field label="Expected hours per week">
+                        <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, expected_hrs_per_week: v === "" ? null : Number(v) } }))} />
+                      </Field>
+                      <SaveRow onCancel={() => setOpenId(null)} onSave={() => save(m)} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
       }
     />
   );

@@ -17,6 +17,24 @@ export type FirmConfig = {
   planned_activity_allocation?: Record<string, number> | unknown | null;
 };
 
+/** One principal's compensation record (from owner_compensation table). */
+export type OwnerCompensationRow = {
+  profile_id?: string;
+  comp_draw_annual: number | null;
+  payroll_tax_pct: number | null;
+  health_insurance_annual: number | null;
+  retirement_annual: number | null;
+  distribution_annual: number | null;
+  reserve_target: number | null;
+  reserve_months?: number | null;
+};
+
+/** Team member burdened cost input (from profiles for non-principals). */
+export type TeamBurden = {
+  burdened_weekly_cost: number | null;
+  weeks_per_year: number | null;
+};
+
 export type Expense = {
   id: string;
   name: string;
@@ -32,6 +50,10 @@ export type RateOverrides = {
   rateOverride?: number | null;
   hrsOverride?: number | null; // billable hrs/week
   payIncreaseAnnual?: number;
+  /** When provided, calc() sums owner cost across these rows instead of reading firm_config. */
+  ownerComp?: OwnerCompensationRow[];
+  /** When provided, calc() adds team member fully burdened annual cost. */
+  teamProfiles?: TeamBurden[];
 };
 
 const WEEKS_DEFAULT = 48;
@@ -51,18 +73,6 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
     | "sole_prop"
     | "s_corp"
     | "other";
-  const draw = (Number(config?.comp_draw_annual) || 0) + (ov.payIncreaseAnnual || 0);
-  const ptaxPct = Number(config?.comp_ptax_pct) || 0;
-  // For S-Corp, payroll/SE-style tax applies only to the W-2 salary portion,
-  // not to distributions or business reserve.
-  const ptax = (draw * ptaxPct) / 100;
-  const health = Number(config?.comp_health_annual) || 0;
-  const retire = Number(config?.comp_retire_annual) || 0;
-  const distribution =
-    structure === "s_corp" ? Number(config?.comp_distribution_annual) || 0 : 0;
-  const reserveTarget =
-    structure === "s_corp" ? Number(config?.comp_reserve_target_annual) || 0 : 0;
-  const compTotal = draw + ptax + health + retire + distribution + reserveTarget;
 
   let opexRecurring = 0;
   let opexOneTime = 0;
@@ -73,8 +83,61 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
   }
   opexRecurring += ov.extraRecurringAnnual || 0;
   opexOneTime += ov.extraOneTimeAnnual || 0;
+  const opexAnnualForReserve = opexRecurring + opexOneTime;
 
-  const totalCost = compTotal + opexRecurring + opexOneTime;
+  // ── Owner compensation ──
+  // Prefer owner_compensation rows when provided (new multi-principal model).
+  // Fall back to firm_config for backward compatibility with older callers.
+  let draw = 0;
+  let ptax = 0;
+  let health = 0;
+  let retire = 0;
+  let distribution = 0;
+  let reserveTarget = 0;
+  const ownerRows = ov.ownerComp;
+  if (ownerRows && ownerRows.length > 0) {
+    for (const r of ownerRows) {
+      const d = Number(r.comp_draw_annual) || 0;
+      const pct = Number(r.payroll_tax_pct ?? 15.3) || 0;
+      draw += d;
+      ptax += d * (pct / 100);
+      health += Number(r.health_insurance_annual) || 0;
+      retire += Number(r.retirement_annual) || 0;
+      distribution += Number(r.distribution_annual) || 0;
+      const months = Number(r.reserve_months) || 0;
+      if (months > 0) {
+        reserveTarget += months * (opexAnnualForReserve / 12);
+      } else {
+        reserveTarget += Number(r.reserve_target) || 0;
+      }
+    }
+    draw += ov.payIncreaseAnnual || 0;
+    if (ov.payIncreaseAnnual && ownerRows[0]) {
+      const pct0 = Number(ownerRows[0].payroll_tax_pct ?? 15.3) || 0;
+      ptax += (ov.payIncreaseAnnual || 0) * (pct0 / 100);
+    }
+  } else {
+    draw = (Number(config?.comp_draw_annual) || 0) + (ov.payIncreaseAnnual || 0);
+    const ptaxPct = Number(config?.comp_ptax_pct) || 0;
+    ptax = (draw * ptaxPct) / 100;
+    health = Number(config?.comp_health_annual) || 0;
+    retire = Number(config?.comp_retire_annual) || 0;
+    distribution =
+      structure === "s_corp" ? Number(config?.comp_distribution_annual) || 0 : 0;
+    reserveTarget =
+      structure === "s_corp" ? Number(config?.comp_reserve_target_annual) || 0 : 0;
+  }
+  const compTotal = draw + ptax + health + retire + distribution + reserveTarget;
+
+  // ── Team member fully burdened annual cost ──
+  let teamCostTotal = 0;
+  for (const t of ov.teamProfiles ?? []) {
+    const wk = Number(t.burdened_weekly_cost) || 0;
+    const wks = Number(t.weeks_per_year) || 48;
+    teamCostTotal += wk * wks;
+  }
+
+  const totalCost = compTotal + opexRecurring + opexOneTime + teamCostTotal;
 
   const targetBillableHrsWeek =
     (ov.hrsOverride ?? Number(config?.target_billable_hrs_per_week)) || 0;
@@ -127,7 +190,7 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
   return {
     draw, ptax, health, retire, distribution, reserveTarget, compTotal,
     structure,
-    opexRecurring, opexOneTime, totalCost,
+    opexRecurring, opexOneTime, teamCostTotal, totalCost,
     targetBillableHrsWeek, weeksPerYear, annualBillableHrs,
     breakEvenRate, alignedRate, billedRate,
     annualRevenue, grossProfit, grossMarginPct,
