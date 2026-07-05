@@ -350,7 +350,22 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
   title: string; subtitle: string; onClose: () => void; left: React.ReactNode;
   cfg: any; expenses: Expense[];
 }) {
-  const c = useMemo(() => calc(cfg, expenses), [cfg, expenses]);
+  const listOwn = useServerFn(listOwnerCompensations);
+  const listT = useServerFn(listTeam);
+  const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
+  const ownerComp = (cfg?.__ownerCompOverride as OwnerCompensationRow[] | undefined)
+    ?? ((ownerData?.comp ?? []) as OwnerCompensationRow[]);
+  const teamProfiles = (teamData?.members ?? [])
+    .filter((m: any) => m.role !== "principal")
+    .map((m: any) => ({
+      burdened_weekly_cost: m.burdened_weekly_cost,
+      weeks_per_year: m.weeks_per_year,
+    }));
+  const c = useMemo(
+    () => calc(cfg, expenses, { ownerComp, teamProfiles }),
+    [cfg, expenses, ownerComp, teamProfiles],
+  );
   const rateStatus =
     c.rateHealth === "healthy" ? "Above floor"
     : c.rateHealth === "below_floor" ? "Below floor"
