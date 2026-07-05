@@ -476,6 +476,69 @@ export type Database = {
         }
         Relationships: []
       }
+      owner_compensation: {
+        Row: {
+          comp_draw_annual: number | null
+          compensation_notes: string | null
+          created_at: string
+          distribution_annual: number | null
+          firm_id: string
+          health_insurance_annual: number | null
+          id: string
+          payroll_tax_pct: number | null
+          profile_id: string
+          reserve_months: number | null
+          reserve_target: number | null
+          retirement_annual: number | null
+          updated_at: string
+        }
+        Insert: {
+          comp_draw_annual?: number | null
+          compensation_notes?: string | null
+          created_at?: string
+          distribution_annual?: number | null
+          firm_id: string
+          health_insurance_annual?: number | null
+          id?: string
+          payroll_tax_pct?: number | null
+          profile_id: string
+          reserve_months?: number | null
+          reserve_target?: number | null
+          retirement_annual?: number | null
+          updated_at?: string
+        }
+        Update: {
+          comp_draw_annual?: number | null
+          compensation_notes?: string | null
+          created_at?: string
+          distribution_annual?: number | null
+          firm_id?: string
+          health_insurance_annual?: number | null
+          id?: string
+          payroll_tax_pct?: number | null
+          profile_id?: string
+          reserve_months?: number | null
+          reserve_target?: number | null
+          retirement_annual?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_compensation_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_compensation_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_projects: {
         Row: {
           assigned_user_ids: string[] | null
