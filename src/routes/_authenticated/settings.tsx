@@ -11,15 +11,16 @@ import {
   getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
   upsertFirmConfig, listExpenses, addExpense, deleteExpense,
   updateTeamMember, setPreferredHome,
+  listOwnerCompensations, upsertOwnerCompensation,
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { ModulePage } from "@/components/shell/ModulePage";
-import { calc, type Expense } from "@/lib/finance";
+import { calc, type Expense, type OwnerCompensationRow } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 type PanelId =
-  | "comp" | "opex" | "rate"
+  | "comp" | "opex" | "rate" | "team_cost"
   | "profile" | "firm" | "team" | "billing"
   | "notifications" | "preferences" | "security";
 
@@ -131,7 +132,7 @@ function AdminSettings() {
       </p>
 
       <GroupLabel>Financial architecture</GroupLabel>
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-2 lg:grid-cols-4">
         <FinancialTiles active={active} onOpen={open} />
       </div>
 
@@ -145,6 +146,7 @@ function AdminSettings() {
           {active === "comp" && <CompPanel onClose={close} />}
           {active === "opex" && <OpexPanel onClose={close} />}
           {active === "rate" && <RatePanel onClose={close} />}
+          {active === "team_cost" && <TeamCostPanel onClose={close} />}
           {active === "profile" && <PanelShell title="Profile" subtitle="Your name and contact info." onClose={close}><ProfilePanelBody /></PanelShell>}
           {active === "firm" && <FirmPanel onClose={close} />}
           {active === "team" && <TeamPanel onClose={close} />}
