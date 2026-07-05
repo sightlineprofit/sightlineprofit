@@ -667,8 +667,25 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
   );
 }
 
-function PrincipalCard({ principal, isMe, isSCorp, value, savedValue, onChange, onSaved }: {
-  principal: any; isMe: boolean; isSCorp: boolean;
+function structureExplainer(s: string | null): string {
+  switch (s) {
+    case "sole_prop":
+      return "All profit is subject to 15.3% self-employment tax. No salary required.";
+    case "s_corp":
+      return "Pay yourself a reasonable W-2 salary first. Additional distributions avoid payroll tax.";
+    case "partnership":
+      return "Guaranteed payments are subject to SE tax. Distributions generally are not.";
+    case "c_corp":
+      return "You are an employee of your own firm. Salary subject to standard payroll taxes.";
+    default:
+      return "Choose the structure that matches how you file taxes.";
+  }
+}
+
+function PrincipalCard({ principal, isMe, mode, structure, value, savedValue, onChange, onSaved }: {
+  principal: any; isMe: boolean;
+  mode: "simple" | "advanced";
+  structure: string | null;
   value: OwnerCompensationRow | undefined;
   savedValue: OwnerCompensationRow | null;
   onChange: (v: OwnerCompensationRow) => void;
@@ -686,13 +703,32 @@ function PrincipalCard({ principal, isMe, isSCorp, value, savedValue, onChange, 
   const display = savedValue ?? (v as OwnerCompensationRow);
   const configured = Number(display.comp_draw_annual) > 0;
 
-  const salary = Number(v.comp_draw_annual) || 0;
-  const ptax = (salary * (Number(v.payroll_tax_pct) || 0)) / 100;
+  const isAdv = mode === "advanced";
+  const struct = isAdv ? structure : null;
+  const isSCorp = struct === "s_corp";
+  // In simple mode we present salary + distributions as separate inputs but persist
+  // comp_draw_annual = salary + distributions (per onboarding contract).
+  const draw = Number(v.comp_draw_annual) || 0;
+  const dist = Number(v.distribution_annual) || 0;
+  const simpleSalary = Math.max(0, draw - dist);
   const health = Number(v.health_insurance_annual) || 0;
   const retire = Number(v.retirement_annual) || 0;
-  const dist = Number(v.distribution_annual) || 0;
   const reserve = Number(v.reserve_target) || 0;
-  const total = salary + ptax + health + retire + (isSCorp ? dist + reserve : 0);
+  const empePct = Number(v.employee_payroll_tax_pct) || 0;
+  const ptaxPct = Number(v.payroll_tax_pct) || 0;
+  const ptax =
+    isAdv && isSCorp ? (draw * (ptaxPct + empePct)) / 100 : (draw * ptaxPct) / 100;
+  const total =
+    draw + ptax + health + retire + (isAdv && isSCorp ? dist + reserve : 0);
+
+  function setSimpleSalary(x: string) {
+    const s = x === "" ? 0 : Number(x);
+    onChange({ ...v, comp_draw_annual: s + dist });
+  }
+  function setSimpleDist(x: string) {
+    const d = x === "" ? 0 : Number(x);
+    onChange({ ...v, distribution_annual: d, comp_draw_annual: simpleSalary + d });
+  }
 
   const initials = ((principal.name || principal.email) as string)
     .split(/\s+/).map((s: string) => s[0]).slice(0, 2).join("").toUpperCase();
@@ -709,6 +745,7 @@ function PrincipalCard({ principal, isMe, isSCorp, value, savedValue, onChange, 
           retirement_annual: v.retirement_annual,
           distribution_annual: v.distribution_annual,
           reserve_target: v.reserve_target,
+          employee_payroll_tax_pct: v.employee_payroll_tax_pct,
         } as any,
       });
       toast.success("Compensation saved.");
@@ -753,31 +790,114 @@ function PrincipalCard({ principal, isMe, isSCorp, value, savedValue, onChange, 
 
       {open && isMe && (
         <div className="border-t border-border px-3.5 py-3">
-          <Row2>
-            <Field label="Annual salary / owner draw">
-              <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
-            </Field>
-            <Field label="Self-employment tax %">
-              <NumInput value={v.payroll_tax_pct?.toString() ?? "15.3"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
-            </Field>
-          </Row2>
-          <Row2>
-            <Field label="Annual health insurance">
-              <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" />
-            </Field>
-            <Field label="Retirement contribution">
-              <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" />
-            </Field>
-          </Row2>
-          {isSCorp && (
-            <Row2>
-              <Field label="Distribution / owner bonus">
-                <NumInput value={v.distribution_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, distribution_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+          {!isAdv ? (
+            <>
+              <Row2>
+                <Field label="Regular salary or draw (annual)">
+                  <NumInput value={simpleSalary ? simpleSalary.toString() : ""} onChange={setSimpleSalary} prefix="$" />
+                </Field>
+                <Field label="Additional distributions (annual)">
+                  <NumInput value={dist ? dist.toString() : ""} onChange={setSimpleDist} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+              <Row2>
+                <Field label="Health insurance (annual)">
+                  <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Retirement contribution (annual)">
+                  <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+              <Field label="Tax and payroll rate">
+                <NumInput value={v.payroll_tax_pct?.toString() ?? "15.3"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
               </Field>
-              <Field label="Reserve target (annual)">
-                <NumInput value={v.reserve_target?.toString() ?? ""} onChange={(x) => onChange({ ...v, reserve_target: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+            </>
+          ) : struct === "s_corp" ? (
+            <>
+              <Field label="W-2 salary (annual)">
+                <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
               </Field>
-            </Row2>
+              <Row2>
+                <Field label="Employer payroll tax %">
+                  <NumInput value={v.payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
+                </Field>
+                <Field label="Employee payroll tax %">
+                  <NumInput value={v.employee_payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, employee_payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
+                </Field>
+              </Row2>
+              <Row2>
+                <Field label="Distributions (annual)">
+                  <NumInput value={v.distribution_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, distribution_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Business reserve (annual)">
+                  <NumInput value={v.reserve_target?.toString() ?? ""} onChange={(x) => onChange({ ...v, reserve_target: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+              <Row2>
+                <Field label="Health insurance">
+                  <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Retirement">
+                  <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+            </>
+          ) : struct === "partnership" ? (
+            <>
+              <Row2>
+                <Field label="Guaranteed payment (annual)">
+                  <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
+                </Field>
+                <Field label="SE tax %">
+                  <NumInput value={v.payroll_tax_pct?.toString() ?? "15.3"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
+                </Field>
+              </Row2>
+              <Row2>
+                <Field label="Health insurance">
+                  <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Retirement">
+                  <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+            </>
+          ) : struct === "c_corp" ? (
+            <>
+              <Field label="W-2 salary (annual)">
+                <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
+              </Field>
+              <Field label="Employer payroll tax %">
+                <NumInput value={v.payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
+              </Field>
+              <Row2>
+                <Field label="Health insurance">
+                  <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Retirement">
+                  <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+            </>
+          ) : (
+            // sole_prop / null structure — advanced layout
+            <>
+              <Row2>
+                <Field label="Owner's draw (annual)">
+                  <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
+                </Field>
+                <Field label="Self-employment tax %">
+                  <NumInput value={v.payroll_tax_pct?.toString() ?? "15.3"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
+                </Field>
+              </Row2>
+              <Row2>
+                <Field label="Health insurance">
+                  <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Retirement">
+                  <NumInput value={v.retirement_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, retirement_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+            </>
           )}
           <div className="mt-1 flex justify-between border-t border-border pt-2.5 text-[12px]">
             <span className="text-ch/60">Total compensation</span>
@@ -792,7 +912,9 @@ function PrincipalCard({ principal, isMe, isSCorp, value, savedValue, onChange, 
 
 function computeCardTotal(r: OwnerCompensationRow, isSCorp: boolean): number {
   const salary = Number(r.comp_draw_annual) || 0;
-  const ptax = (salary * (Number(r.payroll_tax_pct) || 0)) / 100;
+  const empPct = Number(r.payroll_tax_pct) || 0;
+  const empePct = isSCorp ? Number(r.employee_payroll_tax_pct) || 0 : 0;
+  const ptax = (salary * (empPct + empePct)) / 100;
   const health = Number(r.health_insurance_annual) || 0;
   const retire = Number(r.retirement_annual) || 0;
   const dist = Number(r.distribution_annual) || 0;
