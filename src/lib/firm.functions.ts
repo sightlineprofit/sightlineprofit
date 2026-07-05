@@ -738,3 +738,88 @@ export const claimPrincipalRole = createServerFn({ method: "POST" })
 
     return { ok: true, alreadyPrincipal: false };
   });
+
+// ──────────────────── Owner Compensation (multi-principal) ────────────────────
+
+export const listOwnerCompensations = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) return { principals: [], comp: [] };
+    const [{ data: principals }, { data: comp }] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, name, email, role, created_at")
+        .eq("firm_id", me.firm_id)
+        .eq("role", "principal")
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("owner_compensation")
+        .select("*")
+        .eq("firm_id", me.firm_id),
+    ]);
+    return { principals: principals ?? [], comp: comp ?? [] };
+  });
+
+const ownerCompSchema = z.object({
+  comp_draw_annual: z.number().min(0).max(1e9).nullable().optional(),
+  payroll_tax_pct: z.number().min(0).max(100).nullable().optional(),
+  health_insurance_annual: z.number().min(0).max(1e9).nullable().optional(),
+  retirement_annual: z.number().min(0).max(1e9).nullable().optional(),
+  distribution_annual: z.number().min(0).max(1e9).nullable().optional(),
+  reserve_target: z.number().min(0).max(1e9).nullable().optional(),
+  reserve_months: z.number().int().min(0).max(60).nullable().optional(),
+  compensation_notes: z.string().max(2000).nullable().optional(),
+});
+
+export const upsertOwnerCompensation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => ownerCompSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (me.role !== "principal") throw new Error("Only principals can update their compensation.");
+    const { error } = await supabase
+      .from("owner_compensation")
+      .upsert(
+        {
+          firm_id: me.firm_id,
+          profile_id: userId,
+          ...data,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "firm_id,profile_id" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteOwnerCompensation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (me.role !== "principal") throw new Error("Only principals can remove their compensation.");
+    const { error } = await supabase
+      .from("owner_compensation")
+      .delete()
+      .eq("firm_id", me.firm_id)
+      .eq("profile_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
