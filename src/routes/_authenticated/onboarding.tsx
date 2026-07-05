@@ -8,6 +8,7 @@ import {
   upsertFirmConfig,
   addExpense,
   inviteTeamMember,
+  upsertOwnerCompensation,
 } from "@/lib/firm.functions";
 import { FieldLabel, inputClass, primaryBtnClass, ghostBtnClass } from "@/components/auth/AuthShell";
 import { InfoTip } from "@/components/dashboard/InfoTip";
@@ -43,15 +44,26 @@ function Onboarding() {
   const saveConfig = useServerFn(upsertFirmConfig);
   const saveExpense = useServerFn(addExpense);
   const sendInvite = useServerFn(inviteTeamMember);
+  const saveOwnerComp = useServerFn(upsertOwnerCompensation);
   const { data: ctx } = useQuery({ queryKey: ["me-onboarding"], queryFn: () => getCtx() });
 
   const [step, setStep] = useState(0);
 
-  // Compensation
-  const [draw, setDraw] = useState<string>("120000");
+  // Compensation (simplified — 4 fields + tax rate)
+  const [salary, setSalary] = useState<string>("120000");
+  const [distributions, setDistributions] = useState<string>("");
+  const [health, setHealth] = useState<string>("");
+  const [retire, setRetire] = useState<string>("");
   const [ptax, setPtax] = useState<string>("15.3");
-  const [health, setHealth] = useState<string>("8400");
-  const [retire, setRetire] = useState<string>("6000");
+
+  const compTotal = useMemo(() => {
+    const s = Number(salary) || 0;
+    const d = Number(distributions) || 0;
+    const h = Number(health) || 0;
+    const r = Number(retire) || 0;
+    const t = Number(ptax) || 0;
+    return (s + d) * (1 + t / 100) + h + r;
+  }, [salary, distributions, health, retire, ptax]);
 
   // Capacity / target
   const [availHrs, setAvailHrs] = useState<string>("40");
@@ -135,15 +147,27 @@ function Onboarding() {
   const finish = async () => {
     setSaving(true);
     try {
+      const drawCombined = (Number(salary) || 0) + (Number(distributions) || 0);
       await saveConfig({
         data: {
-          comp_draw_annual: Number(draw) || null,
+          // Mirror simplified comp to firm_config for back-compat with older callers.
+          comp_draw_annual: drawCombined || null,
           comp_ptax_pct: Number(ptax) || null,
           comp_health_annual: Number(health) || null,
           comp_retire_annual: Number(retire) || null,
           available_hrs_per_week: Number(availHrs) || null,
           target_billable_hrs_per_week: Number(billHrs) || null,
           target_gross_margin_pct: Number(targetMargin) || null,
+        },
+      });
+      // Write the per-principal compensation row so the finance calc uses it.
+      await saveOwnerComp({
+        data: {
+          comp_draw_annual: drawCombined || null,
+          distribution_annual: Number(distributions) || null,
+          health_insurance_annual: Number(health) || null,
+          retirement_annual: Number(retire) || null,
+          payroll_tax_pct: Number(ptax) || null,
         },
       });
       for (const e of expenses) {
@@ -211,13 +235,86 @@ function Onboarding() {
                 <p className="mt-1 text-sm text-ch/60">Your real compensation — not what's left over.</p>
               </header>
               <Row>
-                <Field label="Owner's draw (annual)" prefix="$" value={draw} onChange={setDraw} />
-                <Field label="Self-employment / payroll tax" suffix="%" value={ptax} onChange={setPtax} />
+                <Field
+                  label="Regular salary or draw (annual)"
+                  prefix="$"
+                  value={salary}
+                  onChange={setSalary}
+                  tip={{
+                    term: "Regular salary or draw",
+                    definition:
+                      "The amount you consistently pay yourself — whether that's a W-2 salary, owner's draw, or guaranteed payment. This is your personal income floor from the firm.",
+                  }}
+                />
+                <Field
+                  label="Additional distributions (annual)"
+                  prefix="$"
+                  value={distributions}
+                  onChange={setDistributions}
+                  tip={{
+                    term: "Additional distributions",
+                    definition:
+                      "Profit you take out on top of your regular pay — bonuses, S-Corp distributions, or variable draws. Enter what you realistically plan to take, not just what's left over. Leave at zero if not applicable.",
+                  }}
+                />
               </Row>
               <Row>
-                <Field label="Health insurance (annual)" prefix="$" value={health} onChange={setHealth} />
-                <Field label="Retirement contribution (annual)" prefix="$" value={retire} onChange={setRetire} />
+                <Field
+                  label="Health insurance (annual)"
+                  prefix="$"
+                  value={health}
+                  onChange={setHealth}
+                  tip={{
+                    term: "Health insurance",
+                    definition:
+                      "What the firm pays for your health, dental, and vision coverage each year.",
+                  }}
+                />
+                <Field
+                  label="Retirement contribution (annual)"
+                  prefix="$"
+                  value={retire}
+                  onChange={setRetire}
+                  tip={{
+                    term: "Retirement contribution",
+                    definition:
+                      "Your annual contribution to a SEP-IRA, Solo 401k, or similar retirement account funded through the firm.",
+                  }}
+                />
               </Row>
+              <Field
+                label="Tax and payroll rate"
+                suffix="%"
+                value={ptax}
+                onChange={setPtax}
+                tip={{
+                  term: "Tax and payroll rate",
+                  definition:
+                    "The percentage applied to your compensation to cover employment taxes. Sole proprietors typically use 15.3% (self-employment tax). S-Corp owners may use a lower effective rate. You can refine this in Settings once you're set up. 15.3% is a safe starting point for most designers.",
+                }}
+              />
+              <div
+                className="mt-3 flex items-center justify-between"
+                style={{
+                  background: "#FAF7F2",
+                  border: "0.5px solid var(--border, #E5DFD3)",
+                  borderRadius: 4,
+                  padding: "10px 14px",
+                }}
+              >
+                <span style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#777" }}>
+                  Total (salary + distributions + benefits + tax)
+                </span>
+                <span
+                  className="tabular-nums"
+                  style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: "#BA7517" }}
+                >
+                  ${Math.round(compTotal).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-xs text-ch/50">
+                Empty fields default to zero. You can refine everything in Settings once you're set up.
+              </p>
             </div>
           )}
 
@@ -404,10 +501,12 @@ function Onboarding() {
               </header>
               <div className="grid grid-cols-2 gap-6 text-sm">
                 <Summary title="Compensation" rows={[
-                  ["Draw", `$${Number(draw).toLocaleString()}/yr`],
-                  ["Payroll tax", `${ptax}%`],
+                  ["Salary / draw", `$${Number(salary).toLocaleString()}/yr`],
+                  ["Distributions", `$${Number(distributions || 0).toLocaleString()}/yr`],
+                  ["Tax & payroll", `${ptax}%`],
                   ["Health", `$${Number(health).toLocaleString()}/yr`],
                   ["Retirement", `$${Number(retire).toLocaleString()}/yr`],
+                  ["Total", `$${Math.round(compTotal).toLocaleString()}/yr`],
                 ]} />
                 <Summary title="Capacity" rows={[
                   ["Available hrs/wk", availHrs],

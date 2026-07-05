@@ -27,6 +27,7 @@ export type OwnerCompensationRow = {
   distribution_annual: number | null;
   reserve_target: number | null;
   reserve_months?: number | null;
+  employee_payroll_tax_pct?: number | null;
 };
 
 /** Team member burdened cost input (from profiles for non-principals). */
@@ -69,10 +70,13 @@ export function annualizeExpense(e: Expense): { recurring: number; oneTime: numb
 }
 
 export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOverrides = {}) {
-  const structure = (config?.business_structure ?? "sole_prop") as
+  const structure = (config?.business_structure ?? null) as
     | "sole_prop"
     | "s_corp"
-    | "other";
+    | "partnership"
+    | "c_corp"
+    | "other"
+    | null;
 
   let opexRecurring = 0;
   let opexOneTime = 0;
@@ -100,15 +104,21 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
       const d = Number(r.comp_draw_annual) || 0;
       const pct = Number(r.payroll_tax_pct ?? 15.3) || 0;
       draw += d;
-      ptax += d * (pct / 100);
+      // S-Corp: payroll_tax_pct = employer share; add employee share too.
+      const empePct =
+        structure === "s_corp" ? Number(r.employee_payroll_tax_pct ?? 0) || 0 : 0;
+      ptax += d * ((pct + empePct) / 100);
       health += Number(r.health_insurance_annual) || 0;
       retire += Number(r.retirement_annual) || 0;
-      distribution += Number(r.distribution_annual) || 0;
-      const months = Number(r.reserve_months) || 0;
-      if (months > 0) {
-        reserveTarget += months * (opexAnnualForReserve / 12);
-      } else {
-        reserveTarget += Number(r.reserve_target) || 0;
+      // Distribution and reserve only apply to S-Corp in structure-aware mode.
+      if (structure === "s_corp") {
+        distribution += Number(r.distribution_annual) || 0;
+        const months = Number(r.reserve_months) || 0;
+        if (months > 0) {
+          reserveTarget += months * (opexAnnualForReserve / 12);
+        } else {
+          reserveTarget += Number(r.reserve_target) || 0;
+        }
       }
     }
     draw += ov.payIncreaseAnnual || 0;
