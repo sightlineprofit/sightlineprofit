@@ -143,7 +143,7 @@ function AdminSettings() {
 
       {active && (
         <div className="mt-3 rounded-[8px] border border-border bg-white px-7 pt-6 pb-6">
-          {active === "comp" && <CompPanel onClose={close} />}
+          {active === "comp" && <CompPanel onClose={close} onOpenPanel={open} />}
           {active === "opex" && <OpexPanel onClose={close} />}
           {active === "rate" && <RatePanel onClose={close} />}
           {active === "team_cost" && <TeamCostPanel onClose={close} />}
@@ -576,8 +576,15 @@ function CompPanel({ onClose }: { onClose: () => void }) {
           </div>
           {principals.length === 1 && (
             <p className="mt-3 text-[10px] leading-[1.5] text-ch/55">
-              Co-owned firm? A second principal can join using the invite flow in Account → Team.
-              Invite them with the Principal role and their compensation card will appear here.
+              Co-owned firm? A second principal can join using the invite flow in{" "}
+              <button
+                type="button"
+                onClick={() => onOpenPanel?.("team")}
+                className="text-gold underline underline-offset-2 hover:text-ch"
+              >
+                Account → Team
+              </button>
+              . Invite them with the Principal role and their compensation card will appear here.
             </p>
           )}
         </>
