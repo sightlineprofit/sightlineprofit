@@ -107,6 +107,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // with a toast. Skipped for the real super admin even when previewing as
   // team — view-as never reroutes the session; it just renders a preview.
   useEffect(() => {
+    if (!data?.profile) return;
     if (isSuper) return;
     if (currentRole !== "team") return;
     const allowed = [

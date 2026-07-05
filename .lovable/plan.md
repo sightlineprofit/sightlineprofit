@@ -1,30 +1,41 @@
 ## Problem
 
-Your super admin account (`designersupport@proposability.com`) is correctly flagged in the database (`is_super_admin = true`, role = `principal`), and the sidebar already unlocks every nav item for supers. But the **individual page bodies** still gate themselves on `firm.subscription_tier`, and your firm sits on `foundation`. So when you open Sightline, SOP Library, Time Calendar (studio-only paths), Dashboard tiles, BVA, or Knowledge Base, those pages independently render the `TierLocked` upgrade wall instead of the real content.
+Navigating directly to `/onboarding` (or any other non-team-allowed route) as a super admin briefly redirects to `/time-calendar` with the toast "That section is managed by your firm principal."
 
-The shell bypass is the only place super admins are recognized; the route pages don't know about the flag.
+Root cause is in `AppShell.tsx` (lines ~102–126). On first render, `useMe()` hasn't resolved yet, so:
+
+- `data` is `undefined`
+- `realIsSuper` is `false` → `isSuper` is `false`
+- `currentRole` falls back to `"team"` (the `?? "team"` default)
+- The team-role enforcement `useEffect` runs, sees `/onboarding` isn't in the team allow-list, fires the toast, and navigates away.
+
+By the time `useMe` resolves and reports `is_super_admin = true`, the user has already been booted off the page.
 
 ## Fix
 
-Centralize the "effective tier" the same way `effectiveRole()` centralizes role:
+In `src/components/shell/AppShell.tsx`, make the team-route enforcement effect wait until the profile is actually loaded before enforcing anything.
 
-1. **Add `useEffectiveTier()` (and a helper `effectiveTier(profile, firm)`) in `src/lib/role.tsx`.** Returns `"practice"` whenever `profile.is_super_admin` is true; otherwise returns `firm.subscription_tier ?? "foundation"`. This mirrors how `AppShell` already computes `currentTier`.
+Change the guard at the top of the effect (around line 109) from:
 
-2. **Replace every `ctx?.firm?.subscription_tier`-derived tier check on gated pages** with the effective tier:
-   - `src/routes/_authenticated/sightline.tsx`
-   - `src/routes/_authenticated/sop-library.tsx`
-   - `src/routes/_authenticated/time-calendar.tsx`
-   - `src/routes/_authenticated/knowledge-base.tsx`
-   - `src/routes/_authenticated/dashboard.tsx`
-   - `src/routes/_authenticated/dashboard.bva.tsx`
-   - `src/routes/_authenticated/settings.tsx` (only the tier-display/lock branches; the billing controls stay as-is)
+```ts
+if (isSuper) return;
+if (currentRole !== "team") return;
+```
 
-   `AppShell.tsx` switches to the same helper so there's one source of truth.
+to:
 
-3. **Leave billing/admin alone.** `admin.tsx` reads `subscription_tier` to *edit* a firm's plan — that must still reflect the real stored value. `billing.tsx` similarly shows the actual subscription. No changes there.
+```ts
+if (!data?.profile) return;      // wait for useMe to resolve
+if (isSuper) return;
+if (currentRole !== "team") return;
+```
 
-4. **No DB or migration changes.** Your profile is already correct; this is purely a frontend gating bug.
+That single check prevents the pre-hydration "team default" from ever running the redirect. Real team users still get enforced once their profile loads; super admins (and principals/admins) are never misclassified as team during the loading window.
 
-## Result
+No other files change. No routes, no calculations, no data model changes.
 
-Once shipped, signing in as a super admin unlocks every module's page body regardless of the firm's stored tier, matching what the sidebar already implies. Non-super users keep their normal tier gating. Impersonation continues to use the impersonated firm's data, but tier gating stays off for the super (same behavior the shell already uses).
+## Verification
+
+- Sign in as super admin → navigate directly to `/onboarding` → page renders, no toast, no redirect.
+- Sign in as a real team user → navigating to `/onboarding` still redirects to `/time-calendar` with the existing toast.
+- Sign in as principal/admin → `/onboarding` remains accessible as before.
