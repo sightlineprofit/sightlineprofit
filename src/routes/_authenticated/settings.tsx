@@ -1118,7 +1118,7 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
   const resend = useServerFn(resendInvitation);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"team" | "admin" | "view_only">("team");
+  const [role, setRole] = useState<"principal" | "team" | "admin" | "view_only">("team");
   const [sending, setSending] = useState(false);
 
   function refresh() { qc.invalidateQueries({ queryKey: ["team"] }); }
@@ -1135,10 +1135,28 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
     finally { setSending(false); }
   }
 
-  async function changeRole(id: string, r: string) {
+  async function changeRole(id: string, r: string, name: string) {
+    if (r === "principal") {
+      const ok = window.confirm(
+        `Changing ${name || "this member"} to Principal will give them full ownership access to all financial settings and billing. Are you sure?`,
+      );
+      if (!ok) { refresh(); return; }
+    }
     try {
-      await update({ data: { id, role: r as any } });
+      const payload: any = { id, role: r };
+      if (r === "principal") {
+        // Clear burdened cost columns — their cost now lives in owner_compensation.
+        Object.assign(payload, {
+          cost_rate: null,
+          annual_base_salary: null,
+          employer_payroll_tax_pct: null,
+          annual_benefits: null,
+          other_annual_costs: null,
+        });
+      }
+      await update({ data: payload });
       toast.success("Role updated.");
+      qc.invalidateQueries({ queryKey: ["ownerComp"] });
       refresh();
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not update."); }
   }
@@ -1159,7 +1177,8 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
             {m.role === "principal" ? (
               <span className="text-[10px] text-ch/60">Principal</span>
             ) : (
-              <select className={cn(selectCls, "w-[110px] py-[3px] text-[10px]")} value={m.role} onChange={(e) => changeRole(m.id, e.target.value)}>
+              <select className={cn(selectCls, "w-[110px] py-[3px] text-[10px]")} value={m.role} onChange={(e) => changeRole(m.id, e.target.value, m.name || m.email)}>
+                <option value="principal">Principal</option>
                 <option value="admin">Admin</option>
                 <option value="team">Team</option>
                 <option value="view_only">View only</option>
@@ -1192,13 +1211,14 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
         <div className="mb-2 flex gap-2">
           <input type="email" className={cn(inputCls, "flex-1")} placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
           <select className={cn(selectCls, "w-[110px]")} value={role} onChange={(e) => setRole(e.target.value as any)}>
+            <option value="principal">Principal</option>
             <option value="team">Team</option>
             <option value="admin">Admin</option>
             <option value="view_only">View only</option>
           </select>
         </div>
         <p className="mb-2.5 text-[10px] leading-[1.5] text-ch/60">
-          Team: time calendar and assigned projects only. Admin: full access except billing. View only: read-only.
+          Principal: full ownership access, own compensation settings, and billing. Team: time calendar and assigned projects only. Admin: full access except billing. View only: read-only.
         </p>
         <button type="button" onClick={send} disabled={sending} className={darkBtn}>
           {sending ? "Sending…" : "Send invitation"}
