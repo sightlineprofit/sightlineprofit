@@ -126,7 +126,10 @@ const configSchema = z.object({
   rate_billed: z.number().min(0).max(100000).nullable().optional(),
   actual_billed_rate: z.number().min(0).max(100000).nullable().optional(),
   accounting_basis: z.enum(["cash", "accrual"]).optional(),
-  business_structure: z.enum(["sole_prop", "s_corp", "other"]).optional(),
+  business_structure: z
+    .enum(["sole_prop", "s_corp", "partnership", "c_corp", "other"])
+    .nullable()
+    .optional(),
   comp_distribution_annual: z.number().min(0).max(1e9).nullable().optional(),
   comp_reserve_target_annual: z.number().min(0).max(1e9).nullable().optional(),
   comp_reserve_mode: z
@@ -775,6 +778,7 @@ const ownerCompSchema = z.object({
   reserve_target: z.number().min(0).max(1e9).nullable().optional(),
   reserve_months: z.number().int().min(0).max(60).nullable().optional(),
   compensation_notes: z.string().max(2000).nullable().optional(),
+  employee_payroll_tax_pct: z.number().min(0).max(100).nullable().optional(),
 });
 
 export const upsertOwnerCompensation = createServerFn({ method: "POST" })
