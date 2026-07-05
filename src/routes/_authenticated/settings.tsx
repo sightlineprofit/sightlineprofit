@@ -501,7 +501,7 @@ function NumInput({ value, onChange, prefix, suffix, placeholder }: {
   );
 }
 
-function CompPanel({ onClose }: { onClose: () => void }) {
+function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?: (id: PanelId) => void }) {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const { liveConfig, expenses, cfg } = useFinancialDraft();
