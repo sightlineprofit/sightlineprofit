@@ -18,7 +18,42 @@ type Member = {
   role_type?: string | null;
   burdened_weekly_cost?: number | null;
   weeks_per_year?: number | null;
+  employment_type?: string | null;
+  compensation_type?: string | null;
+  hourly_wage?: number | null;
+  annual_base_salary?: number | null;
+  employer_payroll_tax_pct?: number | null;
+  annual_benefits?: number | null;
+  other_annual_costs?: number | null;
+  expected_hrs_per_week?: number | null;
 };
+
+function memberCostBreakdown(m: Member) {
+  const isContract = m.employment_type === "contractor" || m.employment_type === "1099";
+  const isW2 = !isContract;
+  const wks = Number(m.weeks_per_year) || 48;
+  const hpw = Number(m.expected_hrs_per_week) || 40;
+  const ptaxPct = isContract ? 0 : Number(m.employer_payroll_tax_pct ?? 7.65) || 0;
+  const benefits = isContract ? 0 : Number(m.annual_benefits) || 0;
+  const other = Number(m.other_annual_costs) || 0;
+  const comp = m.compensation_type || "hourly";
+
+  let base = 0;
+  let baseLabel = "Base wage";
+  if (comp === "salaried") {
+    base = Number(m.annual_base_salary) || 0;
+    baseLabel = "Salary";
+  } else if (comp === "contract_annual") {
+    base = Number(m.annual_base_salary) || 0;
+    baseLabel = "Contract";
+  } else {
+    base = (Number(m.hourly_wage) || 0) * hpw * wks;
+    baseLabel = "Hourly wage";
+  }
+  const tax = base * (ptaxPct / 100);
+  const total = base + tax + benefits + other;
+  return { base, baseLabel, tax, benefits, equipment: other, total, isW2 };
+}
 
 export type RevenueContributor = {
   label: string;   // e.g. "Caprice Gossett"
@@ -593,7 +628,9 @@ function CostFloorContent({
   const teamRows = members
     .filter((m) => m.role_type !== "principal" && Number(m.burdened_weekly_cost) > 0)
     .map((m) => ({
+      m,
       name: m.name || "Team member",
+      role: (m.role_type || "team").toString().replace(/_/g, " "),
       annual: (Number(m.burdened_weekly_cost) || 0) * (Number(m.weeks_per_year) || 48),
     }))
     .sort((a, b) => b.annual - a.annual);
@@ -640,15 +677,43 @@ function CostFloorContent({
         />
 
         {team > 0 && (
-          <>
-            <div style={{ marginTop: 10, fontSize: 10, color: "white", fontWeight: 500 }}>Team cost</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(team)}/yr · {pct(team)}%</div>
-            <SubRows
-              rows={teamRows.slice(0, 4).map((r) => [r.name, r.annual] as [string, number])}
-              more={teamRows.length > 4 ? teamRows.length - 4 : 0}
-              moreLabel="more team members"
-            />
-          </>
+          teamRows.length > 0 ? (
+            <>
+              {teamRows.map((r, i) => {
+                const b = memberCostBreakdown(r.m);
+                const first = (r.name.split(" ")[0] || r.name).trim();
+                const rows: Array<[string, number]> = [[b.baseLabel, b.base]];
+                if (b.isW2 && b.tax > 0) rows.push(["Employer payroll tax", b.tax]);
+                if (b.benefits > 0) rows.push(["Benefits contribution", b.benefits]);
+                if (b.equipment > 0) rows.push(["Equipment & overhead", b.equipment]);
+                return (
+                  <div key={`${r.name}-${i}`} style={{ marginTop: i === 0 ? 10 : 12 }}>
+                    <div style={{ fontSize: 10, color: "white", fontWeight: 500 }}>
+                      {r.name}
+                      <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}> · {r.role}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+                      {fmtUsd(b.total || r.annual)}/yr · {pct(b.total || r.annual)}% of your cost floor
+                    </div>
+                    <SubRows rows={rows} />
+                    <div style={{ display: "flex", padding: "4px 0 0", marginTop: 4, fontSize: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                      <span style={{ flex: 1, color: "rgba(255,255,255,0.75)", fontWeight: 500 }}>{first} total</span>
+                      <span style={{ color: GOLD, fontWeight: 500 }}>{fmtUsd(b.total || r.annual)}/yr</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", padding: "6px 0 0", marginTop: 8, fontSize: 11, borderTop: "1px solid rgba(255,255,255,0.15)" }}>
+                <span style={{ flex: 1, color: "white", fontWeight: 500 }}>Team cost total</span>
+                <span style={{ color: GOLD, fontWeight: 500 }}>{fmtUsd(team)}/yr · {pct(team)}%</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ marginTop: 10, fontSize: 10, color: "white", fontWeight: 500 }}>Team cost</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(team)}/yr · {pct(team)}%</div>
+            </>
+          )
         )}
 
         <div style={{ marginTop: 10, fontSize: 10, color: "white", fontWeight: 500 }}>Operating expenses</div>
