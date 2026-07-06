@@ -188,6 +188,36 @@ function Dashboard() {
 
   const [openPanel, setOpenPanel] = useState<PanelKind>(null);
 
+  // Build data for the CapacityTile
+  const capacityTileData: CapacityTileData = useMemo(() => {
+    const cap: any = (data as any)?.capacity ?? {};
+    const team = (cap.team ?? []) as Array<{ id: string; name: string; expected_hrs_per_week: number | null }>;
+    const weeklyHoursByUser = new Map<string, number>();
+    for (const t of (cap.trailingEntries ?? []) as Array<{ user_id?: string; hrs: number | null; date: string }>) {
+      if (!t.user_id) continue;
+      if (t.date >= weekStartIso && t.date < weekEndIso) {
+        weeklyHoursByUser.set(t.user_id, (weeklyHoursByUser.get(t.user_id) ?? 0) + Number(t.hrs || 0));
+      }
+    }
+    const inputs: CapacityInputs = {
+      projects: cap.projects ?? [],
+      phases: cap.phases ?? [],
+      pipeline: cap.pipeline ?? [],
+      trailingEntries: cap.trailingEntries ?? [],
+      avgWeeklyNonBillable: Number(cap.avgWeeklyNonBillable ?? 0),
+      targetHrsPerWeek: targetHrs,
+      weeksPerYear: Number(data?.config?.weeks_per_year ?? 48),
+      ratePerHr: rateBilled,
+    };
+    return {
+      inputs,
+      weekHours: weekMetrics.billable,
+      team,
+      weeklyHoursByUser,
+      configSetup: !setupIncomplete,
+    };
+  }, [data, weekStartIso, weekEndIso, weekMetrics.billable, targetHrs, rateBilled, setupIncomplete]);
+
   useHealthChangeToast(c.rateHealth);
 
   if (isLoading) {
