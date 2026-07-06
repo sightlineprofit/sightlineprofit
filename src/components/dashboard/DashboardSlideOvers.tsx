@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
+import { MetricBreakdown } from "@/components/dashboard/MetricBreakdown";
 
 type PanelKind = "rate" | "capacity" | null;
 
@@ -317,11 +318,12 @@ export function RateBreakdownSlideOver({
         <SectionLabel>BILLED RATE</SectionLabel>
         <div
           className={cn(
-            "font-display text-[20px] font-normal leading-none num",
+            "font-display text-[20px] font-normal leading-none num flex items-center",
             aboveFloor ? "text-gold" : "text-danger",
           )}
         >
-          {fmtUsd(billed)}
+          <span>{fmtUsd(billed)}</span>
+          <MetricBreakdown metric="billed" c={c} targetMarginPct={targetMarginPct} side="left" iconSize={12} />
         </div>
       </div>
 
@@ -336,11 +338,14 @@ export function RateBreakdownSlideOver({
       >
         <div className="flex items-center justify-between">
           <SectionLabel>RATE HEALTH</SectionLabel>
-          <span
-            className="rounded-[2px] px-2 py-[3px] text-[9px] font-semibold uppercase tracking-wider"
-            style={pill.style}
-          >
-            {pill.label}
+          <span className="flex items-center">
+            <span
+              className="rounded-[2px] px-2 py-[3px] text-[9px] font-semibold uppercase tracking-wider"
+              style={pill.style}
+            >
+              {pill.label}
+            </span>
+            <MetricBreakdown metric="health" c={c} targetMarginPct={targetMarginPct} side="left" iconSize={12} />
           </span>
         </div>
 
@@ -357,11 +362,12 @@ export function RateBreakdownSlideOver({
         </div>
         <div
           className={cn(
-            "mt-1 font-display text-[28px] font-normal leading-none num",
+            "mt-1 font-display text-[28px] font-normal leading-none num flex items-center",
             marginColorClass,
           )}
         >
-          {marginDisplay}
+          <span>{marginDisplay}</span>
+          <MetricBreakdown metric="margin" c={c} targetMarginPct={targetMarginPct} side="left" iconSize={12} />
         </div>
 
         <div style={{ height: "0.5px", background: "var(--border)", margin: "12px 0" }} />
@@ -418,6 +424,11 @@ export function RateBreakdownSlideOver({
           tip="Annual revenue if you bill your target hours at your current rate every week."
           last
         />
+        <div className="mt-3 flex items-center gap-3 text-[10px] text-ch/50">
+          <span className="flex items-center">Break-even<MetricBreakdown metric="breakeven" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
+          <span className="flex items-center">Cost floor<MetricBreakdown metric="cost_floor" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
+          <span className="flex items-center">Budget revenue<MetricBreakdown metric="budget_revenue" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
+        </div>
       </div>
 
       <EditPromptFooter
