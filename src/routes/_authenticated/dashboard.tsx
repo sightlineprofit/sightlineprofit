@@ -206,7 +206,7 @@ function Dashboard() {
       trailingEntries: cap.trailingEntries ?? [],
       avgWeeklyNonBillable: Number(cap.avgWeeklyNonBillable ?? 0),
       targetHrsPerWeek: targetHrs,
-      weeksPerYear: Number(data?.config?.weeks_per_year ?? 48),
+      weeksPerYear: Number((data?.config as any)?.weeks_per_year ?? 48),
       ratePerHr: rateBilled,
     };
     return {
