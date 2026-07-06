@@ -278,6 +278,105 @@ export type Database = {
           },
         ]
       }
+      firm_members: {
+        Row: {
+          annual_base_salary: number | null
+          annual_benefits: number | null
+          burdened_hourly_rate: number | null
+          burdened_weekly_cost: number | null
+          compensation_type: string
+          created_at: string
+          email: string | null
+          employer_payroll_tax_pct: number | null
+          employer_tax_rate_is_custom: boolean
+          employment_type: string
+          expected_hrs_per_week: number | null
+          firm_id: string
+          hourly_wage: number | null
+          id: string
+          invite_accepted_at: string | null
+          invite_sent_at: string | null
+          is_active: boolean
+          is_platform_user: boolean
+          name: string
+          notes: string | null
+          other_annual_costs: number | null
+          profile_id: string | null
+          role_type: string
+          updated_at: string
+          weeks_per_year: number | null
+        }
+        Insert: {
+          annual_base_salary?: number | null
+          annual_benefits?: number | null
+          burdened_hourly_rate?: number | null
+          burdened_weekly_cost?: number | null
+          compensation_type?: string
+          created_at?: string
+          email?: string | null
+          employer_payroll_tax_pct?: number | null
+          employer_tax_rate_is_custom?: boolean
+          employment_type?: string
+          expected_hrs_per_week?: number | null
+          firm_id: string
+          hourly_wage?: number | null
+          id?: string
+          invite_accepted_at?: string | null
+          invite_sent_at?: string | null
+          is_active?: boolean
+          is_platform_user?: boolean
+          name: string
+          notes?: string | null
+          other_annual_costs?: number | null
+          profile_id?: string | null
+          role_type: string
+          updated_at?: string
+          weeks_per_year?: number | null
+        }
+        Update: {
+          annual_base_salary?: number | null
+          annual_benefits?: number | null
+          burdened_hourly_rate?: number | null
+          burdened_weekly_cost?: number | null
+          compensation_type?: string
+          created_at?: string
+          email?: string | null
+          employer_payroll_tax_pct?: number | null
+          employer_tax_rate_is_custom?: boolean
+          employment_type?: string
+          expected_hrs_per_week?: number | null
+          firm_id?: string
+          hourly_wage?: number | null
+          id?: string
+          invite_accepted_at?: string | null
+          invite_sent_at?: string | null
+          is_active?: boolean
+          is_platform_user?: boolean
+          name?: string
+          notes?: string | null
+          other_annual_costs?: number | null
+          profile_id?: string | null
+          role_type?: string
+          updated_at?: string
+          weeks_per_year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_members_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "firm_members_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firms: {
         Row: {
           created_at: string
@@ -614,18 +713,12 @@ export type Database = {
       profiles: {
         Row: {
           accepted_at: string | null
-          annual_base_salary: number | null
-          annual_benefits: number | null
           billable_pct: number | null
           billable_rate: number | null
-          burdened_hourly_rate: number | null
-          burdened_weekly_cost: number | null
           color: string
-          compensation_type: string
           cost_rate: number | null
           created_at: string
           email: string
-          employer_payroll_tax_pct: number | null
           expected_hrs_per_week: number | null
           firm_id: string | null
           id: string
@@ -633,7 +726,6 @@ export type Database = {
           invited_at: string | null
           is_super_admin: boolean
           name: string
-          other_annual_costs: number | null
           preferred_home: string | null
           role: Database["public"]["Enums"]["user_role"]
           weeks_per_year: number | null
@@ -641,18 +733,12 @@ export type Database = {
         }
         Insert: {
           accepted_at?: string | null
-          annual_base_salary?: number | null
-          annual_benefits?: number | null
           billable_pct?: number | null
           billable_rate?: number | null
-          burdened_hourly_rate?: number | null
-          burdened_weekly_cost?: number | null
           color?: string
-          compensation_type?: string
           cost_rate?: number | null
           created_at?: string
           email: string
-          employer_payroll_tax_pct?: number | null
           expected_hrs_per_week?: number | null
           firm_id?: string | null
           id: string
@@ -660,7 +746,6 @@ export type Database = {
           invited_at?: string | null
           is_super_admin?: boolean
           name?: string
-          other_annual_costs?: number | null
           preferred_home?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
@@ -668,18 +753,12 @@ export type Database = {
         }
         Update: {
           accepted_at?: string | null
-          annual_base_salary?: number | null
-          annual_benefits?: number | null
           billable_pct?: number | null
           billable_rate?: number | null
-          burdened_hourly_rate?: number | null
-          burdened_weekly_cost?: number | null
           color?: string
-          compensation_type?: string
           cost_rate?: number | null
           created_at?: string
           email?: string
-          employer_payroll_tax_pct?: number | null
           expected_hrs_per_week?: number | null
           firm_id?: string | null
           id?: string
@@ -687,7 +766,6 @@ export type Database = {
           invited_at?: string | null
           is_super_admin?: boolean
           name?: string
-          other_annual_costs?: number | null
           preferred_home?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           weeks_per_year?: number | null
