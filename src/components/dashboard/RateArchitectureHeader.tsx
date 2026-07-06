@@ -80,6 +80,50 @@ export function RateArchitecturePanel({
   const revGapToAligned = Math.max(0, alignedRevenue - budgetRevenue);
   const revSurplusOverAligned = Math.max(0, budgetRevenue - alignedRevenue);
 
+  // Per-contributor revenue breakdown for popover + subline count.
+  const weeksYr = c.weeksPerYear || WEEKS_PER_YEAR;
+  const firmRate = Number(cfg?.rate_billed) || billed || 0;
+  const principalHrs = c.principalBillableHrsWeek || Number(cfg?.target_billable_hrs_per_week) || 0;
+  const principalMember = (members ?? []).find(
+    (m: any) => m?.role_type === "principal",
+  ) as any | undefined;
+  const teamMembers = (members ?? []).filter(
+    (m: any) => m?.role_type !== "principal" && Number(m?.expected_hrs_per_week) > 0,
+  );
+  const contributors: Array<{
+    label: string;
+    role: string;
+    rate: number;
+    hrs: number;
+    weeks: number;
+    revenue: number;
+  }> = [];
+  if (principalHrs > 0 && firmRate > 0) {
+    contributors.push({
+      label: (principalMember?.name as string) || "Principal",
+      role: "PRINCIPAL",
+      rate: firmRate,
+      hrs: principalHrs,
+      weeks: weeksYr,
+      revenue: firmRate * principalHrs * weeksYr,
+    });
+  }
+  for (const m of teamMembers as any[]) {
+    const rRaw = Number(m.billed_rate);
+    const rate = Number.isFinite(rRaw) && rRaw > 0 ? rRaw : firmRate;
+    const hrs = Number(m.expected_hrs_per_week) || 0;
+    const roleTag = String(m.role_type || "team").replace(/_/g, " ").toUpperCase();
+    contributors.push({
+      label: (m.name as string) || "Team member",
+      role: `TEAM — ${roleTag}`,
+      rate,
+      hrs,
+      weeks: weeksYr,
+      revenue: rate * hrs * weeksYr,
+    });
+  }
+  const contributorCount = contributors.length;
+
   // Position of billed indicator on bar (relative to aligned as 100%)
   const barMax = aligned > 0 ? aligned : 1;
   const bePct = Math.min(100, (be / barMax) * 100);
@@ -336,12 +380,15 @@ export function RateArchitecturePanel({
             </span>
             <MetricBreakdown metric="budget_revenue" c={c} cfg={cfg} side="bottom" iconSize={12} />
           </div>
+          {contributorCount > 0 && (
+            <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
+              {contributorCount} billable contributor{contributorCount === 1 ? "" : "s"} · see breakdown
+            </div>
+          )}
           <div style={{ fontSize: 10, marginTop: 2, lineHeight: 1.5 }}>
             {budgetRevenue < costFloor ? (
               <>
-                <span style={{ color: MUTED }}>Does not cover cost floor</span>
-                <br />
-                <span style={{ color: TERRA }}>-{fmtUsd(revShortfall, { decimals: 0 })}/yr shortfall</span>
+                <span style={{ color: TERRA }}>-{fmtUsd(revShortfall, { decimals: 0 })}/yr shortfall vs cost floor</span>
               </>
             ) : budgetRevenue < alignedRevenue ? (
               <>
