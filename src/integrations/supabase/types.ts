@@ -233,6 +233,62 @@ export type Database = {
           },
         ]
       }
+      firm_action_commitments: {
+        Row: {
+          action_type: string
+          committed_at: string
+          created_at: string
+          created_by: string | null
+          firm_id: string
+          id: string
+          notes: string | null
+          outcome: string | null
+          resolved_at: string | null
+          scenario_group: string | null
+          settings_updated: boolean
+          target_value: number | null
+          updated_at: string
+        }
+        Insert: {
+          action_type: string
+          committed_at?: string
+          created_at?: string
+          created_by?: string | null
+          firm_id: string
+          id?: string
+          notes?: string | null
+          outcome?: string | null
+          resolved_at?: string | null
+          scenario_group?: string | null
+          settings_updated?: boolean
+          target_value?: number | null
+          updated_at?: string
+        }
+        Update: {
+          action_type?: string
+          committed_at?: string
+          created_at?: string
+          created_by?: string | null
+          firm_id?: string
+          id?: string
+          notes?: string | null
+          outcome?: string | null
+          resolved_at?: string | null
+          scenario_group?: string | null
+          settings_updated?: boolean
+          target_value?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_action_commitments_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firm_config: {
         Row: {
           accounting_basis: string
