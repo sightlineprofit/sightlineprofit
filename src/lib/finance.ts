@@ -37,6 +37,8 @@ export type TeamBurden = {
   /** Billable hours per week this team member is expected to contribute.
    * When present, added to the firm's aligned-rate denominator. */
   expected_hrs_per_week?: number | null;
+  /** Optional per-member billed rate. When null, the firm default is used. */
+  billed_rate?: number | null;
 };
 
 export type Expense = {
@@ -169,7 +171,19 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
 
   const billedRate = ov.rateOverride ?? Number(config?.rate_billed) ?? alignedRate;
 
-  const annualRevenue = (billedRate || 0) * annualBillableHrs;
+  // Per-contributor budget revenue. Principal bills at firm default rate;
+  // each team member bills at their own billed_rate when set, else firm default.
+  const firmRate = Number(billedRate) || 0;
+  const principalRevenue = firmRate * principalBillableHrsWeek * weeksPerYear;
+  let teamRevenue = 0;
+  for (const t of ov.teamProfiles ?? []) {
+    const hrs = Number(t.expected_hrs_per_week) || 0;
+    if (hrs <= 0) continue;
+    const rate = Number(t.billed_rate);
+    const useRate = Number.isFinite(rate) && rate > 0 ? rate : firmRate;
+    teamRevenue += useRate * hrs * weeksPerYear;
+  }
+  const annualRevenue = principalRevenue + teamRevenue;
   const grossProfit = annualRevenue - totalCost;
   const grossMarginPct = annualRevenue > 0 ? (grossProfit / annualRevenue) * 100 : 0;
 
@@ -208,6 +222,8 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
     structure,
     opexRecurring, opexOneTime, teamCostTotal, totalCost,
     targetBillableHrsWeek, weeksPerYear, annualBillableHrs,
+    principalBillableHrsWeek, teamBillableHrsWeek,
+    principalRevenue, teamRevenue,
     breakEvenRate, alignedRate, billedRate,
     annualRevenue, grossProfit, grossMarginPct,
     marginAboveFloor, marginAboveBreakEven, gapToFloor, gapToBreakEven,
