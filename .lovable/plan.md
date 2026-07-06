@@ -1,41 +1,36 @@
 ## Problem
 
-Navigating directly to `/onboarding` (or any other non-team-allowed route) as a super admin briefly redirects to `/time-calendar` with the toast "That section is managed by your firm principal."
+On the Knowledge Base page, clicking an article shows only the title/summary because the article `body` (and video fields the reader also relies on) is never fetched.
 
-Root cause is in `AppShell.tsx` (lines ~102–126). On first render, `useMe()` hasn't resolved yet, so:
+`listKbItemsForUser` in `src/lib/admin.functions.ts` selects only a summary set of columns:
 
-- `data` is `undefined`
-- `realIsSuper` is `false` → `isSuper` is `false`
-- `currentRole` falls back to `"team"` (the `?? "team"` default)
-- The team-role enforcement `useEffect` runs, sees `/onboarding` isn't in the team allow-list, fires the toast, and navigates away.
+```
+id, type, title, slug, category, summary, video_url, video_file_path,
+thumbnail_path, tags, tier_visibility, featured, published_at
+```
 
-By the time `useMe` resolves and reports `is_super_admin = true`, the user has already been booted off the page.
+`body` is intentionally omitted (fine for a list). But `KbReader` in `src/routes/_authenticated/knowledge-base.tsx` renders directly from that same list row:
+
+```
+<ReactMarkdown>{typeof item.body === "string" ? item.body : ""}</ReactMarkdown>
+```
+
+So `item.body` is `undefined` → markdown renders empty. Only the header (title/summary) shows.
 
 ## Fix
 
-In `src/components/shell/AppShell.tsx`, make the team-route enforcement effect wait until the profile is actually loaded before enforcing anything.
+Load the full item when the reader opens, instead of reusing the list row. `getKbItemBySlug` already exists and returns `select("*")`.
 
-Change the guard at the top of the effect (around line 109) from:
+Change in `src/routes/_authenticated/knowledge-base.tsx` only:
 
-```ts
-if (isSuper) return;
-if (currentRole !== "team") return;
-```
+1. Wire `getKbItemBySlug` via `useServerFn`.
+2. When a card is clicked, keep `active` as the list row (for instant header render), and additionally `useQuery(["kb-item", active.slug], () => getFn({ data: { slug: active.slug } }))` inside `KbReader`.
+3. In `KbReader`, merge: prefer the fetched full row for `body` / `video_url` / etc., fall back to the list row while loading. Show a subtle loading state for the body area.
 
-to:
+No backend, schema, or other component changes. List query stays lean; detail query fetches the heavy `body` on demand.
 
-```ts
-if (!data?.profile) return;      // wait for useMe to resolve
-if (isSuper) return;
-if (currentRole !== "team") return;
-```
+## Acceptance
 
-That single check prevents the pre-hydration "team default" from ever running the redirect. Real team users still get enforced once their profile loads; super admins (and principals/admins) are never misclassified as team during the loading window.
-
-No other files change. No routes, no calculations, no data model changes.
-
-## Verification
-
-- Sign in as super admin → navigate directly to `/onboarding` → page renders, no toast, no redirect.
-- Sign in as a real team user → navigating to `/onboarding` still redirects to `/time-calendar` with the existing toast.
-- Sign in as principal/admin → `/onboarding` remains accessible as before.
+- Clicking any KB article shows the full markdown body (or the video embed) below the title/summary.
+- List view performance unchanged (still no `body` in list payload).
+- No other pages affected.
