@@ -160,6 +160,10 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
     (ov.hrsOverride ?? Number(config?.target_billable_hrs_per_week)) || 0;
   const targetBillableHrsWeek = principalBillableHrsWeek + teamBillableHrsWeek;
   const weeksPerYear = WEEKS_DEFAULT;
+  // Firm billable capacity: principal target + Σ team expected, annualized.
+  // Used as the shared denominator for break-even, aligned rate, and every
+  // "$X/hr" display (opex/hr, comp/hr, team/hr). Not the same as
+  // firm_config.available_hrs_per_week (max capacity).
   const annualBillableHrs = targetBillableHrsWeek * weeksPerYear;
 
   const breakEvenRate = annualBillableHrs > 0 ? totalCost / annualBillableHrs : 0;
