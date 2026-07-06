@@ -18,6 +18,7 @@ import { ModulePage } from "@/components/shell/ModulePage";
 import { calc, type Expense, type OwnerCompensationRow } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
@@ -60,6 +61,64 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Row2({ children }: { children: React.ReactNode }) {
   return <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">{children}</div>;
 }
+
+/**
+ * State-aware employer payroll tax input.
+ * - Default value = federal FICA (7.65%) + state new-employer SUI rate.
+ * - Renders a small breakdown below the input.
+ * - "Reset to state default" link snaps back to the computed default.
+ */
+function EmployerTaxField({
+  label = "Employer payroll tax %",
+  firmState,
+  value,
+  onChange,
+}: {
+  label?: string;
+  firmState?: string | null;
+  value: number | null | undefined;
+  onChange: (v: number | null) => void;
+}) {
+  const def = getDefaultEmployerTaxRate(firmState);
+  const current = value ?? def.total;
+  const displayed = value == null ? def.total.toString() : String(value);
+  const stateLabel = def.state_code ?? "State";
+  return (
+    <div className="mb-3">
+      <label className={fieldLabel}>{label}</label>
+      <NumInput
+        value={displayed}
+        onChange={(x) => onChange(x === "" ? null : Number(x))}
+        suffix="%"
+      />
+      {def.state_code ? (
+        <div
+          className="mt-1 leading-[1.5]"
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 9, color: "#888" }}
+        >
+          Federal FICA: {FEDERAL_FICA_PCT}% · {stateLabel} SUI:{" "}
+          {def.state_sui}% · Total (yours): {Number(current).toFixed(2)}%
+          <button
+            type="button"
+            onClick={() => onChange(def.total)}
+            className="ml-2 cursor-pointer text-gold hover:opacity-80"
+            style={{ fontFamily: "Jost, sans-serif", fontSize: 9 }}
+          >
+            Reset to {stateLabel} default ({def.total}%)
+          </button>
+        </div>
+      ) : (
+        <div
+          className="mt-1 leading-[1.5]"
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 9, color: "#888" }}
+        >
+          Add your state in Firm settings to include state unemployment tax.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SaveRow({ onCancel, onSave, saveLabel = "Save", saving }: {
   onCancel?: () => void; onSave?: () => void; saveLabel?: string; saving?: boolean;
 }) {
