@@ -219,6 +219,14 @@ function Dashboard() {
       configSetup: !setupIncomplete,
       annualRevenue: c.annualRevenue,
       alignedAnnualRevenue: c.alignedRate * targetHrs * Number((data?.config as any)?.weeks_per_year ?? 48),
+      ytdHoursByUser: (cap.ytdHoursByUser ?? {}) as Record<string, { billable: number; nonBillable: number }>,
+      lastEntryByUser: (cap.lastEntryByUser ?? {}) as Record<string, string>,
+      weeksElapsed: Number(cap.weeksElapsed ?? 1),
+      principal: {
+        id: data?.profile?.id as string,
+        name: (data?.profile?.name || data?.profile?.email || "You") as string,
+        target: targetHrs,
+      },
     };
     return out;
   }, [data, weekStartIso, weekEndIso, weekMetrics.billable, targetHrs, rateBilled, setupIncomplete, c.annualRevenue, c.alignedRate]);
