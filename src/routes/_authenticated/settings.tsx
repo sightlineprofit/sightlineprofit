@@ -992,6 +992,9 @@ function computeCardTotal(r: OwnerCompensationRow, isSCorp: boolean): number {
 function TeamCostPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { liveConfig, expenses } = useFinancialDraft();
+  const { data: me } = useMe();
+  const firmState = ((me?.firm as any)?.state ?? null) as string | null;
+  const stateDefault = getDefaultEmployerTaxRate(firmState).total;
   const listT = useServerFn(listTeam);
   const update = useServerFn(updateTeamMember);
   const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
@@ -1006,7 +1009,8 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
         compensation_type: m.compensation_type ?? "hourly",
         cost_rate: m.cost_rate,
         annual_base_salary: m.annual_base_salary,
-        employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? 7.65,
+        // Use saved value if present; otherwise fall back to state-aware default.
+        employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? stateDefault,
         annual_benefits: m.annual_benefits,
         other_annual_costs: m.other_annual_costs,
         expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
@@ -1015,7 +1019,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
     }
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members.length]);
+  }, [members.length, stateDefault]);
 
   async function save(m: any) {
     const d = drafts[m.id];
@@ -1087,9 +1091,11 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
                             <option value="salaried">Salaried</option>
                           </select>
                         </Field>
-                        <Field label="Employer payroll tax %">
-                          <NumInput value={d.employer_payroll_tax_pct?.toString() ?? "7.65"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, employer_payroll_tax_pct: v === "" ? null : Number(v) } }))} suffix="%" />
-                        </Field>
+                        <EmployerTaxField
+                          firmState={firmState}
+                          value={d.employer_payroll_tax_pct}
+                          onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, employer_payroll_tax_pct: v } }))}
+                        />
                       </Row2>
                       {d.compensation_type === "salaried" ? (
                         <Row2>
