@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getDashboardData } from "@/lib/dashboard.functions";
 import { createCommitmentSet } from "@/lib/commitments.functions";
 import { calc, fmtUsd, type FirmConfig, type Expense } from "@/lib/finance";
+import { buildTeamCostBreakdown } from "@/lib/team-cost";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/rate-architecture")({
@@ -212,15 +213,8 @@ function UnderstandTab({
     .sort((a, b) => b.amount - a.amount);
   const l2Total = c.opexRecurring + c.opexOneTime;
 
-  // Layer 3: team
-  const l3Items: Array<{ label: string; amount: number }> = [];
-  for (const m of members ?? []) {
-    if ((m.role_type ?? "").toLowerCase() === "principal") continue;
-    const hourly = Number(m.burdened_hourly_rate) || 0;
-    const hpw = Number(m.expected_hrs_per_week) || 40;
-    const annual = hourly * hpw * 48;
-    if (annual > 0) l3Items.push({ label: m.name || m.email || "Team member", amount: annual });
-  }
+  // Layer 3: team — shared breakdown feeds this card and the Cost Floor popover
+  const teamBreakdown = buildTeamCostBreakdown(members);
   const l3Total = c.teamCostTotal;
 
   const annualHrs = c.annualBillableHrs || 1;
@@ -245,15 +239,12 @@ function UnderstandTab({
         perHrColor={SAGE}
         annualHrs={annualHrs}
       />
-      <LayerCard
+      <TeamLayerCard
         tag="Layer 03 — Delivery"
         title="What your team costs"
         total={l3Total}
-        totalColor={CHARCOAL}
-        items={l3Items}
-        perHrColor={TERRA}
+        members={teamBreakdown}
         annualHrs={annualHrs}
-        emptyLine="No employed team members. Add them in settings to see their fully-burdened cost here."
       />
 
       <RateBuildPanel c={c} targetMarginPct={targetMarginPct} />
