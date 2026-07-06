@@ -585,7 +585,7 @@ export function WeeklyPulse({
             {weekBillable.toFixed(1)}/{targetHrs} hrs
           </span>
           <Link to="/time-calendar" style={{ fontSize: 9, color: GOLD }} className="hover:underline">
-            See capacity →
+            Enter hours →
           </Link>
         </div>
         <MiniBar pct={hoursPct} />
