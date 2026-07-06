@@ -110,7 +110,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id),
       supabase
         .from("firm_members")
-        .select("id, role_type, burdened_weekly_cost, weeks_per_year")
+        .select("id, role_type, burdened_weekly_cost, weeks_per_year, expected_hrs_per_week")
         .eq("firm_id", profile.firm_id)
         .eq("is_active", true)
         .neq("role_type", "principal"),

@@ -34,6 +34,9 @@ export type OwnerCompensationRow = {
 export type TeamBurden = {
   burdened_weekly_cost: number | null;
   weeks_per_year: number | null;
+  /** Billable hours per week this team member is expected to contribute.
+   * When present, added to the firm's aligned-rate denominator. */
+  expected_hrs_per_week?: number | null;
 };
 
 export type Expense = {
@@ -141,16 +144,19 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
 
   // ── Team member fully burdened annual cost ──
   let teamCostTotal = 0;
+  let teamBillableHrsWeek = 0;
   for (const t of ov.teamProfiles ?? []) {
     const wk = Number(t.burdened_weekly_cost) || 0;
     const wks = Number(t.weeks_per_year) || 48;
     teamCostTotal += wk * wks;
+    teamBillableHrsWeek += Number(t.expected_hrs_per_week) || 0;
   }
 
   const totalCost = compTotal + opexRecurring + opexOneTime + teamCostTotal;
 
-  const targetBillableHrsWeek =
+  const principalBillableHrsWeek =
     (ov.hrsOverride ?? Number(config?.target_billable_hrs_per_week)) || 0;
+  const targetBillableHrsWeek = principalBillableHrsWeek + teamBillableHrsWeek;
   const weeksPerYear = WEEKS_DEFAULT;
   const annualBillableHrs = targetBillableHrsWeek * weeksPerYear;
 

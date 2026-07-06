@@ -19,7 +19,7 @@ export async function recordAlignedRate(
         supabase.from("owner_compensation").select("*").eq("firm_id", firmId),
         supabase
           .from("firm_members")
-          .select("burdened_weekly_cost, weeks_per_year, role_type")
+          .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week")
           .eq("firm_id", firmId)
           .eq("is_active", true)
           .neq("role_type", "principal"),
