@@ -547,7 +547,7 @@ export const listTeam = createServerFn({ method: "GET" })
       supabase
         .from("profiles")
         .select(
-          "id, name, email, role, billable_rate, cost_rate, accepted_at, expected_hrs_per_week, weeks_per_year, billable_pct, compensation_type, annual_base_salary, employer_payroll_tax_pct, annual_benefits, other_annual_costs, burdened_hourly_rate, burdened_weekly_cost",
+          "id, name, email, role, billable_rate, cost_rate, accepted_at, expected_hrs_per_week, weeks_per_year, billable_pct",
         )
         .eq("firm_id", profile.firm_id)
         .order("created_at", { ascending: true }),
@@ -570,11 +570,6 @@ const memberUpdateSchema = z.object({
   expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
   weeks_per_year: z.number().min(0).max(60).optional().nullable(),
   billable_pct: z.number().min(0).max(100).optional().nullable(),
-  compensation_type: z.enum(["hourly", "salaried"]).optional(),
-  annual_base_salary: z.number().min(0).max(1e9).optional().nullable(),
-  employer_payroll_tax_pct: z.number().min(0).max(100).optional().nullable(),
-  annual_benefits: z.number().min(0).max(1e9).optional().nullable(),
-  other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
 });
 
 export const updateTeamMember = createServerFn({ method: "POST" })
@@ -590,28 +585,160 @@ export const updateTeamMember = createServerFn({ method: "POST" })
     if (!me?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
 
-    // recompute burdened rates
-    const burden = computeBurden({
-      compensation_type: data.compensation_type,
-      cost_rate: data.cost_rate,
-      annual_base_salary: data.annual_base_salary,
-      employer_payroll_tax_pct: data.employer_payroll_tax_pct,
-      annual_benefits: data.annual_benefits,
-      other_annual_costs: data.other_annual_costs,
-      expected_hrs_per_week: data.expected_hrs_per_week,
-      weeks_per_year: data.weeks_per_year,
-    });
-
     const { id, name, ...rest } = data;
     const { error } = await supabase
       .from("profiles")
       .update({
         ...rest,
         ...(name !== undefined ? { name: name ?? "" } : {}),
-        burdened_hourly_rate: burden.hr || null,
-        burdened_weekly_cost: burden.wk || null,
       })
       .eq("id", id)
+      .eq("firm_id", me.firm_id);
+    if (error) throw new Error(error.message);
+    // If this profile is linked to a firm_members row, keep basic fields in sync.
+    if (name !== undefined) {
+      await supabase
+        .from("firm_members")
+        .update({ name: name ?? "" })
+        .eq("profile_id", id)
+        .eq("firm_id", me.firm_id);
+    }
+    return { ok: true };
+  });
+
+// ─────────────────────── firm_members (source of truth for team cost) ───────────────────────
+
+export const listFirmMembers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return [];
+    const { data } = await supabase
+      .from("firm_members")
+      .select("*")
+      .eq("firm_id", profile.firm_id)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true });
+    return data ?? [];
+  });
+
+const firmMemberSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().optional().nullable(),
+  role_type: z.enum(["principal", "admin", "team", "contractor", "view_only"]),
+  employment_type: z.enum(["employee", "contractor", "1099"]).default("employee"),
+  notes: z.string().max(500).optional().nullable(),
+  // compensation
+  compensation_type: z.enum(["hourly", "salaried", "contract_hourly", "contract_annual"]).default("hourly"),
+  hourly_wage: z.number().min(0).max(100000).optional().nullable(),
+  annual_base_salary: z.number().min(0).max(1e9).optional().nullable(),
+  employer_payroll_tax_pct: z.number().min(0).max(100).optional().nullable(),
+  employer_tax_rate_is_custom: z.boolean().optional(),
+  annual_benefits: z.number().min(0).max(1e9).optional().nullable(),
+  other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
+  expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
+  weeks_per_year: z.number().min(0).max(60).optional().nullable(),
+});
+
+export const saveFirmMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => firmMemberSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+
+    // Compute burden (contractor/1099 exempt from employer payroll tax)
+    const empType = data.employment_type;
+    const isContract = empType === "contractor" || empType === "1099";
+    const wks = Number(data.weeks_per_year) || 48;
+    const hpw = Number(data.expected_hrs_per_week) || 40;
+    const ptaxPct = isContract ? 0 : Number(data.employer_payroll_tax_pct ?? 7.65) || 0;
+    const benefits = isContract ? 0 : Number(data.annual_benefits) || 0;
+    const other = Number(data.other_annual_costs) || 0;
+
+    let hr = 0;
+    if (data.compensation_type === "salaried") {
+      const base = Number(data.annual_base_salary) || 0;
+      const yr = base * (1 + ptaxPct / 100) + benefits + other;
+      hr = wks > 0 && hpw > 0 ? yr / (wks * hpw) : 0;
+    } else if (data.compensation_type === "contract_annual") {
+      const base = Number(data.annual_base_salary) || 0;
+      const yr = base + other;
+      hr = wks > 0 && hpw > 0 ? yr / (wks * hpw) : 0;
+    } else {
+      // hourly or contract_hourly
+      const cost = Number(data.hourly_wage) || 0;
+      const yearlyHrs = Math.max(1, wks * hpw);
+      hr = cost * (1 + ptaxPct / 100) + benefits / yearlyHrs + other / yearlyHrs;
+    }
+    const wk = hr * hpw;
+
+    const row = {
+      firm_id: me.firm_id,
+      name: data.name,
+      email: data.email ?? null,
+      role_type: data.role_type,
+      employment_type: empType,
+      notes: data.notes ?? null,
+      compensation_type: data.compensation_type,
+      hourly_wage: data.hourly_wage ?? null,
+      annual_base_salary: data.annual_base_salary ?? null,
+      employer_payroll_tax_pct: isContract ? null : (data.employer_payroll_tax_pct ?? null),
+      employer_tax_rate_is_custom: data.employer_tax_rate_is_custom ?? false,
+      annual_benefits: isContract ? null : (data.annual_benefits ?? null),
+      other_annual_costs: data.other_annual_costs ?? null,
+      expected_hrs_per_week: data.expected_hrs_per_week ?? null,
+      weeks_per_year: data.weeks_per_year ?? null,
+      burdened_hourly_rate: hr || null,
+      burdened_weekly_cost: wk || null,
+    };
+
+    if (data.id) {
+      const { error } = await supabase
+        .from("firm_members")
+        .update(row)
+        .eq("id", data.id)
+        .eq("firm_id", me.firm_id);
+      if (error) throw new Error(error.message);
+      return { ok: true, id: data.id };
+    }
+    const { data: inserted, error } = await supabase
+      .from("firm_members")
+      .insert(row)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return { ok: true, id: inserted!.id };
+  });
+
+export const deleteFirmMember = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+    const { error } = await supabase
+      .from("firm_members")
+      .update({ is_active: false })
+      .eq("id", data.id)
       .eq("firm_id", me.firm_id);
     if (error) throw new Error(error.message);
     return { ok: true };
