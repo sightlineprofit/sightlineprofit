@@ -286,6 +286,7 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
   const teamBurdens = teamMembers.map((m: any) => ({
     burdened_weekly_cost: m.burdened_weekly_cost,
     weeks_per_year: m.weeks_per_year,
+    expected_hrs_per_week: m.expected_hrs_per_week,
   }));
   const c = useMemo(
     () => calc(cfg, (expenses ?? []) as Expense[], { ownerComp: ownerRows, teamProfiles: teamBurdens }),
@@ -423,6 +424,7 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
     .map((m: any) => ({
       burdened_weekly_cost: m.burdened_weekly_cost,
       weeks_per_year: m.weeks_per_year,
+      expected_hrs_per_week: m.expected_hrs_per_week,
     }));
   const c = useMemo(
     () => calc(cfg, expenses, { ownerComp, teamProfiles }),
