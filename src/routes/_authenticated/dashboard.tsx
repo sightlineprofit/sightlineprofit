@@ -298,21 +298,16 @@ function Dashboard() {
             />
           </div>
           <div className="mt-4">
-            <PricingStrip
-              aligned={c.alignedRate}
-              templates={(data as any)?.capacity?.sopTemplates ?? []}
-            />
-          </div>
-          <div className="mt-4">
             <ActionEnginePanel />
           </div>
         </>
       )}
 
       {/* Supporting tiles */}
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         <ActiveProjectsTile projects={activeProjects} />
         <FourWeekTrendTile trend={trend} target={targetHrs} rate={rateBilled} />
+        <CapacityTile data={capacityTileData} onOpen={() => setOpenPanel("capacity")} />
       </div>
 
       {/* Quick log */}
