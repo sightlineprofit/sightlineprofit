@@ -1190,6 +1190,37 @@ function MemberCard({
     billed_rate: m.billed_rate ?? null,
   }));
 
+  // Debounced auto-save + "Saved" flash. billable-capacity fields (expected_hrs_per_week
+  // and billed_rate) are preserved in state but never edited here — Capacity & Rate owns them.
+  const initial = useRef(JSON.stringify(d));
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  useEffect(() => {
+    const snap = JSON.stringify(d);
+    if (snap === initial.current) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      await onSave(d);
+      initial.current = snap;
+      setSavedAt(Date.now());
+      window.setTimeout(() => setSavedAt(null), 1800);
+    }, 500);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(d)]);
+
+  // Live burdened cost derived from current draft
+  const burden = useMemo(() => computeBurden(d), [d]);
+  const perBillable = useMemo(() => {
+    const hrs = Number(m.expected_hrs_per_week) || 0;
+    const wks = Number(m.weeks_per_year) || 48;
+    const denom = hrs * wks;
+    return denom > 0 ? burden.total / denom : 0;
+  }, [burden.total, m.expected_hrs_per_week, m.weeks_per_year]);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+
   const status: { dot: string; label: string; border: string } = m.is_platform_user
     ? { dot: "#3B7A57", label: "Sightline user", border: "border-gold" }
     : m.invite_sent_at && !m.invite_accepted_at
@@ -1245,6 +1276,10 @@ function MemberCard({
             </Field>
           </Row2>
 
+          <div className="mt-1 mb-2 text-[9px] font-medium uppercase tracking-[0.12em] text-ch/50">
+            Compensation
+          </div>
+
           {contract ? (
             <>
               <Row2>
@@ -1264,21 +1299,11 @@ function MemberCard({
                   </Field>
                 )}
               </Row2>
-              <Row2>
-                <Field label="Expected hours / week">
-                  <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setD({ ...d, expected_hrs_per_week: v === "" ? null : Number(v) })} />
-                </Field>
-                <Field label="Weeks / year">
-                  <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
-                </Field>
-              </Row2>
-              <Field label="Billed rate (optional)">
-                <NumInput
-                  value={d.billed_rate?.toString() ?? ""}
-                  onChange={(v) => setD({ ...d, billed_rate: v === "" ? null : Number(v) })}
-                  prefix="$"
-                  placeholder={firmRate ? `Defaults to firm rate ($${Math.round(Number(firmRate))}/hr)` : "Defaults to firm rate"}
-                />
+              <Field label="Weeks / year">
+                <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
+              </Field>
+              <Field label="Other annual costs">
+                <NumInput value={d.other_annual_costs?.toString() ?? ""} onChange={(v) => setD({ ...d, other_annual_costs: v === "" ? null : Number(v) })} prefix="$" placeholder="0" />
               </Field>
               <p className="mb-2 text-[10px] leading-[1.5] text-ch/60">
                 Contractor costs are not subject to employer payroll tax. Ensure you are correctly classifying this worker — misclassification carries significant legal and tax risk.
@@ -1326,30 +1351,94 @@ function MemberCard({
                   <NumInput value={d.other_annual_costs?.toString() ?? ""} onChange={(v) => setD({ ...d, other_annual_costs: v === "" ? null : Number(v) })} prefix="$" placeholder="0" />
                 </Field>
               </Row2>
-              <Field label="Expected hours per week">
-                <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setD({ ...d, expected_hrs_per_week: v === "" ? null : Number(v) })} />
-              </Field>
-              <Field label="Billed rate (optional)">
-                <NumInput
-                  value={d.billed_rate?.toString() ?? ""}
-                  onChange={(v) => setD({ ...d, billed_rate: v === "" ? null : Number(v) })}
-                  prefix="$"
-                  placeholder={firmRate ? `Defaults to firm rate ($${Math.round(Number(firmRate))}/hr)` : "Defaults to firm rate"}
-                />
-              </Field>
             </>
           )}
 
-          <div className="mt-2 flex items-center justify-between">
+          {/* Fully burdened cost display */}
+          <div
+            className="mt-2.5"
+            style={{ background: "rgba(184,134,11,0.04)", borderRadius: 6, padding: "10px 14px" }}
+          >
+            <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(44,44,44,0.55)" }}>
+              Fully burdened annual cost
+            </div>
+            <div className="mt-0.5 flex items-baseline justify-between gap-3">
+              <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: "#2C2C2C" }}>
+                ${Math.round(burden.total).toLocaleString()}/yr
+              </span>
+              <button
+                type="button"
+                onClick={() => setBreakdownOpen((v) => !v)}
+                className="text-[10px] text-ch/55 hover:text-ch"
+              >
+                {breakdownOpen ? "Hide breakdown ▲" : "Show breakdown ▼"}
+              </button>
+            </div>
+            {breakdownOpen ? (
+              <div className="mt-2 space-y-[3px]" style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "#2C2C2C" }}>
+                <BurdenRow label="Base compensation" value={burden.base} />
+                {!contract ? <BurdenRow label="Employer payroll tax" value={burden.tax} /> : null}
+                {!contract ? <BurdenRow label="Benefits" value={burden.benefits} /> : null}
+                <BurdenRow label="Equipment/overhead" value={burden.other} />
+                <div className="mt-1 border-t border-border pt-1 flex justify-between">
+                  <span className="text-ch/70">Total burdened cost</span>
+                  <span className="font-medium">${Math.round(burden.total).toLocaleString()}/yr</span>
+                </div>
+              </div>
+            ) : null}
+            <div className="mt-1.5" style={{ fontFamily: "'Jost', sans-serif", fontSize: 10 }}>
+              {Number(m.expected_hrs_per_week) > 0 ? (
+                <span style={{ color: "#B8860B" }}>
+                  Per billable hour: ${perBillable.toFixed(2)}/hr
+                </span>
+              ) : (
+                <span className="italic text-ch/50">
+                  Set billable hours in Capacity to see per-hour cost
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex items-center justify-between">
             <button type="button" onClick={onDelete} className="text-[10px] text-danger/70 hover:text-danger inline-flex items-center gap-1">
               <Trash2 size={11} /> Remove
             </button>
-            <SaveRow onCancel={onToggle} onSave={() => onSave(d)} />
+            <span className="text-[10px]" style={{ color: savedAt ? "#5C8A6E" : "rgba(44,44,44,0.45)" }}>
+              {savedAt ? "Saved" : "Auto-saves as you type"}
+            </span>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+function BurdenRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-ch/60">{label}</span>
+      <span className="text-ch">${Math.round(value).toLocaleString()}/yr</span>
+    </div>
+  );
+}
+
+function computeBurden(d: any): { base: number; tax: number; benefits: number; other: number; total: number } {
+  const empType = d.employment_type;
+  const contract = empType === "contractor" || empType === "1099";
+  const wks = Number(d.weeks_per_year) || 48;
+  const hpw = Number(d.expected_hrs_per_week) || 40;
+  const ptaxPct = contract ? 0 : Number(d.employer_payroll_tax_pct ?? 7.65) || 0;
+  const benefits = contract ? 0 : Number(d.annual_benefits) || 0;
+  const other = Number(d.other_annual_costs) || 0;
+  let base = 0;
+  if (d.compensation_type === "salaried" || d.compensation_type === "contract_annual") {
+    base = Number(d.annual_base_salary) || 0;
+  } else {
+    base = (Number(d.hourly_wage) || 0) * hpw * wks;
+  }
+  const tax = base * (ptaxPct / 100);
+  const total = base + tax + benefits + other;
+  return { base, tax, benefits, other, total };
 }
 
 function OpexPanel({ onClose }: { onClose: () => void }) {
