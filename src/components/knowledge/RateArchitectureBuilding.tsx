@@ -113,25 +113,15 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
   const [selected, setSelected] = useState<LayerId>("foundation");
 
   useEffect(() => {
-    setVisibleCount(0);
+    if (visibleCount !== 0) return;
     const timers: ReturnType<typeof setTimeout>[] = [];
     for (let i = 1; i <= layers.length; i++) {
       timers.push(setTimeout(() => setVisibleCount(i), i * 300));
     }
     return () => timers.forEach(clearTimeout);
-  }, [layers.length]);
+  }, [visibleCount, layers.length]);
 
   const replay = () => setVisibleCount(0);
-
-  useEffect(() => {
-    if (visibleCount === 0) {
-      const timers: ReturnType<typeof setTimeout>[] = [];
-      for (let i = 1; i <= layers.length; i++) {
-        timers.push(setTimeout(() => setVisibleCount(i), i * 300));
-      }
-      return () => timers.forEach(clearTimeout);
-    }
-  }, [visibleCount, layers.length]);
 
   const selectedIdx = layers.findIndex((l) => l.id === selected);
   const selectedLayer = layers[selectedIdx];
