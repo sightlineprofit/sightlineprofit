@@ -822,6 +822,7 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .eq("firm_id", me.firm_id);
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
     return { ok: true };
   });
 
@@ -1034,5 +1035,6 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .eq("firm_id", me.firm_id)
       .eq("profile_id", userId);
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
     return { ok: true };
   });
