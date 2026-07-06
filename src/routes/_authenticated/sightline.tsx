@@ -260,14 +260,65 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
   const actual = p.totals.actual;
   const pctConsumed = scoped > 0 ? (actual / scoped) * 100 : 0;
   const hrsRemaining = Math.max(0, scoped - actual);
-  const barColor = pctConsumed > 100 ? "bg-terra" : "bg-gold";
+  const fresh = (p as any).freshness as { lastEntryAt: string | null; daysSince: number | null; state: "current" | "stale" | "critical" } | undefined;
+  const freshState = fresh?.state ?? "critical";
+  const daysSince = fresh?.daysSince ?? null;
+
+  // Freshness overrides border + margin coloring; but the underlying margin health is
+  // still surfaced via the progress bar tone when freshness is current.
+  const FRESH_STYLES: Record<"current" | "stale" | "critical", {
+    border: string;
+    pill: { bg: string; color: string; label: string };
+    marginColor: string;
+    barColor: string;
+    bar: { bg: string; border: string; color: string; dot: string };
+    prompt: { border: string; textColor: string; leftText: string; button: string };
+  }> = {
+    current: {
+      border: "border-l-[#5C8A6E]",
+      pill: { bg: "rgba(92,138,110,0.10)", color: "#27500A", label: "Active" },
+      marginColor: "#5C8A6E",
+      barColor: "bg-[#5C8A6E]",
+      bar: { bg: "rgba(92,138,110,0.06)", border: "rgba(92,138,110,0.20)", color: "#27500A", dot: "#5C8A6E" },
+      prompt: { border: "", textColor: "", leftText: "", button: "" },
+    },
+    stale: {
+      border: "border-l-[#B8860B]",
+      pill: { bg: "rgba(184,134,11,0.10)", color: "#854F0B", label: "Needs update" },
+      marginColor: "#B8860B",
+      barColor: "bg-[#B8860B]",
+      bar: { bg: "rgba(184,134,11,0.07)", border: "rgba(184,134,11,0.25)", color: "#5C3D00", dot: "#B8860B" },
+      prompt: { border: "rgba(184,134,11,0.30)", textColor: "text-ch/60", leftText: "How many hours did you work on this project this week?", button: "#B8860B" },
+    },
+    critical: {
+      border: "border-l-[#C4714A]",
+      pill: { bg: "rgba(196,113,74,0.12)", color: "#7A3A22", label: "Data missing" },
+      marginColor: "#C4714A",
+      barColor: "bg-[#C4714A]",
+      bar: { bg: "rgba(196,113,74,0.08)", border: "rgba(196,113,74,0.30)", color: "#7A3A22", dot: "#C4714A" },
+      prompt: { border: "rgba(196,113,74,0.40)", textColor: "text-[#C4714A]", leftText: "This project needs a time entry to be reliable.", button: "#C4714A" },
+    },
+  };
+  const fs = FRESH_STYLES[freshState];
+  const barColor = freshState === "current" ? (pctConsumed > 100 ? "bg-terra" : "bg-[#5C8A6E]") : fs.barColor;
+
+  const dayLabel = daysSince == null ? null : daysSince === 0 ? "today" : daysSince === 1 ? "yesterday" : `${daysSince} days ago`;
+  const freshCopy =
+    freshState === "current"
+      ? `Last entry: ${dayLabel}. Margin reflects actual hours logged.`
+      : freshState === "stale"
+        ? `No time logged in ${daysSince} days. Margin shown is estimated — not confirmed. Log this week's hours to get an accurate picture.`
+        : daysSince == null
+          ? "No time has been logged on this project yet."
+          : `${daysSince} days without a time entry. This margin figure is unreliable. ${Math.max(1, Math.floor(daysSince / 7))} weeks of unlogged hours may have already consumed part of this margin — or all of it.`;
 
   return (
     <button
       onClick={() => onOpen(p.id)}
       className={cn(
-        "group flex flex-col rounded-lg border border-border border-l-2 bg-white p-5 text-left transition-shadow hover:shadow-md",
-        styles.border,
+        "group flex flex-col rounded-lg border border-border bg-white p-5 text-left transition-shadow hover:shadow-md",
+        "border-l-[3px]",
+        fs.border,
       )}
     >
       {/* Row 1 — identity */}
@@ -276,8 +327,28 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
           <h3 className="font-display text-xl tracking-tight text-ch">{p.name}</h3>
           {p.client_name && <p className="mt-0.5 text-sm text-ch/60">{p.client_name}</p>}
         </div>
-        <span className="shrink-0 rounded-full border border-border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
-          {p.status}
+        <span
+          className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]"
+          style={{ background: fs.pill.bg, color: fs.pill.color, fontFamily: "'Jost', sans-serif", fontWeight: 500 }}
+        >
+          {fs.pill.label}
+        </span>
+      </div>
+
+      {/* Freshness bar */}
+      <div
+        className="mt-3 flex items-center gap-2 rounded"
+        style={{
+          background: fs.bar.bg,
+          border: `0.5px solid ${fs.bar.border}`,
+          padding: "8px 10px",
+        }}
+      >
+        <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: fs.bar.dot }} />
+        <span
+          style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400, color: fs.bar.color, lineHeight: 1.4 }}
+        >
+          {freshCopy}
         </span>
       </div>
 
@@ -291,7 +362,17 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
             {state === "critical" && (
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-danger" />
             )}
-            Remaining margin
+            <span>Remaining margin</span>
+            {freshState === "stale" && (
+              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, fontWeight: 500, color: "#B8860B", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
+                · estimate only
+              </span>
+            )}
+            {freshState === "critical" && (
+              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, fontWeight: 500, color: "#C4714A", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
+                · unreliable
+              </span>
+            )}
           </div>
           {state === "none" ? (
             <>
@@ -310,19 +391,48 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
                   : "Add a project fee to see margin →"}
               </div>
             </>
+          ) : freshState === "critical" ? (
+            <>
+              <div
+                className="mt-1"
+                style={{
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: 30,
+                  fontWeight: 400,
+                  lineHeight: 1.05,
+                  color: "rgba(196,113,74,0.40)",
+                  textDecoration: "line-through",
+                }}
+              >
+                {fmtUsd(m!.remaining!)}
+              </div>
+              <div
+                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 16, color: "#C4714A", marginTop: 2 }}
+              >
+                Unknown until hours are logged
+              </div>
+              <div className="mt-0.5" style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "#C4714A" }}>
+                You may have already consumed this margin. Log hours now to find out.
+              </div>
+            </>
           ) : (
             <>
               <div
-                className={cn("mt-1", styles.text)}
-                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, fontWeight: 400, lineHeight: 1.05 }}
+                className="mt-1"
+                style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 30, fontWeight: 400, lineHeight: 1.05, color: fs.marginColor }}
               >
                 {fmtUsd(m!.remaining!)}
+                {freshState === "stale" && (
+                  <sup style={{ fontSize: 14, color: "rgba(184,134,11,0.50)", verticalAlign: "super", marginLeft: 2 }}>?</sup>
+                )}
               </div>
               <div
                 className="mt-0.5 text-[#aaa]"
                 style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
               >
-                of {fmtUsd(m!.projectFee)} fee
+                {freshState === "stale"
+                  ? `Based on hours logged ${daysSince} days ago. Actual may be lower.`
+                  : `of ${fmtUsd(m!.projectFee)} fee · ${pctConsumed.toFixed(0)}% of budget consumed · ${formatHours(hrsRemaining)} remaining`}
                 {m!.usingFallbackCostRate && " · using firm rate"}
               </div>
             </>
@@ -332,8 +442,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
           <div className="shrink-0 text-right">
             {m!.weeklyCost > 0 ? (
               <div
-                className={styles.text}
-                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400, color: fs.marginColor }}
               >
                 –{fmtUsd(m!.weeklyCost)} this week
               </div>
@@ -349,18 +458,38 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
         )}
       </div>
 
-      {/* Row 3 — Hours context (subordinate) */}
-      {scoped > 0 && (
+      {/* Row 3 — progress + inline log prompt */}
+      {scoped > 0 && freshState !== "critical" && (
         <div className="mt-4">
-          <div
-            className="text-[#aaa]"
-            style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
-          >
-            {pctConsumed.toFixed(0)}% of budget consumed · {formatHours(hrsRemaining)} remaining
-          </div>
-          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-creamd">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-creamd">
             <div className={cn("h-full transition-all", barColor)} style={{ width: `${Math.min(100, pctConsumed)}%` }} />
           </div>
+        </div>
+      )}
+
+      {freshState !== "current" && (
+        <div
+          className="mt-3 flex items-center justify-between gap-3 rounded-md bg-creamd px-3 py-2"
+          style={{ border: `0.5px solid ${fs.prompt.border}` }}
+        >
+          <span
+            className={cn(fs.prompt.textColor || "text-ch/60")}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 10 }}
+          >
+            {fs.prompt.leftText}
+          </span>
+          <span
+            className="shrink-0 rounded px-2.5 py-1"
+            style={{
+              fontFamily: "'Jost', sans-serif",
+              fontSize: 10,
+              fontWeight: 500,
+              color: fs.prompt.button,
+              border: `0.5px solid ${fs.prompt.border}`,
+            }}
+          >
+            {freshState === "critical" ? "Log hours now →" : "Log hours →"}
+          </span>
         </div>
       )}
     </button>

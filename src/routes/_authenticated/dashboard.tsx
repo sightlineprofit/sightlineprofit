@@ -47,6 +47,7 @@ import {
   PricingStrip,
   useHealthChangeToast,
 } from "@/components/dashboard/RateArchitectureHeader";
+import { ActionEnginePanel } from "@/components/dashboard/ActionEnginePanel";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -272,6 +273,9 @@ function Dashboard() {
               templates={(data as any)?.capacity?.sopTemplates ?? []}
             />
           </div>
+          <div className="mt-4">
+            <ActionEnginePanel />
+          </div>
         </>
       )}
 
@@ -284,11 +288,6 @@ function Dashboard() {
       {/* Quick log */}
       <div className="mt-3">
         <QuickLogRow trailingEntries={trailingEntries} manualLogsWindow={manualLogsWindow} />
-      </div>
-
-      {/* Growth signals strip */}
-      <div className="mt-3">
-        <GrowthSignalsStrip active={growthSignalsActive} />
       </div>
 
       {/* Footer links */}

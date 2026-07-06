@@ -62,12 +62,13 @@ export const getProjectList = createServerFn({ method: "GET" })
       revenue: number;
       hasAnyEntry: boolean;
       usingFallbackCostRate: boolean;
+      lastEntryAt: string | null;
     };
     const agg: Record<string, Agg> = {};
     for (const e of entries ?? []) {
       if (!e.project_id) continue;
       const a = (agg[e.project_id] ||= {
-        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false,
+        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null,
       });
       a.hasAnyEntry = true;
       const hrs = Number(e.hrs || 0);
@@ -77,6 +78,7 @@ export const getProjectList = createServerFn({ method: "GET" })
       a.totalCost += cost;
       const ts = new Date(e.date).getTime();
       if (!Number.isNaN(ts) && ts >= weekAgo) a.weeklyCost += cost;
+      if (!a.lastEntryAt || (e.date as string) > a.lastEntryAt) a.lastEntryAt = e.date as string;
       if (e.billable) {
         const br = billRateByUser.get(e.user_id) ?? firmBilledRate;
         a.revenue += hrs * (br || 0);
@@ -86,7 +88,7 @@ export const getProjectList = createServerFn({ method: "GET" })
     return {
       config,
       projects: (projects ?? []).map((p) => {
-        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false };
+        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null };
         const fixedFee = Number((p as { fixed_fee?: number | null }).fixed_fee) || 0;
         const scopedRate = Number(p.scoped_rate) || 0;
         const scopedHrs = totals[p.id]?.scoped ?? Number(p.scoped_hrs || 0);
@@ -100,9 +102,25 @@ export const getProjectList = createServerFn({ method: "GET" })
           projectFee = scopedRate * scopedHrs;
           marginRemaining = (scopedRate * scopedHrs) - a.totalCost;
         }
+        // Freshness computation
+        let daysSince: number | null = null;
+        if (a.lastEntryAt) {
+          const ts = new Date(a.lastEntryAt as string).getTime();
+          if (!Number.isNaN(ts)) daysSince = Math.floor((now - ts) / (24 * 3600 * 1000));
+        }
+        let freshnessState: "current" | "stale" | "critical";
+        if (daysSince == null) freshnessState = "critical";
+        else if (daysSince <= 2) freshnessState = "current";
+        else if (daysSince <= 20) freshnessState = "stale";
+        else freshnessState = "critical";
         return {
           ...p,
           totals: totals[p.id] ?? { scoped: Number(p.scoped_hrs || 0), actual: 0 },
+          freshness: {
+            lastEntryAt: a.lastEntryAt,
+            daysSince,
+            state: freshnessState,
+          },
           margin: {
             mode,
             projectFee,

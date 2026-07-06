@@ -468,6 +468,59 @@ export type Database = {
           },
         ]
       }
+      firm_signal_state: {
+        Row: {
+          cost_gap_pct: number | null
+          created_at: string
+          cycle_count: number
+          firm_id: string
+          id: string
+          last_action_suggested_at: string | null
+          last_action_type: string | null
+          last_metric_snapshot: Json | null
+          pricing_gap_pct: number | null
+          primary_profile: string | null
+          updated_at: string
+          util_gap_pct: number | null
+        }
+        Insert: {
+          cost_gap_pct?: number | null
+          created_at?: string
+          cycle_count?: number
+          firm_id: string
+          id?: string
+          last_action_suggested_at?: string | null
+          last_action_type?: string | null
+          last_metric_snapshot?: Json | null
+          pricing_gap_pct?: number | null
+          primary_profile?: string | null
+          updated_at?: string
+          util_gap_pct?: number | null
+        }
+        Update: {
+          cost_gap_pct?: number | null
+          created_at?: string
+          cycle_count?: number
+          firm_id?: string
+          id?: string
+          last_action_suggested_at?: string | null
+          last_action_type?: string | null
+          last_metric_snapshot?: Json | null
+          pricing_gap_pct?: number | null
+          primary_profile?: string | null
+          updated_at?: string
+          util_gap_pct?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_signal_state_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firms: {
         Row: {
           created_at: string
