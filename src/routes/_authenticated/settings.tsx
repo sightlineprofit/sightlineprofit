@@ -879,9 +879,11 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
                 <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
               </Field>
               <Row2>
-                <Field label="Employer payroll tax %">
-                  <NumInput value={v.payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
-                </Field>
+                <EmployerTaxField
+                  firmState={firmState}
+                  value={v.payroll_tax_pct}
+                  onChange={(x) => onChange({ ...v, payroll_tax_pct: x })}
+                />
                 <Field label="Employee payroll tax %">
                   <NumInput value={v.employee_payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, employee_payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
                 </Field>
@@ -927,9 +929,11 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
               <Field label="W-2 salary (annual)">
                 <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
               </Field>
-              <Field label="Employer payroll tax %">
-                <NumInput value={v.payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
-              </Field>
+              <EmployerTaxField
+                firmState={firmState}
+                value={v.payroll_tax_pct}
+                onChange={(x) => onChange({ ...v, payroll_tax_pct: x })}
+              />
               <Row2>
                 <Field label="Health insurance">
                   <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
