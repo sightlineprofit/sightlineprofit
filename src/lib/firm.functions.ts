@@ -430,6 +430,44 @@ export const acceptInvite = createServerFn({ method: "POST" })
       .update({ accepted_at: new Date().toISOString() })
       .eq("id", inv.id);
 
+    // Link firm_members: reuse an existing internal record for this email,
+    // otherwise create one so cost/capacity data lives in a single table.
+    {
+      const nowIso = new Date().toISOString();
+      const { data: existing } = await supabaseAdmin
+        .from("firm_members")
+        .select("id")
+        .eq("firm_id", inv.firm_id)
+        .ilike("email", inv.email)
+        .is("profile_id", null)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      if (existing?.id) {
+        await supabaseAdmin
+          .from("firm_members")
+          .update({
+            profile_id: newUserId,
+            is_platform_user: true,
+            invite_accepted_at: nowIso,
+            name: data.name,
+          })
+          .eq("id", existing.id);
+      } else {
+        await supabaseAdmin.from("firm_members").insert({
+          firm_id: inv.firm_id,
+          profile_id: newUserId,
+          name: data.name,
+          email: inv.email,
+          role_type: inv.role,
+          employment_type: "employee",
+          is_platform_user: true,
+          invite_sent_at: inv.invited_at,
+          invite_accepted_at: nowIso,
+        });
+      }
+    }
+
     // Webhook log
     await supabaseAdmin.from("webhook_log").insert({
       event_tag: "team-member-onboarded",
