@@ -433,13 +433,15 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
     : c.rateHealth === "below_floor" ? "Below floor"
     : "Below break-even";
   const budgetRevenue = (cfg?.rate_billed ?? 0) * (cfg?.target_billable_hrs_per_week ?? 0) * 52;
-  const rows: [string, string, boolean?][] = [
-    ["Billed rate", `$${Math.round(c.billedRate)}/hr`, true],
-    ["Rate health", rateStatus],
-    ["Margin", `+$${Math.round(c.marginAboveFloor)}/hr`, true],
-    ["Break-even", `$${Math.round(c.breakEvenRate)}/hr`],
-    ["Cost floor", `$${Math.round(c.totalCost).toLocaleString()}`],
-    ["Budget revenue", `$${Math.round(budgetRevenue).toLocaleString()}`],
+  const marginVal = c.marginAboveFloor;
+  const marginStr = `${marginVal >= 0 ? "+" : "-"}$${Math.round(Math.abs(marginVal))}/hr`;
+  const rows: Array<{ label: string; value: string; gold?: boolean; metric: MetricKind }> = [
+    { label: "Billed rate", value: `$${Math.round(c.billedRate)}/hr`, gold: true, metric: "billed" },
+    { label: "Rate health", value: rateStatus, metric: "health" },
+    { label: "Margin", value: marginStr, gold: marginVal >= 0, metric: "margin" },
+    { label: "Break-even", value: `$${Math.round(c.breakEvenRate)}/hr`, metric: "breakeven" },
+    { label: "Cost floor", value: `$${Math.round(c.totalCost).toLocaleString()}`, metric: "cost_floor" },
+    { label: "Budget revenue", value: `$${Math.round(budgetRevenue).toLocaleString()}`, metric: "budget_revenue" },
   ];
   return (
     <PanelShell title={title} subtitle={subtitle} onClose={onClose}>
@@ -456,10 +458,22 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
             </div>
             <div className="mt-1 text-[10px] text-ch/60 mb-2.5">Your floor.</div>
             <div className="border-t border-border">
-              {rows.map(([label, value, gold], i) => (
-                <div key={label} className={cn("flex justify-between py-1 text-[11px]", i < rows.length - 1 && "border-b border-border")}>
-                  <span className="text-ch/60">{label}</span>
-                  <span className={cn("font-medium", gold ? "text-gold" : "text-ch")}>{value}</span>
+              {rows.map((r, i) => (
+                <div key={r.label} className={cn("flex items-center justify-between py-1 text-[11px]", i < rows.length - 1 && "border-b border-border")}>
+                  <span className="text-ch/60">{r.label}</span>
+                  <span className="flex items-center">
+                    <span className={cn("font-medium", r.gold ? "text-gold" : "text-ch")}>{r.value}</span>
+                    <MetricBreakdown
+                      metric={r.metric}
+                      c={c}
+                      cfg={cfg}
+                      targetMarginPct={Number(cfg?.target_gross_margin_pct) || 0}
+                      members={firmMembers ?? []}
+                      expenses={expenses}
+                      side="left"
+                      iconSize={12}
+                    />
+                  </span>
                 </div>
               ))}
             </div>
