@@ -378,7 +378,14 @@ export function RateArchitecturePanel({
             >
               {fmtUsd(budgetRevenue, { decimals: 0 })}
             </span>
-            <MetricBreakdown metric="budget_revenue" c={c} cfg={cfg} side="bottom" iconSize={12} />
+            <MetricBreakdown
+              metric="budget_revenue"
+              c={c}
+              cfg={cfg}
+              contributors={contributors}
+              side="bottom"
+              iconSize={12}
+            />
           </div>
           {contributorCount > 0 && (
             <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
