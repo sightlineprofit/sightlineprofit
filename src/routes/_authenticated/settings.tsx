@@ -1449,6 +1449,7 @@ function RatePanel({ onClose }: { onClose: () => void }) {
   const avail = Number(draft.available_hrs_per_week) || 0;
   const target = Number(draft.target_billable_hrs_per_week) || 0;
   const utilization = avail > 0 ? (target / avail) * 100 : 0;
+  const firmRate = Number(liveConfig?.rate_billed) || 0;
   return (
     <FinancialLayout
       title="Capacity and rate"
@@ -1477,6 +1478,7 @@ function RatePanel({ onClose }: { onClose: () => void }) {
             <span className="font-medium">{utilization.toFixed(0)}%</span>
             <span className="text-ch/50"> ({target} of {avail} hrs/week)</span>
           </div>
+          <TeamBillableCapacitySection firmRate={firmRate} />
         </>
       }
     />
