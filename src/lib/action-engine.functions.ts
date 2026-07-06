@@ -137,7 +137,7 @@ export const getActionEngineState = createServerFn({ method: "GET" })
     let signals: Signal[] = [];
 
     if (primaryProfile === "committed" && openCommitment) {
-      const committedRate = Number((openCommitment as any).committed_rate) || 0;
+      const committedRate = Number((openCommitment as any).target_value) || 0;
       const daysSince = Math.floor(
         (Date.now() - new Date((openCommitment as any).committed_at).getTime()) / (24 * 3600 * 1000),
       );
@@ -346,7 +346,7 @@ export const getActionEngineState = createServerFn({ method: "GET" })
       openCommitment: openCommitment
         ? {
             id: (openCommitment as any).id,
-            committedRate: Number((openCommitment as any).committed_rate) || null,
+            committedRate: Number((openCommitment as any).target_value) || null,
             daysSince: Math.floor(
               (Date.now() - new Date((openCommitment as any).committed_at).getTime()) / (24 * 3600 * 1000),
             ),
