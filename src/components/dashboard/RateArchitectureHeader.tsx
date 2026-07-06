@@ -414,6 +414,24 @@ export function RateArchitecturePanel({
         </Link>
       </div>
 
+      <div className="flex items-center gap-4" style={{ marginTop: 8 }}>
+        <Link
+          to="/rate-architecture"
+          style={{ fontSize: 10, color: GOLD, letterSpacing: "0.02em" }}
+          className="hover:underline"
+        >
+          Understand my numbers →
+        </Link>
+        <Link
+          to="/rate-architecture"
+          search={{ tab: "model" } as any}
+          style={{ fontSize: 10, color: GOLD, letterSpacing: "0.02em" }}
+          className="hover:underline"
+        >
+          Model a change →
+        </Link>
+      </div>
+
       {historyOpen && (
         <div style={{ marginTop: 10, fontSize: 10, color: MUTED }}>
           {history.length === 0 ? (
