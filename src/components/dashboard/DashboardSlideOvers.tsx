@@ -6,6 +6,7 @@ import { calc, fmtUsd, fmtPct } from "@/lib/finance";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
 
 type PanelKind = "rate" | "capacity" | null;
 
