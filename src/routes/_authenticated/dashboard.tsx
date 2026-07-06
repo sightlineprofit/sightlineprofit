@@ -41,6 +41,12 @@ import type { CapacityInputs } from "@/lib/capacity-math";
 import { RateInsightCard } from "@/components/dashboard/RateInsightCard";
 import { NarrativeStrip } from "@/components/dashboard/NarrativeStrip";
 import { RateBreakdownSlideOver, CapacitySlideOver, type PanelKind } from "@/components/dashboard/DashboardSlideOvers";
+import {
+  RateArchitecturePanel,
+  WeeklyPulse,
+  PricingStrip,
+  useHealthChangeToast,
+} from "@/components/dashboard/RateArchitectureHeader";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -75,8 +81,11 @@ function Dashboard() {
       { table: "expenses", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "manual_hour_logs", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "owner_compensation", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "firm_members", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "aligned_rate_history", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
     ],
-    [["dashboard"]],
+    [["dashboard"], ["rate-history"]],
     !!firmId,
   );
 
@@ -178,6 +187,8 @@ function Dashboard() {
 
   const [openPanel, setOpenPanel] = useState<PanelKind>(null);
 
+  useHealthChangeToast(c.rateHealth);
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-7xl px-8 py-10">
@@ -238,20 +249,30 @@ function Dashboard() {
       {setupIncomplete ? (
         <SetupPrompt />
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <HoursMetric
-            weekBillable={weekMetrics.billable}
-            target={targetHrs}
-            onOpenDetail={() => setOpenPanel("capacity")}
-          />
-          <RevenueMetric
-            weekBillable={weekMetrics.billable}
-            target={targetHrs}
-            rate={rateBilled}
-            noData={weekMetrics.billable === 0 && weekMetrics.total === 0}
-          />
-          <RateHealthMetric c={c} onOpenDetail={() => setOpenPanel("rate")} />
-        </div>
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
+            <RateArchitecturePanel
+              c={c}
+              cfg={data?.config}
+              members={(data as any)?.capacity?.team ?? []}
+              expenses={data?.expenses ?? []}
+              targetMarginPct={targetMarginPct}
+              configUpdatedAt={(data?.config as any)?.updated_at}
+            />
+            <WeeklyPulse
+              weekBillable={weekMetrics.billable}
+              targetHrs={targetHrs}
+              rate={rateBilled}
+              activeProjects={activeProjects}
+            />
+          </div>
+          <div className="mt-4">
+            <PricingStrip
+              aligned={c.alignedRate}
+              templates={(data as any)?.capacity?.sopTemplates ?? []}
+            />
+          </div>
+        </>
       )}
 
       {/* Supporting tiles */}

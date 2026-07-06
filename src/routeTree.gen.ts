@@ -32,6 +32,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedSopLibraryNewRouteImport } from './routes/_authenticated/sop-library.new'
 import { Route as AuthenticatedSopLibraryIdRouteImport } from './routes/_authenticated/sop-library.$id'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
+import { Route as AuthenticatedKnowledgeBaseRateArchitectureRouteImport } from './routes/_authenticated/knowledge-base.rate-architecture'
 import { Route as AuthenticatedDashboardScenariosRouteImport } from './routes/_authenticated/dashboard.scenarios'
 import { Route as AuthenticatedDashboardRateRouteImport } from './routes/_authenticated/dashboard.rate'
 import { Route as AuthenticatedDashboardKnowledgeRouteImport } from './routes/_authenticated/dashboard.knowledge'
@@ -160,6 +161,12 @@ const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedProjectsRoute,
 } as any)
+const AuthenticatedKnowledgeBaseRateArchitectureRoute =
+  AuthenticatedKnowledgeBaseRateArchitectureRouteImport.update({
+    id: '/rate-architecture',
+    path: '/rate-architecture',
+    getParentRoute: () => AuthenticatedKnowledgeBaseRoute,
+  } as any)
 const AuthenticatedDashboardScenariosRoute =
   AuthenticatedDashboardScenariosRouteImport.update({
     id: '/scenarios',
@@ -220,7 +227,7 @@ export interface FileRoutesByFullPath {
   '/calendar': typeof AuthenticatedCalendarRoute
   '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
-  '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
+  '/knowledge-base': typeof AuthenticatedKnowledgeBaseRouteWithChildren
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/knowledge': typeof AuthenticatedDashboardKnowledgeRoute
   '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
   '/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
+  '/knowledge-base/rate-architecture': typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
@@ -252,7 +260,7 @@ export interface FileRoutesByTo {
   '/calendar': typeof AuthenticatedCalendarRoute
   '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
-  '/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
+  '/knowledge-base': typeof AuthenticatedKnowledgeBaseRouteWithChildren
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/settings': typeof AuthenticatedSettingsRoute
@@ -268,6 +276,7 @@ export interface FileRoutesByTo {
   '/dashboard/knowledge': typeof AuthenticatedDashboardKnowledgeRoute
   '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
   '/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
+  '/knowledge-base/rate-architecture': typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
@@ -286,7 +295,7 @@ export interface FileRoutesById {
   '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/_authenticated/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
-  '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRoute
+  '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRouteWithChildren
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
@@ -302,6 +311,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/knowledge': typeof AuthenticatedDashboardKnowledgeRoute
   '/_authenticated/dashboard/rate': typeof AuthenticatedDashboardRateRoute
   '/_authenticated/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
+  '/_authenticated/knowledge-base/rate-architecture': typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/_authenticated/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/_authenticated/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
@@ -336,6 +346,7 @@ export interface FileRouteTypes {
     | '/dashboard/knowledge'
     | '/dashboard/rate'
     | '/dashboard/scenarios'
+    | '/knowledge-base/rate-architecture'
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
@@ -368,6 +379,7 @@ export interface FileRouteTypes {
     | '/dashboard/knowledge'
     | '/dashboard/rate'
     | '/dashboard/scenarios'
+    | '/knowledge-base/rate-architecture'
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
@@ -401,6 +413,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/knowledge'
     | '/_authenticated/dashboard/rate'
     | '/_authenticated/dashboard/scenarios'
+    | '/_authenticated/knowledge-base/rate-architecture'
     | '/_authenticated/projects/$id'
     | '/_authenticated/sop-library/$id'
     | '/_authenticated/sop-library/new'
@@ -580,6 +593,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
       parentRoute: typeof AuthenticatedProjectsRoute
     }
+    '/_authenticated/knowledge-base/rate-architecture': {
+      id: '/_authenticated/knowledge-base/rate-architecture'
+      path: '/rate-architecture'
+      fullPath: '/knowledge-base/rate-architecture'
+      preLoaderRoute: typeof AuthenticatedKnowledgeBaseRateArchitectureRouteImport
+      parentRoute: typeof AuthenticatedKnowledgeBaseRoute
+    }
     '/_authenticated/dashboard/scenarios': {
       id: '/_authenticated/dashboard/scenarios'
       path: '/scenarios'
@@ -666,6 +686,21 @@ const AuthenticatedDashboardRouteWithChildren =
     AuthenticatedDashboardRouteChildren,
   )
 
+interface AuthenticatedKnowledgeBaseRouteChildren {
+  AuthenticatedKnowledgeBaseRateArchitectureRoute: typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
+}
+
+const AuthenticatedKnowledgeBaseRouteChildren: AuthenticatedKnowledgeBaseRouteChildren =
+  {
+    AuthenticatedKnowledgeBaseRateArchitectureRoute:
+      AuthenticatedKnowledgeBaseRateArchitectureRoute,
+  }
+
+const AuthenticatedKnowledgeBaseRouteWithChildren =
+  AuthenticatedKnowledgeBaseRoute._addFileChildren(
+    AuthenticatedKnowledgeBaseRouteChildren,
+  )
+
 interface AuthenticatedProjectsRouteChildren {
   AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRoute
 }
@@ -701,7 +736,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRouteWithChildren
   AuthenticatedGrowthRoadmapRoute: typeof AuthenticatedGrowthRoadmapRoute
-  AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRoute
+  AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRouteWithChildren
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRouteWithChildren
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
@@ -718,7 +753,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRouteWithChildren,
   AuthenticatedGrowthRoadmapRoute: AuthenticatedGrowthRoadmapRoute,
-  AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRoute,
+  AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRouteWithChildren,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRouteWithChildren,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
@@ -745,13 +780,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

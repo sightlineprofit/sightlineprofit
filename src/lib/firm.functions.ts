@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { computeBurden } from "@/lib/cost";
 import { seedDefaultSops } from "@/lib/sop-seed.server";
+import { recordAlignedRate } from "@/lib/rate-history.server";
 
 const tierEnum = z.enum(["foundation", "studio", "practice"]);
 
@@ -156,6 +157,7 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
         { onConflict: "firm_id" },
       );
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, profile.firm_id, "Capacity or rate updated");
     return { ok: true };
   });
 
@@ -185,6 +187,7 @@ export const addExpense = createServerFn({ method: "POST" })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, profile.firm_id, "Operating expenses updated");
     return row;
   });
 
@@ -192,9 +195,15 @@ export const deleteExpense = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
     const { error } = await supabase.from("expenses").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
+    if (me?.firm_id) await recordAlignedRate(supabase, me.firm_id, "Operating expenses updated");
     return { ok: true };
   });
 
@@ -782,6 +791,7 @@ export const saveFirmMember = createServerFn({ method: "POST" })
         .eq("id", data.id)
         .eq("firm_id", me.firm_id);
       if (error) throw new Error(error.message);
+      await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
       return { ok: true, id: data.id };
     }
     const { data: inserted, error } = await supabase
@@ -790,6 +800,7 @@ export const saveFirmMember = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
     return { ok: true, id: inserted!.id };
   });
 
@@ -811,6 +822,7 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .eq("firm_id", me.firm_id);
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
     return { ok: true };
   });
 
@@ -1002,6 +1014,7 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
         { onConflict: "firm_id,profile_id" },
       );
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
     return { ok: true };
   });
 
@@ -1022,5 +1035,6 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .eq("firm_id", me.firm_id)
       .eq("profile_id", userId);
     if (error) throw new Error(error.message);
+    await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
     return { ok: true };
   });

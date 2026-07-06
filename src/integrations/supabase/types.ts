@@ -46,6 +46,41 @@ export type Database = {
           },
         ]
       }
+      aligned_rate_history: {
+        Row: {
+          change_reason: string | null
+          changed_at: string
+          firm_id: string
+          id: string
+          previous_rate: number | null
+          rate: number
+        }
+        Insert: {
+          change_reason?: string | null
+          changed_at?: string
+          firm_id: string
+          id?: string
+          previous_rate?: number | null
+          rate: number
+        }
+        Update: {
+          change_reason?: string | null
+          changed_at?: string
+          firm_id?: string
+          id?: string
+          previous_rate?: number | null
+          rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aligned_rate_history_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_settings: {
         Row: {
           default_activity_groups: Json
