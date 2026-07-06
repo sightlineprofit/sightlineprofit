@@ -1075,6 +1075,19 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
   const initials = (name: string, email: string | null) =>
     (name || email || "?").split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase();
 
+  // Team totals: sum of members' burdened annual cost + per-hour impact on aligned rate.
+  const teamTotals = useMemo(() => {
+    const totalCost = members.reduce(
+      (s, m: any) => s + (Number(m.burdened_weekly_cost) || 0) * (Number(m.weeks_per_year) || 48),
+      0,
+    );
+    const principalHrs = Number(liveConfig?.target_billable_hrs_per_week) || 0;
+    const teamBillableHrs = members.reduce((s, m: any) => s + (Number(m.expected_hrs_per_week) || 0), 0);
+    const annualBillableHrs = (principalHrs + teamBillableHrs) * 48;
+    const perHour = annualBillableHrs > 0 ? totalCost / annualBillableHrs : 0;
+    return { totalCost, perHour };
+  }, [members, liveConfig]);
+
   return (
     <FinancialLayout
       title="Team cost"
@@ -1088,27 +1101,42 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
               No team members yet. Click <span className="text-gold">+ Add team member</span> below.
             </div>
           ) : (
-            <div className="space-y-2.5">
-              {sorted.map((m: any) => (
-                <MemberCard
-                  key={m.id}
-                  m={m}
-                  open={openId === m.id}
-                  onToggle={() => setOpenId(openId === m.id ? null : m.id)}
-                  onSave={(d) => saveMember(m.id, d)}
-                  onDelete={async () => {
-                    if (!window.confirm(`Remove ${m.name}?`)) return;
-                    await del({ data: { id: m.id } });
-                    qc.invalidateQueries({ queryKey: ["firmMembers"] });
-                    qc.invalidateQueries({ queryKey: ["dashboard"] });
-                  }}
-                  firmState={firmState}
-                  stateDefault={stateDefault}
-                  initials={initials}
-                  firmRate={(liveConfig as any)?.rate_billed ?? null}
-                />
-              ))}
-            </div>
+            <>
+              <div className="space-y-2.5">
+                {sorted.map((m: any) => (
+                  <MemberCard
+                    key={m.id}
+                    m={m}
+                    open={openId === m.id}
+                    onToggle={() => setOpenId(openId === m.id ? null : m.id)}
+                    onSave={(d) => saveMember(m.id, d)}
+                    onDelete={async () => {
+                      if (!window.confirm(`Remove ${m.name}?`)) return;
+                      await del({ data: { id: m.id } });
+                      qc.invalidateQueries({ queryKey: ["firmMembers"] });
+                      qc.invalidateQueries({ queryKey: ["dashboard"] });
+                    }}
+                    firmState={firmState}
+                    stateDefault={stateDefault}
+                    initials={initials}
+                    firmRate={(liveConfig as any)?.rate_billed ?? null}
+                  />
+                ))}
+              </div>
+
+              {members.length > 0 ? (
+                <div className="mt-3 rounded-[6px] border border-border bg-cream/50 px-3.5 py-2.5">
+                  <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: "#2C2C2C" }}>
+                    Total team cost: ${Math.round(teamTotals.totalCost).toLocaleString()}/yr
+                  </div>
+                  <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "rgba(44,44,44,0.6)", marginTop: 2 }}>
+                    {teamTotals.perHour > 0
+                      ? `Adds $${teamTotals.perHour.toFixed(2)}/hr to your aligned rate`
+                      : "Set billable hours on principal or team to see per-hour impact"}
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
 
           <div className="mt-3">
