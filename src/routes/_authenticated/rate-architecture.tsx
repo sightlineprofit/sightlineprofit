@@ -355,6 +355,114 @@ function LayerCard({
   );
 }
 
+function TeamLayerCard({
+  tag,
+  title,
+  total,
+  members,
+  annualHrs,
+}: {
+  tag: string;
+  title: string;
+  total: number;
+  members: MemberCostBreakdown[];
+  annualHrs: number;
+}) {
+  const max = members.reduce((m, r) => Math.max(m, r.total), 0) || 1;
+  return (
+    <div
+      style={{
+        background: "white",
+        border: `0.5px solid ${BORDER}`,
+        borderRadius: 10,
+        padding: "16px 18px",
+      }}
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+            {tag}
+          </div>
+          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: CHARCOAL, marginTop: 2 }}>
+            {title}
+          </div>
+        </div>
+        <div className="text-right">
+          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED }}>Annual</div>
+          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: CHARCOAL, marginTop: 2 }}>
+            {fmtUsd(total, { decimals: 0 })}
+          </div>
+        </div>
+      </div>
+      <div style={{ marginTop: 14, borderTop: `1px solid ${BORDER}`, paddingTop: 12 }}>
+        {members.length === 0 ? (
+          <div style={{ fontSize: 11, color: MUTED, fontStyle: "italic" }}>
+            No employed team members. Add them in settings to see their fully-burdened cost here.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {members.map((r, idx) => {
+              const rows: Array<{ label: string; amount: number }> = [
+                { label: r.baseLabel, amount: r.base },
+              ];
+              if (r.isW2 && r.tax > 0) rows.push({ label: "Employer payroll tax", amount: r.tax });
+              if (r.benefits > 0) rows.push({ label: "Benefits contribution", amount: r.benefits });
+              if (r.equipment > 0) rows.push({ label: "Equipment & overhead", amount: r.equipment });
+              const first = (r.name.split(" ")[0] || r.name).trim();
+              return (
+                <div key={r.id} style={{ paddingTop: idx === 0 ? 0 : 10, borderTop: idx === 0 ? "none" : `1px solid ${BORDER}` }}>
+                  <div className="flex items-baseline gap-2" style={{ marginBottom: 8 }}>
+                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: TERRA, opacity: 0.75 }} />
+                    <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 15, color: CHARCOAL }}>
+                      {r.name}
+                    </span>
+                    <span style={{ fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+                      {r.role}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {rows.map((it, i) => {
+                      const perHr = annualHrs > 0 ? it.amount / annualHrs : 0;
+                      const pct = (it.amount / max) * 100;
+                      return (
+                        <div key={i} className="grid items-center gap-3" style={{ gridTemplateColumns: "1.4fr 1.4fr auto auto" }}>
+                          <div style={{ fontSize: 12, color: CHARCOAL }}>{it.label}</div>
+                          <div style={{ height: 6, borderRadius: 3, background: "rgba(44,44,44,0.06)", position: "relative" }}>
+                            <div style={{ height: "100%", width: `${pct}%`, background: TERRA, opacity: 0.55, borderRadius: 3 }} />
+                          </div>
+                          <div className="text-right tabular-nums" style={{ fontSize: 11, color: MUTED, minWidth: 80 }}>
+                            {fmtUsd(it.amount, { decimals: 0 })}
+                          </div>
+                          <div className="text-right tabular-nums" style={{ fontSize: 11, color: TERRA, minWidth: 70 }}>
+                            {fmtUsd(perHr, { decimals: 2 })}/hr
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div
+                      className="grid items-center gap-3"
+                      style={{ gridTemplateColumns: "1.4fr 1.4fr auto auto", paddingTop: 6, borderTop: `1px solid ${BORDER}`, marginTop: 4 }}
+                    >
+                      <div style={{ fontSize: 12, color: CHARCOAL, fontWeight: 500 }}>{first} total</div>
+                      <div />
+                      <div className="text-right tabular-nums" style={{ fontSize: 12, color: CHARCOAL, fontWeight: 500, minWidth: 80 }}>
+                        {fmtUsd(r.total, { decimals: 0 })}
+                      </div>
+                      <div className="text-right tabular-nums" style={{ fontSize: 11, color: TERRA, minWidth: 70 }}>
+                        {fmtUsd(annualHrs > 0 ? r.total / annualHrs : 0, { decimals: 2 })}/hr
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RateBuildPanel({ c, targetMarginPct }: { c: Calc; targetMarginPct: number }) {
   const hrs = c.annualBillableHrs || 1;
   const compHr = c.compTotal / hrs;
