@@ -723,6 +723,7 @@ const firmMemberSchema = z.object({
   other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
   expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
   weeks_per_year: z.number().min(0).max(60).optional().nullable(),
+  billed_rate: z.number().min(0).max(100000).optional().nullable(),
 });
 
 export const saveFirmMember = createServerFn({ method: "POST" })
@@ -780,6 +781,7 @@ export const saveFirmMember = createServerFn({ method: "POST" })
       other_annual_costs: data.other_annual_costs ?? null,
       expected_hrs_per_week: data.expected_hrs_per_week ?? null,
       weeks_per_year: data.weeks_per_year ?? null,
+      billed_rate: data.billed_rate ?? null,
       burdened_hourly_rate: hr || null,
       burdened_weekly_cost: wk || null,
     };

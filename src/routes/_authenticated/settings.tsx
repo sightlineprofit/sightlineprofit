@@ -287,6 +287,7 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
     burdened_weekly_cost: m.burdened_weekly_cost,
     weeks_per_year: m.weeks_per_year,
     expected_hrs_per_week: m.expected_hrs_per_week,
+    billed_rate: m.billed_rate ?? null,
   }));
   const c = useMemo(
     () => calc(cfg, (expenses ?? []) as Expense[], { ownerComp: ownerRows, teamProfiles: teamBurdens }),
@@ -425,6 +426,7 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
       burdened_weekly_cost: m.burdened_weekly_cost,
       weeks_per_year: m.weeks_per_year,
       expected_hrs_per_week: m.expected_hrs_per_week,
+      billed_rate: m.billed_rate ?? null,
     }));
   const c = useMemo(
     () => calc(cfg, expenses, { ownerComp, teamProfiles }),
@@ -1100,6 +1102,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
                   firmState={firmState}
                   stateDefault={stateDefault}
                   initials={initials}
+                  firmRate={(liveConfig as any)?.rate_billed ?? null}
                 />
               ))}
             </div>
@@ -1159,12 +1162,13 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
 }
 
 function MemberCard({
-  m, open, onToggle, onSave, onDelete, firmState, stateDefault, initials,
+  m, open, onToggle, onSave, onDelete, firmState, stateDefault, initials, firmRate,
 }: {
   m: any; open: boolean; onToggle: () => void;
   onSave: (d: any) => Promise<any>; onDelete: () => Promise<void>;
   firmState: string | null; stateDefault: number;
   initials: (n: string, e: string | null) => string;
+  firmRate?: number | null;
 }) {
   const isContract = m.employment_type === "contractor" || m.employment_type === "1099";
   const [d, setD] = useState<any>(() => ({
@@ -1180,6 +1184,7 @@ function MemberCard({
     other_annual_costs: m.other_annual_costs,
     expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
     weeks_per_year: m.weeks_per_year ?? 48,
+    billed_rate: m.billed_rate ?? null,
   }));
 
   const status: { dot: string; label: string; border: string } = m.is_platform_user
@@ -1264,6 +1269,14 @@ function MemberCard({
                   <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
                 </Field>
               </Row2>
+              <Field label="Billed rate (optional)">
+                <NumInput
+                  value={d.billed_rate?.toString() ?? ""}
+                  onChange={(v) => setD({ ...d, billed_rate: v === "" ? null : Number(v) })}
+                  prefix="$"
+                  placeholder={firmRate ? `Defaults to firm rate ($${Math.round(Number(firmRate))}/hr)` : "Defaults to firm rate"}
+                />
+              </Field>
               <p className="mb-2 text-[10px] leading-[1.5] text-ch/60">
                 Contractor costs are not subject to employer payroll tax. Ensure you are correctly classifying this worker — misclassification carries significant legal and tax risk.
               </p>
@@ -1312,6 +1325,14 @@ function MemberCard({
               </Row2>
               <Field label="Expected hours per week">
                 <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setD({ ...d, expected_hrs_per_week: v === "" ? null : Number(v) })} />
+              </Field>
+              <Field label="Billed rate (optional)">
+                <NumInput
+                  value={d.billed_rate?.toString() ?? ""}
+                  onChange={(v) => setD({ ...d, billed_rate: v === "" ? null : Number(v) })}
+                  prefix="$"
+                  placeholder={firmRate ? `Defaults to firm rate ($${Math.round(Number(firmRate))}/hr)` : "Defaults to firm rate"}
+                />
               </Field>
             </>
           )}

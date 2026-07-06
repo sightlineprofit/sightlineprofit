@@ -20,6 +20,15 @@ type Member = {
   weeks_per_year?: number | null;
 };
 
+export type RevenueContributor = {
+  label: string;   // e.g. "Caprice Gossett"
+  role: string;    // e.g. "PRINCIPAL" or "TEAM — JR DESIGNER"
+  rate: number;    // $/hr
+  hrs: number;     // hrs/week
+  weeks: number;   // weeks/year
+  revenue: number; // computed annual $
+};
+
 const CHARCOAL = "#2C2C2C";
 const GOLD = "#D4A017";
 const GOLD_DIM = "#B8860B";
@@ -686,33 +695,85 @@ function SubRows({
   );
 }
 
-function BudgetRevenueContent({ c, cfg }: { c: Calc; cfg: any }) {
-  const billed = c.billedRate || 0;
-  const perWeek = Number(cfg?.target_billable_hrs_per_week) || c.targetBillableHrsWeek || 0;
-  const weeks = c.weeksPerYear || 48;
-  const budget = billed * perWeek * weeks;
+function BudgetRevenueContent({
+  c,
+  contributors = [],
+}: {
+  c: Calc;
+  contributors?: RevenueContributor[];
+}) {
+  const total = c.annualRevenue || 0;
   const floor = c.totalCost || 0;
   const alignedRevenue = (c.alignedRate || 0) * (c.annualBillableHrs || 0);
-  const covers = budget >= floor;
-  const marginAnnual = budget - floor;
-  const marginPct = budget > 0 ? Math.round((marginAnnual / budget) * 100) : 0;
+  const covers = total >= floor;
+  const marginAnnual = total - floor;
+  const marginPct = total > 0 ? Math.round((marginAnnual / total) * 100) : 0;
 
   return (
     <>
-      <Header>Your budget revenue — what you're set up to earn</Header>
-      <Paragraph>
-        Budget revenue is what your firm would earn in a year if you billed your target hours
-        at your current rate. It is the revenue ceiling of your current setup.
-      </Paragraph>
-      <SectionHead>How it's calculated</SectionHead>
-      <RowLine label="Your billed rate" value={`${fmtUsd(billed)}/hr`} />
-      <RowLine label="× Target billable hours/week" value={`${perWeek} hrs`} />
-      <RowLine label="× Weeks per year" value={`${weeks} wks`} border={false} />
-      <Divider />
-      <div className="flex justify-between items-baseline">
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.85)" }}>= Budget revenue</span>
-        <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: "white" }}>
-          {fmtUsd(budget)}/yr
+      <Header>Your budget revenue — full firm picture</Header>
+      {contributors.length > 0 ? (
+        <div style={{ marginTop: 10 }}>
+          {contributors.map((cn, i) => (
+            <div
+              key={`${cn.role}-${cn.label}-${i}`}
+              style={{
+                paddingBottom: 10,
+                marginBottom: 10,
+                borderBottom:
+                  i < contributors.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "rgba(255,255,255,0.65)",
+                }}
+              >
+                {cn.role}
+              </div>
+              <div style={{ fontSize: 11, color: "white", fontWeight: 500, marginTop: 1 }}>
+                {cn.label}
+              </div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
+                {fmtUsd(cn.rate)}/hr × {cn.hrs} hrs × {cn.weeks} wks
+              </div>
+              <div style={{ fontSize: 11, color: "white", fontWeight: 500, marginTop: 2 }}>
+                = {fmtUsd(cn.revenue)}/yr
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <Paragraph>
+          Budget revenue is what your firm would earn if every billable contributor billed
+          their target hours at their current rate.
+        </Paragraph>
+      )}
+      <div
+        style={{
+          marginTop: 4,
+          paddingTop: 8,
+          borderTop: "1px solid rgba(255,255,255,0.15)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            letterSpacing: "0.16em",
+            textTransform: "uppercase",
+            color: "rgba(255,255,255,0.35)",
+          }}
+        >
+          Combined budget revenue
+        </span>
+        <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, color: GOLD }}>
+          {fmtUsd(total)}/yr
         </span>
       </div>
 
@@ -721,7 +782,7 @@ function BudgetRevenueContent({ c, cfg }: { c: Calc; cfg: any }) {
         label="Covers cost floor"
         value={covers ? "✓ Covered" : "✗ Not covered"}
         valueColor={covers ? GREEN : TERRA}
-        hint={covers ? `${fmtUsd(floor)}/yr` : `Shortfall: ${fmtUsd(floor - budget)}/yr`}
+        hint={covers ? `${fmtUsd(floor)}/yr` : `Shortfall: ${fmtUsd(floor - total)}/yr`}
       />
       <RowLine
         label="Generates margin"
@@ -733,19 +794,23 @@ function BudgetRevenueContent({ c, cfg }: { c: Calc; cfg: any }) {
         label="vs. Revenue at aligned rate"
         value={`${fmtUsd(alignedRevenue)}/yr`}
         valueColor="rgba(255,255,255,0.55)"
-        hint={budget < alignedRevenue ? `${fmtUsd(alignedRevenue - budget)}/yr in uncaptured revenue at your target rate` : undefined}
+        hint={
+          total < alignedRevenue
+            ? `${fmtUsd(alignedRevenue - total)}/yr in uncaptured revenue at your target rate`
+            : `+${fmtUsd(total - alignedRevenue)}/yr surplus over aligned target`
+        }
         border={false}
       />
 
-      {budget < floor ? (
+      {total < floor ? (
         <Callout tone="critical">
           At your current rate and hours, your firm cannot cover its own cost floor. This is
           the gap that has likely existed for years. Closing it requires raising your rate,
           billing more hours, or reducing your cost structure — or some combination of all three.
         </Callout>
-      ) : budget < alignedRevenue ? (
+      ) : total < alignedRevenue ? (
         <Callout tone="warn">
-          Your firm covers its costs but leaves {fmtUsd(alignedRevenue - budget)}/yr in margin
+          Your firm covers its costs but leaves {fmtUsd(alignedRevenue - total)}/yr in margin
           on the table at your current rate. That gap is profit your firm is entitled to but
           not capturing.
         </Callout>
@@ -768,6 +833,7 @@ export function MetricBreakdown({
   targetMarginPct = 0,
   members = [],
   expenses = [],
+  contributors = [],
   side = "left",
   iconSize = 14,
 }: {
@@ -777,6 +843,7 @@ export function MetricBreakdown({
   targetMarginPct?: number;
   members?: Member[];
   expenses?: Expense[];
+  contributors?: RevenueContributor[];
   side?: "left" | "bottom";
   iconSize?: number;
 }) {
@@ -883,7 +950,9 @@ export function MetricBreakdown({
           {metric === "margin" && <MarginContent c={c} targetMarginPct={targetMarginPct} />}
           {metric === "breakeven" && <BreakevenContent c={c} cfg={cfg} />}
           {metric === "cost_floor" && <CostFloorContent c={c} members={members} expenses={expenses} />}
-          {metric === "budget_revenue" && <BudgetRevenueContent c={c} cfg={cfg} />}
+          {metric === "budget_revenue" && (
+            <BudgetRevenueContent c={c} contributors={contributors} />
+          )}
 
           <ClosingLine />
         </div>

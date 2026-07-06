@@ -1,0 +1,1 @@
+ALTER TABLE public.firm_members ADD COLUMN IF NOT EXISTS billed_rate numeric(10,2);
