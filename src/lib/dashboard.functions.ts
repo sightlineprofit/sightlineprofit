@@ -35,6 +35,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
     fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
     const eightWeeksAgo = new Date(startOfWeek);
     eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+    const yearStart = new Date(startOfWeek.getFullYear(), 0, 1);
+    const yearStartIso = yearStart.toISOString().slice(0, 10);
 
     const [
       { data: firm },
@@ -54,6 +56,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: manualLogsWindow },
       { data: ownerComp },
       { data: teamBurdens },
+      { data: ytdEntries },
+      { data: memberLastEntries },
     ] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -114,6 +118,17 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id)
         .eq("is_active", true)
         .neq("role_type", "principal"),
+      supabase
+        .from("time_entries")
+        .select("hrs, billable, user_id")
+        .eq("firm_id", profile.firm_id)
+        .gte("date", yearStartIso),
+      supabase
+        .from("time_entries")
+        .select("user_id, date")
+        .eq("firm_id", profile.firm_id)
+        .order("date", { ascending: false })
+        .limit(1000),
     ]);
 
     const isBD = (status: string | null | undefined) =>
@@ -167,6 +182,32 @@ export const getDashboardData = createServerFn({ method: "GET" })
       total_hrs: sopTotals.get(t.id as string) ?? 0,
     }));
 
+    // YTD hours per user (billable + non-billable), plus weeks elapsed this year.
+    const ytdHoursByUser: Record<string, { billable: number; nonBillable: number }> = {};
+    for (const t of ytdEntries ?? []) {
+      const uid = (t as any).user_id as string | null;
+      if (!uid) continue;
+      const rec = ytdHoursByUser[uid] ?? { billable: 0, nonBillable: 0 };
+      const h = Number((t as any).hrs || 0);
+      if ((t as any).billable) rec.billable += h;
+      else rec.nonBillable += h;
+      ytdHoursByUser[uid] = rec;
+    }
+    const msPerWeek = 7 * 86400000;
+    const weeksElapsed = Math.max(
+      1,
+      Math.ceil((startOfWeek.getTime() - yearStart.getTime()) / msPerWeek) + 1,
+    );
+
+    // Last entry date per user (from most recent 1000 rows — plenty for freshness).
+    const lastEntryByUser: Record<string, string> = {};
+    for (const t of memberLastEntries ?? []) {
+      const uid = (t as any).user_id as string | null;
+      if (!uid) continue;
+      const d = (t as any).date as string;
+      if (!lastEntryByUser[uid] || d > lastEntryByUser[uid]) lastEntryByUser[uid] = d;
+    }
+
     return {
       profile, firm, config, expenses: expenses ?? [], scenarios: scenarios ?? [],
       prefs: { hidden_metrics: prefs?.hidden_metrics ?? [] },
@@ -185,6 +226,9 @@ export const getDashboardData = createServerFn({ method: "GET" })
         trailingEntries: trailingEntries ?? [],
         avgWeeklyNonBillable,
         sopTemplates: sopTemplatesOut,
+        ytdHoursByUser,
+        lastEntryByUser,
+        weeksElapsed,
       },
     };
   });
