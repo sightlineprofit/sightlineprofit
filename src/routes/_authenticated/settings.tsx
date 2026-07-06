@@ -1507,8 +1507,6 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
         rate: m.billed_rate != null ? String(m.billed_rate) : "",
       };
     }
-    setDrafts((prev) => ({ ...next, ...Object.fromEntries(Object.entries(prev).filter(([id]) => next[id] !== undefined && (prev[id]?.hrs !== next[id].hrs || prev[id]?.rate !== next[id].rate) ? false : true)) }));
-    // simpler: overwrite with server values on roster change
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team.map((m: any) => `${m.id}:${m.expected_hrs_per_week ?? ""}:${m.billed_rate ?? ""}`).join("|")]);
