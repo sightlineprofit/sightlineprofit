@@ -1269,6 +1269,14 @@ function MemberCard({
                   <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
                 </Field>
               </Row2>
+              <Field label="Billed rate (optional)">
+                <NumInput
+                  value={d.billed_rate?.toString() ?? ""}
+                  onChange={(v) => setD({ ...d, billed_rate: v === "" ? null : Number(v) })}
+                  prefix="$"
+                  placeholder={firmRate ? `Defaults to firm rate ($${Math.round(Number(firmRate))}/hr)` : "Defaults to firm rate"}
+                />
+              </Field>
               <p className="mb-2 text-[10px] leading-[1.5] text-ch/60">
                 Contractor costs are not subject to employer payroll tax. Ensure you are correctly classifying this worker — misclassification carries significant legal and tax risk.
               </p>
@@ -1317,6 +1325,14 @@ function MemberCard({
               </Row2>
               <Field label="Expected hours per week">
                 <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setD({ ...d, expected_hrs_per_week: v === "" ? null : Number(v) })} />
+              </Field>
+              <Field label="Billed rate (optional)">
+                <NumInput
+                  value={d.billed_rate?.toString() ?? ""}
+                  onChange={(v) => setD({ ...d, billed_rate: v === "" ? null : Number(v) })}
+                  prefix="$"
+                  placeholder={firmRate ? `Defaults to firm rate ($${Math.round(Number(firmRate))}/hr)` : "Defaults to firm rate"}
+                />
               </Field>
             </>
           )}
