@@ -191,7 +191,7 @@ function Dashboard() {
   // Build data for the CapacityTile and CapacitySlideOver
   const capacityData: CapacityTileData & CapacityExpandedData = useMemo(() => {
     const cap: any = (data as any)?.capacity ?? {};
-    const team = (cap.team ?? []) as Array<{ id: string; name: string; expected_hrs_per_week: number | null }>;
+    const team = (cap.team ?? []) as CapacityExpandedData["team"];
     const weeklyHoursByUser = new Map<string, number>();
     for (const t of (cap.trailingEntries ?? []) as Array<{ user_id?: string; hrs: number | null; date: string }>) {
       if (!t.user_id) continue;
