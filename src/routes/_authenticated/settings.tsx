@@ -271,16 +271,16 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
   const getCtx = useServerFn(getMyContext);
   const listExp = useServerFn(listExpenses);
   const listOwn = useServerFn(listOwnerCompensations);
-  const listT = useServerFn(listTeam);
+  const listFM = useServerFn(listFirmMembers);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
   const { data: expenses } = useQuery({ queryKey: ["expenses"], queryFn: () => listExp() });
   const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
-  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
+  const { data: firmMembers } = useQuery({ queryKey: ["firmMembers"], queryFn: () => listFM() });
 
   const cfg = ctx?.config ?? null;
   const ownerRows = (ownerData?.comp ?? []) as OwnerCompensationRow[];
   const principalCount = ownerData?.principals?.length ?? 0;
-  const teamMembers = (teamData?.members ?? []).filter((m: any) => m.role !== "principal");
+  const teamMembers = (firmMembers ?? []).filter((m: any) => m.role_type !== "principal");
   const teamBurdens = teamMembers.map((m: any) => ({
     burdened_weekly_cost: m.burdened_weekly_cost,
     weeks_per_year: m.weeks_per_year,
@@ -411,13 +411,13 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
   cfg: any; expenses: Expense[];
 }) {
   const listOwn = useServerFn(listOwnerCompensations);
-  const listT = useServerFn(listTeam);
+  const listFM = useServerFn(listFirmMembers);
   const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
-  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
+  const { data: firmMembers } = useQuery({ queryKey: ["firmMembers"], queryFn: () => listFM() });
   const ownerComp = (cfg?.__ownerCompOverride as OwnerCompensationRow[] | undefined)
     ?? ((ownerData?.comp ?? []) as OwnerCompensationRow[]);
-  const teamProfiles = (teamData?.members ?? [])
-    .filter((m: any) => m.role !== "principal")
+  const teamProfiles = (firmMembers ?? [])
+    .filter((m: any) => m.role_type !== "principal")
     .map((m: any) => ({
       burdened_weekly_cost: m.burdened_weekly_cost,
       weeks_per_year: m.weeks_per_year,
@@ -1413,14 +1413,8 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
     try {
       const payload: any = { id, role: r };
       if (r === "principal") {
-        // Clear burdened cost columns — their cost now lives in owner_compensation.
-        Object.assign(payload, {
-          cost_rate: null,
-          annual_base_salary: null,
-          employer_payroll_tax_pct: null,
-          annual_benefits: null,
-          other_annual_costs: null,
-        });
+        // Clear per-profile cost hint — their cost now lives in owner_compensation.
+        Object.assign(payload, { cost_rate: null });
       }
       await update({ data: payload });
       toast.success("Role updated.");
