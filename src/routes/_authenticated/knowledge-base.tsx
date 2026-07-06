@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { listKbItemsForUser } from "@/lib/admin.functions";
+import { listKbItemsForUser, getKbItemBySlug } from "@/lib/admin.functions";
 import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { effectiveTier } from "@/lib/role";
@@ -131,16 +131,23 @@ function KbPage() {
 }
 
 function KbReader({ item, onBack }: { item: any; onBack: () => void }) {
-  const isYouTube = item.video_url && /youtube\.com|youtu\.be/.test(item.video_url);
-  const isVimeo = item.video_url && /vimeo\.com/.test(item.video_url);
+  const getFn = useServerFn(getKbItemBySlug);
+  const { data: full, isLoading } = useQuery({
+    queryKey: ["kb-item", item.slug],
+    queryFn: () => getFn({ data: { slug: item.slug } }),
+    enabled: !!item.slug,
+  });
+  const merged: any = { ...item, ...(full ?? {}) };
+  const isYouTube = merged.video_url && /youtube\.com|youtu\.be/.test(merged.video_url);
+  const isVimeo = merged.video_url && /vimeo\.com/.test(merged.video_url);
   const embedUrl = (() => {
-    if (!item.video_url) return null;
+    if (!merged.video_url) return null;
     if (isYouTube) {
-      const m = item.video_url.match(/(?:v=|youtu\.be\/)([\w-]{11})/);
+      const m = merged.video_url.match(/(?:v=|youtu\.be\/)([\w-]{11})/);
       return m ? `https://www.youtube.com/embed/${m[1]}` : null;
     }
     if (isVimeo) {
-      const m = item.video_url.match(/vimeo\.com\/(\d+)/);
+      const m = merged.video_url.match(/vimeo\.com\/(\d+)/);
       return m ? `https://player.vimeo.com/video/${m[1]}` : null;
     }
     return null;
@@ -155,23 +162,25 @@ function KbReader({ item, onBack }: { item: any; onBack: () => void }) {
       >
         <ArrowLeft className="h-4 w-4" /> Back to library
       </button>
-      <p className="text-[11px] uppercase tracking-[0.25em] text-gold">{item.category}</p>
-      <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{item.title}</h1>
-      {item.summary && <p className="mt-3 text-lg text-ch/70">{item.summary}</p>}
+      <p className="text-[11px] uppercase tracking-[0.25em] text-gold">{merged.category}</p>
+      <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{merged.title}</h1>
+      {merged.summary && <p className="mt-3 text-lg text-ch/70">{merged.summary}</p>}
 
       <div className="mt-8">
-        {item.type === "video" && item.video_url ? (
+        {merged.type === "video" && merged.video_url ? (
           embedUrl ? (
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
-              <iframe src={embedUrl} className="h-full w-full" allowFullScreen title={item.title} />
+              <iframe src={embedUrl} className="h-full w-full" allowFullScreen title={merged.title} />
             </div>
           ) : (
-            <video src={item.video_url} controls className="w-full rounded-lg" />
+            <video src={merged.video_url} controls className="w-full rounded-lg" />
           )
+        ) : isLoading && !merged.body ? (
+          <p className="text-sm text-ch/50">Loading article…</p>
         ) : (
           <article className="prose prose-stone max-w-none prose-headings:font-display prose-headings:tracking-tight prose-a:text-gold">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {typeof item.body === "string" ? item.body : ""}
+              {typeof merged.body === "string" ? merged.body : ""}
             </ReactMarkdown>
           </article>
         )}
