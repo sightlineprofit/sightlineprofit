@@ -1161,12 +1161,13 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
 }
 
 function MemberCard({
-  m, open, onToggle, onSave, onDelete, firmState, stateDefault, initials,
+  m, open, onToggle, onSave, onDelete, firmState, stateDefault, initials, firmRate,
 }: {
   m: any; open: boolean; onToggle: () => void;
   onSave: (d: any) => Promise<any>; onDelete: () => Promise<void>;
   firmState: string | null; stateDefault: number;
   initials: (n: string, e: string | null) => string;
+  firmRate?: number | null;
 }) {
   const isContract = m.employment_type === "contractor" || m.employment_type === "1099";
   const [d, setD] = useState<any>(() => ({
@@ -1182,6 +1183,7 @@ function MemberCard({
     other_annual_costs: m.other_annual_costs,
     expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
     weeks_per_year: m.weeks_per_year ?? 48,
+    billed_rate: m.billed_rate ?? null,
   }));
 
   const status: { dot: string; label: string; border: string } = m.is_platform_user
