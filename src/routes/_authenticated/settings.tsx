@@ -436,7 +436,10 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
     c.rateHealth === "healthy" ? "Above floor"
     : c.rateHealth === "below_floor" ? "Below floor"
     : "Below break-even";
-  const budgetRevenue = (cfg?.rate_billed ?? 0) * (cfg?.target_billable_hrs_per_week ?? 0) * 52;
+  // Full firm budget revenue: principal + each billable team member.
+  // calc() already sums principal (rate × target hrs × weeks) + Σ (member.billed_rate ?? firm rate) × expected_hrs_per_week × weeks
+  // for every member whose expected_hrs_per_week > 0.
+  const budgetRevenue = c.annualRevenue;
   const marginVal = c.marginAboveFloor;
   const marginStr = `${marginVal >= 0 ? "+" : "-"}$${Math.round(Math.abs(marginVal))}/hr`;
   const rows: Array<{ label: string; value: string; gold?: boolean; metric: MetricKind }> = [
