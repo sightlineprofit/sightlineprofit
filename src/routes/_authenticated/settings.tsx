@@ -18,6 +18,7 @@ import { ModulePage } from "@/components/shell/ModulePage";
 import { calc, type Expense, type OwnerCompensationRow } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
@@ -60,6 +61,64 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Row2({ children }: { children: React.ReactNode }) {
   return <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">{children}</div>;
 }
+
+/**
+ * State-aware employer payroll tax input.
+ * - Default value = federal FICA (7.65%) + state new-employer SUI rate.
+ * - Renders a small breakdown below the input.
+ * - "Reset to state default" link snaps back to the computed default.
+ */
+function EmployerTaxField({
+  label = "Employer payroll tax %",
+  firmState,
+  value,
+  onChange,
+}: {
+  label?: string;
+  firmState?: string | null;
+  value: number | null | undefined;
+  onChange: (v: number | null) => void;
+}) {
+  const def = getDefaultEmployerTaxRate(firmState);
+  const current = value ?? def.total;
+  const displayed = value == null ? def.total.toString() : String(value);
+  const stateLabel = def.state_code ?? "State";
+  return (
+    <div className="mb-3">
+      <label className={fieldLabel}>{label}</label>
+      <NumInput
+        value={displayed}
+        onChange={(x) => onChange(x === "" ? null : Number(x))}
+        suffix="%"
+      />
+      {def.state_code ? (
+        <div
+          className="mt-1 leading-[1.5]"
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 9, color: "#888" }}
+        >
+          Federal FICA: {FEDERAL_FICA_PCT}% · {stateLabel} SUI:{" "}
+          {def.state_sui}% · Total (yours): {Number(current).toFixed(2)}%
+          <button
+            type="button"
+            onClick={() => onChange(def.total)}
+            className="ml-2 cursor-pointer text-gold hover:opacity-80"
+            style={{ fontFamily: "Jost, sans-serif", fontSize: 9 }}
+          >
+            Reset to {stateLabel} default ({def.total}%)
+          </button>
+        </div>
+      ) : (
+        <div
+          className="mt-1 leading-[1.5]"
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 9, color: "#888" }}
+        >
+          Add your state in Firm settings to include state unemployment tax.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SaveRow({ onCancel, onSave, saveLabel = "Save", saving }: {
   onCancel?: () => void; onSave?: () => void; saveLabel?: string; saving?: boolean;
 }) {
@@ -641,6 +700,7 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
                 isMe={p.id === myId}
                 mode={mode}
                 structure={mode === "advanced" ? structure : null}
+                firmState={(me?.firm as any)?.state ?? null}
                 value={drafts[p.id]}
                 savedValue={compByProfile.get(p.id) ?? null}
                 onChange={(v) => { setDrafts((d) => ({ ...d, [p.id]: v })); if (reviewNote) setReviewNote(false); }}
@@ -682,10 +742,11 @@ function structureExplainer(s: string | null): string {
   }
 }
 
-function PrincipalCard({ principal, isMe, mode, structure, value, savedValue, onChange, onSaved }: {
+function PrincipalCard({ principal, isMe, mode, structure, firmState, value, savedValue, onChange, onSaved }: {
   principal: any; isMe: boolean;
   mode: "simple" | "advanced";
   structure: string | null;
+  firmState?: string | null;
   value: OwnerCompensationRow | undefined;
   savedValue: OwnerCompensationRow | null;
   onChange: (v: OwnerCompensationRow) => void;
@@ -818,9 +879,11 @@ function PrincipalCard({ principal, isMe, mode, structure, value, savedValue, on
                 <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
               </Field>
               <Row2>
-                <Field label="Employer payroll tax %">
-                  <NumInput value={v.payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
-                </Field>
+                <EmployerTaxField
+                  firmState={firmState}
+                  value={v.payroll_tax_pct}
+                  onChange={(x) => onChange({ ...v, payroll_tax_pct: x })}
+                />
                 <Field label="Employee payroll tax %">
                   <NumInput value={v.employee_payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, employee_payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
                 </Field>
@@ -866,9 +929,11 @@ function PrincipalCard({ principal, isMe, mode, structure, value, savedValue, on
               <Field label="W-2 salary (annual)">
                 <NumInput value={v.comp_draw_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, comp_draw_annual: x === "" ? null : Number(x) })} prefix="$" />
               </Field>
-              <Field label="Employer payroll tax %">
-                <NumInput value={v.payroll_tax_pct?.toString() ?? "7.65"} onChange={(x) => onChange({ ...v, payroll_tax_pct: x === "" ? null : Number(x) })} suffix="%" />
-              </Field>
+              <EmployerTaxField
+                firmState={firmState}
+                value={v.payroll_tax_pct}
+                onChange={(x) => onChange({ ...v, payroll_tax_pct: x })}
+              />
               <Row2>
                 <Field label="Health insurance">
                   <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
@@ -927,6 +992,9 @@ function computeCardTotal(r: OwnerCompensationRow, isSCorp: boolean): number {
 function TeamCostPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { liveConfig, expenses } = useFinancialDraft();
+  const { data: me } = useMe();
+  const firmState = ((me?.firm as any)?.state ?? null) as string | null;
+  const stateDefault = getDefaultEmployerTaxRate(firmState).total;
   const listT = useServerFn(listTeam);
   const update = useServerFn(updateTeamMember);
   const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
@@ -941,7 +1009,8 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
         compensation_type: m.compensation_type ?? "hourly",
         cost_rate: m.cost_rate,
         annual_base_salary: m.annual_base_salary,
-        employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? 7.65,
+        // Use saved value if present; otherwise fall back to state-aware default.
+        employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? stateDefault,
         annual_benefits: m.annual_benefits,
         other_annual_costs: m.other_annual_costs,
         expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
@@ -950,7 +1019,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
     }
     setDrafts(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members.length]);
+  }, [members.length, stateDefault]);
 
   async function save(m: any) {
     const d = drafts[m.id];
@@ -1022,9 +1091,11 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
                             <option value="salaried">Salaried</option>
                           </select>
                         </Field>
-                        <Field label="Employer payroll tax %">
-                          <NumInput value={d.employer_payroll_tax_pct?.toString() ?? "7.65"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, employer_payroll_tax_pct: v === "" ? null : Number(v) } }))} suffix="%" />
-                        </Field>
+                        <EmployerTaxField
+                          firmState={firmState}
+                          value={d.employer_payroll_tax_pct}
+                          onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, employer_payroll_tax_pct: v } }))}
+                        />
                       </Row2>
                       {d.compensation_type === "salaried" ? (
                         <Row2>
