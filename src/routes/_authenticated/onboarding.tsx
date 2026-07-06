@@ -9,6 +9,7 @@ import {
   addExpense,
   inviteTeamMember,
   upsertOwnerCompensation,
+  saveFirmMember,
 } from "@/lib/firm.functions";
 import { FieldLabel, inputClass, primaryBtnClass, ghostBtnClass } from "@/components/auth/AuthShell";
 import { InfoTip } from "@/components/dashboard/InfoTip";
@@ -45,6 +46,7 @@ function Onboarding() {
   const saveExpense = useServerFn(addExpense);
   const sendInvite = useServerFn(inviteTeamMember);
   const saveOwnerComp = useServerFn(upsertOwnerCompensation);
+  const saveMember = useServerFn(saveFirmMember);
   const { data: ctx } = useQuery({ queryKey: ["me-onboarding"], queryFn: () => getCtx() });
 
   const [step, setStep] = useState(0);
@@ -89,6 +91,7 @@ function Onboarding() {
   const [tHrs, setTHrs] = useState("40");
   const [tWeeks, setTWeeks] = useState("48");
   const [tPct, setTPct] = useState("75");
+  const [tInviteNow, setTInviteNow] = useState(false);
 
   const tBurden = useMemo(() => {
     const cost = Number(tCost) || 0;
@@ -114,9 +117,9 @@ function Onboarding() {
     setExAmt("");
   };
 
-  const addTeamLocal = () => {
-    if (!tName.trim() || !tEmail.trim()) {
-      toast.error("Name and email required.");
+  const addTeamLocal = async () => {
+    if (!tName.trim()) {
+      toast.error("Name required.");
       return;
     }
     const member: TeamDraft = {
@@ -130,18 +133,36 @@ function Onboarding() {
       billable_pct: Number(tPct) || 0,
     };
     setTeam((arr) => [...arr, member]);
-    // Fire invitation email immediately
-    sendInvite({ data: member })
-      .then(() => {
-        setSentInvites((s) => [...s, member.email]);
-        toast.success(`Invitation sent to ${member.email}`);
-      })
-      .catch((e) => {
-        toast.error(
-          e instanceof Error ? e.message : `Could not send invitation to ${member.email}`,
-        );
+    // Save an internal firm_members record (no invite by default).
+    try {
+      await saveMember({
+        data: {
+          name: member.name,
+          email: member.email || null,
+          role_type: tRole,
+          employment_type: "employee",
+          compensation_type: "hourly",
+          hourly_wage: member.cost_rate,
+          expected_hrs_per_week: member.expected_hrs_per_week,
+          weeks_per_year: member.weeks_per_year,
+        },
       });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save member.");
+    }
+    // Optionally send an invite if requested.
+    if (tInviteNow && member.email) {
+      sendInvite({ data: member })
+        .then(() => {
+          setSentInvites((s) => [...s, member.email]);
+          toast.success(`Invitation sent to ${member.email}`);
+        })
+        .catch((e) => toast.error(e instanceof Error ? e.message : `Could not invite ${member.email}`));
+    } else {
+      toast.success(`Saved ${member.name}. Invite them later from Settings → Team.`);
+    }
     setTName(""); setTEmail(""); setTBill("125"); setTCost("45"); setTHrs("40"); setTWeeks("48"); setTPct("75");
+    setTInviteNow(false);
   };
 
   const finish = async () => {
@@ -183,11 +204,10 @@ function Onboarding() {
         });
       }
       for (const t of team) {
-        // Invitations are already sent immediately when a member is added in
-        // step 4. If the user added a member just before clicking Finish (with
-        // a non-empty form), there's nothing left to send here.
-        if (!sentInvites.includes(t.email)) {
-          try { await sendInvite({ data: t }); } catch { /* surfaced earlier */ }
+        // Records are already saved to firm_members when added in step 4.
+        // Nothing to flush here unless the user has an unsaved draft they meant to invite.
+        if (false && !sentInvites.includes(t.email)) {
+          try { await sendInvite({ data: t }); } catch { /* handled above */ }
         }
       }
       toast.success("Studio set up. Welcome to Sightline.");
