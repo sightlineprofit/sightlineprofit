@@ -108,10 +108,11 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .select("*")
         .eq("firm_id", profile.firm_id),
       supabase
-        .from("profiles")
-        .select("id, role, burdened_weekly_cost, weeks_per_year")
+        .from("firm_members")
+        .select("id, role_type, burdened_weekly_cost, weeks_per_year")
         .eq("firm_id", profile.firm_id)
-        .in("role", ["admin", "team", "view_only"]),
+        .eq("is_active", true)
+        .neq("role_type", "principal"),
     ]);
 
     const isBD = (status: string | null | undefined) =>
