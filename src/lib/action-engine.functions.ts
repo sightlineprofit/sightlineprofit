@@ -79,10 +79,10 @@ export const getActionEngineState = createServerFn({ method: "GET" })
       supabase.from("firm_signal_state").select("*").eq("firm_id", firmId).maybeSingle(),
       supabase
         .from("aligned_rate_history")
-        .select("aligned_rate, snapshot_at")
+        .select("rate, changed_at")
         .eq("firm_id", firmId)
-        .gte("snapshot_at", new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString())
-        .order("snapshot_at", { ascending: true }),
+        .gte("changed_at", new Date(Date.now() - 180 * 24 * 3600 * 1000).toISOString())
+        .order("changed_at", { ascending: true }),
       supabase
         .from("projects")
         .select("id, status")
@@ -113,7 +113,7 @@ export const getActionEngineState = createServerFn({ method: "GET" })
     const utilContribution = Math.max(0, alignedRate - alignedAtTarget);
     // cost creep: aligned rate growth over last 180 days
     const rh = rateHistory ?? [];
-    const oldestAligned = rh.length > 0 ? Number(rh[0].aligned_rate) : alignedRate;
+    const oldestAligned = rh.length > 0 ? Number(rh[0].rate) : alignedRate;
     const costContribution = Math.max(0, alignedRate - oldestAligned);
 
     const compTotal = pricingContribution + utilContribution + costContribution || 1;
