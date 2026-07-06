@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
+import { MetricBreakdown } from "@/components/dashboard/MetricBreakdown";
 
 type PanelKind = "rate" | "capacity" | null;
 
