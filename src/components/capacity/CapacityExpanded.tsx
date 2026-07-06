@@ -38,6 +38,10 @@ export type CapacityExpandedData = {
   configSetup: boolean;
   annualRevenue: number;
   alignedAnnualRevenue: number;
+  ytdHoursByUser?: Record<string, { billable: number; nonBillable: number }>;
+  lastEntryByUser?: Record<string, string>;
+  weeksElapsed?: number;
+  principal?: { id: string; name: string; target: number };
 };
 
 const TAB_KEY = "sightline:capacity-tab";
