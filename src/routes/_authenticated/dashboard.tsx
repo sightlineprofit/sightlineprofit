@@ -48,6 +48,7 @@ import {
   useHealthChangeToast,
 } from "@/components/dashboard/RateArchitectureHeader";
 import { ActionEnginePanel } from "@/components/dashboard/ActionEnginePanel";
+import { TeamHoursTile } from "@/components/dashboard/TeamHoursTile";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -303,12 +304,22 @@ function Dashboard() {
               targetMarginPct={targetMarginPct}
               configUpdatedAt={(data?.config as any)?.updated_at}
             />
-            <WeeklyPulse
-              weekBillable={weekMetrics.billable}
-              targetHrs={targetHrs}
-              rate={rateBilled}
-              activeProjects={activeProjects}
-            />
+            <div className="flex flex-col gap-3">
+              <WeeklyPulse
+                weekBillable={weekMetrics.billable}
+                targetHrs={targetHrs}
+                rate={rateBilled}
+                activeProjects={activeProjects}
+              />
+              <TeamHoursTile
+                members={((data as any)?.capacity?.team ?? []).filter((m: any) => m.is_active !== false)}
+                trailingEntries={trailingEntries}
+                weekStartIso={weekStartIso}
+                weekEndIso={weekEndIso}
+                firmName={(data?.firm as any)?.name ?? "your firm"}
+                principalName={(data?.profile?.name || data?.profile?.email || "Your principal") as string}
+              />
+            </div>
           </div>
         </>
       )}
