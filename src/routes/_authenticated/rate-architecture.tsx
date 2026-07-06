@@ -6,6 +6,7 @@ import { getDashboardData } from "@/lib/dashboard.functions";
 import { createCommitmentSet } from "@/lib/commitments.functions";
 import { calc, fmtUsd, type FirmConfig, type Expense } from "@/lib/finance";
 import { buildTeamCostBreakdown } from "@/lib/team-cost";
+import type { MemberCostBreakdown } from "@/lib/team-cost";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/rate-architecture")({
