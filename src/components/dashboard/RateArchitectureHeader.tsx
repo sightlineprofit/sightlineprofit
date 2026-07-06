@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
@@ -137,7 +137,6 @@ export function RateArchitecturePanel({
           <span style={{ fontSize: 9, color: MUTED }}>{agoLabel(configUpdatedAt)}</span>
           <Link
             to="/settings"
-            search={{ panel: "rate" } as never}
             style={{ fontSize: 9, color: GOLD, letterSpacing: "0.06em" }}
             className="hover:underline"
           >
@@ -385,7 +384,7 @@ export function RateArchitecturePanel({
             </>
           )}
           <div className="flex gap-4" style={{ marginTop: 6 }}>
-            <Link to="/settings" search={{ panel: "rate" } as never} style={{ color: GOLD }} className="hover:underline">
+            <Link to="/settings" style={{ color: GOLD }} className="hover:underline">
               Model a rate increase →
             </Link>
             <Link to="/projects" style={{ color: GOLD }} className="hover:underline">
@@ -672,12 +671,11 @@ export function PricingStrip({
 
 /* Toast-on-health-change tracker (returned as hook for parent to mount) */
 export function useHealthChangeToast(current: Calc["rateHealth"]) {
-  const [prev, setPrev] = useState<Calc["rateHealth"] | null>(null);
+  const prev = useRef<Calc["rateHealth"] | null>(null);
   useEffect(() => {
-    if (prev !== null && prev !== current) {
+    if (prev.current !== null && prev.current !== current) {
       import("sonner").then(({ toast }) => toast("Rate health updated", { duration: 1500 }));
     }
-    setPrev(current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    prev.current = current;
   }, [current]);
 }
