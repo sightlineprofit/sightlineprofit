@@ -302,9 +302,6 @@ function Dashboard() {
               activeProjects={activeProjects}
             />
           </div>
-          <div className="mt-4">
-            <ActionEnginePanel />
-          </div>
         </>
       )}
 
@@ -313,6 +310,10 @@ function Dashboard() {
         <ActiveProjectsTile projects={activeProjects} />
         <FourWeekTrendTile trend={trend} target={targetHrs} rate={rateBilled} />
         <CapacityTile data={capacityData as unknown as CapacityTileData} onOpen={() => setOpenPanel("capacity")} />
+      </div>
+
+      <div className="mt-4">
+        <ActionEnginePanel />
       </div>
 
       {/* Quick log */}
