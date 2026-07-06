@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
+import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricBreakdown";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
