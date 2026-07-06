@@ -1102,6 +1102,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
                   firmState={firmState}
                   stateDefault={stateDefault}
                   initials={initials}
+                  firmRate={(liveConfig as any)?.rate_billed ?? null}
                 />
               ))}
             </div>
