@@ -1445,10 +1445,6 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
 }
 
 function RatePanel({ onClose }: { onClose: () => void }) {
-  return <RatePanelImpl onClose={onClose} />;
-}
-
-function RatePanelImpl({ onClose }: { onClose: () => void }) {
   const { draft, patch, liveConfig, expenses } = useFinancialDraft();
   const avail = Number(draft.available_hrs_per_week) || 0;
   const target = Number(draft.target_billable_hrs_per_week) || 0;
