@@ -20,6 +20,7 @@ import { calc, type Expense, type OwnerCompensationRow } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
+import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
@@ -448,7 +449,10 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
             <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-gold">Live output</p>
             <h3 className="mt-0.5 mb-3 font-display text-[18px] text-ch">Your numbers</h3>
             <div className="text-[9px] uppercase tracking-[0.1em] text-ch/60">Aligned rate</div>
-            <div className="font-display text-[32px] leading-none text-ch">${Math.round(c.alignedRate)}</div>
+            <div className="font-display text-[32px] leading-none text-ch flex items-center">
+              <span>${Math.round(c.alignedRate)}</span>
+              <AlignedRateBreakdown c={c} targetMarginPct={Number(cfg?.target_gross_margin_pct) || 0} side="left" />
+            </div>
             <div className="mt-1 text-[10px] text-ch/60 mb-2.5">Your floor.</div>
             <div className="border-t border-border">
               {rows.map(([label, value, gold], i) => (
