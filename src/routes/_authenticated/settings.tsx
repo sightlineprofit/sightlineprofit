@@ -700,6 +700,7 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
                 isMe={p.id === myId}
                 mode={mode}
                 structure={mode === "advanced" ? structure : null}
+                firmState={(me?.firm as any)?.state ?? null}
                 value={drafts[p.id]}
                 savedValue={compByProfile.get(p.id) ?? null}
                 onChange={(v) => { setDrafts((d) => ({ ...d, [p.id]: v })); if (reviewNote) setReviewNote(false); }}
@@ -741,10 +742,11 @@ function structureExplainer(s: string | null): string {
   }
 }
 
-function PrincipalCard({ principal, isMe, mode, structure, value, savedValue, onChange, onSaved }: {
+function PrincipalCard({ principal, isMe, mode, structure, firmState, value, savedValue, onChange, onSaved }: {
   principal: any; isMe: boolean;
   mode: "simple" | "advanced";
   structure: string | null;
+  firmState?: string | null;
   value: OwnerCompensationRow | undefined;
   savedValue: OwnerCompensationRow | null;
   onChange: (v: OwnerCompensationRow) => void;
