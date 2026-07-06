@@ -1274,6 +1274,7 @@ export type Database = {
         Row: {
           activity_group_id: string | null
           billable: boolean
+          cost_rate_at_time: number | null
           created_at: string
           date: string
           end_time: string | null
@@ -1289,6 +1290,7 @@ export type Database = {
         Insert: {
           activity_group_id?: string | null
           billable?: boolean
+          cost_rate_at_time?: number | null
           created_at?: string
           date: string
           end_time?: string | null
@@ -1304,6 +1306,7 @@ export type Database = {
         Update: {
           activity_group_id?: string | null
           billable?: boolean
+          cost_rate_at_time?: number | null
           created_at?: string
           date?: string
           end_time?: string | null
@@ -1487,6 +1490,7 @@ export type Database = {
         Returns: {
           activity_group_id: string | null
           billable: boolean
+          cost_rate_at_time: number | null
           created_at: string
           date: string
           end_time: string | null

@@ -1550,23 +1550,41 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
   const invite = useServerFn(inviteTeamMember);
   const update = useServerFn(updateTeamMember);
   const resend = useServerFn(resendInvitation);
+  const listFM = useServerFn(listFirmMembers);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
+  const { data: fmData } = useQuery({ queryKey: ["firmMembers"], queryFn: () => listFM() });
   const [email, setEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
   const [role, setRole] = useState<"principal" | "team" | "admin" | "view_only">("team");
   const [sending, setSending] = useState(false);
 
-  function refresh() { qc.invalidateQueries({ queryKey: ["team"] }); }
+  function refresh() {
+    qc.invalidateQueries({ queryKey: ["team"] });
+    qc.invalidateQueries({ queryKey: ["firmMembers"] });
+  }
 
   async function send() {
     if (!email) return;
     setSending(true);
     try {
-      await invite({ data: { email, role } as any });
+      await invite({ data: { email, role, name: inviteName || null } as any });
       toast.success("Invitation sent.");
       setEmail("");
+      setInviteName("");
       refresh();
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not send."); }
     finally { setSending(false); }
+  }
+
+  function inviteExisting(m: any) {
+    setEmail(m.email ?? "");
+    setInviteName(m.name ?? "");
+    setRole((m.role_type === "contractor" ? "team" : m.role_type) || "team");
+    // Scroll invite form into view via focus.
+    setTimeout(() => {
+      const el = document.getElementById("invite-email-input");
+      if (el) (el as HTMLInputElement).focus();
+    }, 60);
   }
 
   async function changeRole(id: string, r: string, name: string) {
@@ -1592,29 +1610,91 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
   const initials = (name: string, email: string) =>
     (name || email).split(/\s+/).map(s => s[0]).slice(0, 2).join("").toUpperCase();
 
+  // Unified list: every firm_members row. Rows with profile_id use the profile
+  // role selector; others show status + optional "Invite to Sightline".
+  const rows = ((fmData ?? []) as any[]).filter(m => m.role_type !== "principal");
+  // Also surface invitations that don't yet have a firm_members mirror
+  // (rare, legacy). Merge by email so we don't double-list.
+  const seenEmails = new Set(rows.map(r => (r.email || "").toLowerCase()));
+  const orphanInvites = (data?.invites ?? []).filter(
+    (i: any) => !seenEmails.has((i.email || "").toLowerCase()),
+  );
+
+  const rowStatus = (m: any) => {
+    if (m.is_platform_user) return { label: "Active", dot: "#3F7A4E", tone: "ok" };
+    if (m.invite_sent_at && !m.invite_accepted_at)
+      return { label: "Pending invite", dot: "#B8860B", tone: "warn" };
+    return { label: "Internal record", dot: "#C0B8AA", tone: "muted" };
+  };
+
   return (
     <PanelShell title="Team" subtitle="Members, roles, and invitations." onClose={onClose}>
       <div className="mb-3 overflow-hidden rounded-[6px] border border-border bg-white">
-        {data?.members?.map((m, i) => (
-          <div key={m.id} className={cn("flex items-center gap-2.5 px-3 py-2.5", i < (data?.members?.length ?? 0) - 1 && "border-b border-border")}>
+        {/* Principals (from profiles) — shown first, no editing here */}
+        {(data?.members ?? []).filter(m => m.role === "principal").map((m) => (
+          <div key={`p-${m.id}`} className="flex items-center gap-2.5 border-b border-border px-3 py-2.5">
             <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials(m.name || "", m.email)}</div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-medium text-ch">{m.name || m.email}</div>
               <div className="truncate text-[10px] text-ch/60">{m.email}</div>
             </div>
-            {m.role === "principal" ? (
-              <span className="text-[10px] text-ch/60">Principal</span>
-            ) : (
-              <select className={cn(selectCls, "w-[110px] py-[3px] text-[10px]")} value={m.role} onChange={(e) => changeRole(m.id, e.target.value, m.name || m.email)}>
-                <option value="principal">Principal</option>
-                <option value="admin">Admin</option>
-                <option value="team">Team</option>
-                <option value="view_only">View only</option>
-              </select>
-            )}
+            <span className="text-[10px] text-ch/60">Principal</span>
           </div>
         ))}
-        {data?.invites?.map((i) => (
+        {rows.map((m, i) => {
+          const st = rowStatus(m);
+          const profile = (data?.members ?? []).find(p => p.id === m.profile_id);
+          const pendingInvite = (data?.invites ?? []).find(
+            (inv: any) => (inv.email || "").toLowerCase() === (m.email || "").toLowerCase(),
+          );
+          return (
+            <div key={m.id} className={cn("flex items-center gap-2.5 px-3 py-2.5", i < rows.length - 1 && "border-b border-border")}>
+              <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-cream text-[9px] font-medium text-ch/70">
+                {initials(m.name || "", m.email || "")}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12px] font-medium text-ch">{m.name || m.email || "Unnamed"}</div>
+                <div className="truncate text-[10px] text-ch/60">{m.email || "No email"}</div>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: st.dot }} />
+                <span className="text-ch/60">{st.label}</span>
+              </div>
+              {profile ? (
+                <select
+                  className={cn(selectCls, "w-[110px] py-[3px] text-[10px]")}
+                  value={profile.role}
+                  onChange={(e) => changeRole(profile.id, e.target.value, profile.name || profile.email)}
+                >
+                  <option value="principal">Principal</option>
+                  <option value="admin">Admin</option>
+                  <option value="team">Team</option>
+                  <option value="view_only">View only</option>
+                </select>
+              ) : pendingInvite ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try { await resend({ data: { id: pendingInvite.id } }); toast.success("Resent."); refresh(); }
+                    catch { toast.error("Could not resend."); }
+                  }}
+                  className="text-[10px] text-ch/60 hover:text-gold"
+                >Resend</button>
+              ) : m.email ? (
+                <button
+                  type="button"
+                  onClick={() => inviteExisting(m)}
+                  className="rounded-[3px] border border-gold px-2 py-[3px] text-[10px] font-medium text-gold hover:bg-gold hover:text-white transition-colors"
+                >
+                  Invite to Sightline
+                </button>
+              ) : (
+                <span className="text-[10px] italic text-ch/40">Add email to invite</span>
+              )}
+            </div>
+          );
+        })}
+        {orphanInvites.map((i: any) => (
           <div key={i.id} className="flex items-center gap-2.5 border-t border-border bg-cream/50 px-3 py-2.5">
             <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-creamd/50 text-[9px] text-ch/50">{initials("", i.email)}</div>
             <div className="min-w-0 flex-1">
@@ -1629,7 +1709,7 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
             >Resend</button>
           </div>
         ))}
-        {!data?.members?.length && !data?.invites?.length && (
+        {!rows.length && !(data?.members?.length) && !orphanInvites.length && (
           <div className="px-3 py-6 text-center text-[11px] text-ch/50">No team members yet.</div>
         )}
       </div>
@@ -1637,7 +1717,7 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
       <div className="rounded-[6px] border border-border bg-cream/70 p-3">
         <div className="mb-2 text-[11px] font-medium text-ch">Invite a team member</div>
         <div className="mb-2 flex gap-2">
-          <input type="email" className={cn(inputCls, "flex-1")} placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input id="invite-email-input" type="email" className={cn(inputCls, "flex-1")} placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
           <select className={cn(selectCls, "w-[110px]")} value={role} onChange={(e) => setRole(e.target.value as any)}>
             <option value="principal">Principal</option>
             <option value="team">Team</option>
@@ -1645,6 +1725,11 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
             <option value="view_only">View only</option>
           </select>
         </div>
+        {inviteName && (
+          <div className="mb-2 text-[10px] text-ch/60">
+            Inviting <span className="font-medium text-ch">{inviteName}</span> — their cost data will link on accept.
+          </div>
+        )}
         <p className="mb-2.5 text-[10px] leading-[1.5] text-ch/60">
           Principal: full ownership access, own compensation settings, and billing. Team: time calendar and assigned projects only. Admin: full access except billing. View only: read-only.
         </p>

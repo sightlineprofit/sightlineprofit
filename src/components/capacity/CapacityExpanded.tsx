@@ -25,12 +25,13 @@ export type CapacityExpandedData = {
   bdWeekHours: number;
   team: Array<{
     id: string;
+    profile_id?: string | null;
     name: string | null;
     email: string | null;
-    role: string;
-    color: string | null;
+    role_type?: string;
+    is_platform_user?: boolean;
     expected_hrs_per_week: number | null;
-    billable_rate: number | null;
+    burdened_hourly_rate?: number | null;
   }>;
   weeklyHoursByUser: Map<string, number>;
   sopTemplates: Array<{ id: string; name: string; total_hrs: number }>;
@@ -775,30 +776,40 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {data.team.map((m) => {
           const memberTarget = Number(m.expected_hrs_per_week ?? target) || 0;
-          const logged = data.weeklyHoursByUser.get(m.id) ?? 0;
+          const lookupId = m.profile_id ?? m.id;
+          const logged = data.weeklyHoursByUser.get(lookupId) ?? 0;
+          const tracks = m.is_platform_user !== false;
           const pct = memberTarget > 0 ? Math.min(100, (logged / memberTarget) * 100) : 0;
           const over = logged > memberTarget;
           return (
             <div key={m.id} className="rounded-xl border border-border bg-white p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: m.color ?? "#B8860B" }} />
+                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#B8860B" }} />
                   <div>
                     <div className="font-display text-base text-ch">{m.name || m.email}</div>
-                    <div className="text-[10px] uppercase tracking-wider text-ch/50">{m.role}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-ch/50">{m.role_type ?? ""}</div>
                   </div>
                 </div>
                 <div className="text-right text-[11px] text-ch/60">
-                  <div className="num text-ch">{logged.toFixed(1)} / {memberTarget.toFixed(0)} hrs</div>
-                  <div>this week</div>
+                  {tracks ? (
+                    <>
+                      <div className="num text-ch">{logged.toFixed(1)} / {memberTarget.toFixed(0)} hrs</div>
+                      <div>this week</div>
+                    </>
+                  ) : (
+                    <div className="italic text-ch/50">Time not tracked in Sightline</div>
+                  )}
                 </div>
               </div>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-cream">
-                <div
-                  className="h-full"
-                  style={{ width: `${pct}%`, background: over ? "#C4714A" : (m.color ?? "#B8860B") }}
-                />
-              </div>
+              {tracks && (
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-cream">
+                  <div
+                    className="h-full"
+                    style={{ width: `${pct}%`, background: over ? "#C4714A" : "#B8860B" }}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
@@ -819,15 +830,17 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
             <tbody>
               {data.team.map((m) => {
                 const t = Number(m.expected_hrs_per_week ?? target) || 0;
-                const logged = data.weeklyHoursByUser.get(m.id) ?? 0;
+                const lookupId = m.profile_id ?? m.id;
+                const logged = data.weeklyHoursByUser.get(lookupId) ?? 0;
+                const tracks = m.is_platform_user !== false;
                 const util = t > 0 ? (logged / t) * 100 : 0;
                 const border = logged > t ? "#C4714A" : util < 80 ? "#B8860B" : "transparent";
                 return (
                   <tr key={m.id} style={{ borderLeft: `2px solid ${border}` }}>
                     <td className="py-1 pl-2 text-ch">{m.name || m.email}</td>
                     <td className="py-1 text-right num">{t.toFixed(0)}</td>
-                    <td className="py-1 text-right num">{logged.toFixed(1)}</td>
-                    <td className="py-1 text-right num">{Math.round(util)}%</td>
+                    <td className="py-1 text-right num">{tracks ? logged.toFixed(1) : "—"}</td>
+                    <td className="py-1 text-right num">{tracks ? `${Math.round(util)}%` : "—"}</td>
                   </tr>
                 );
               })}
