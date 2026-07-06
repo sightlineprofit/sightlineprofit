@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getDashboardData } from "@/lib/dashboard.functions";
 import { createCommitmentSet } from "@/lib/commitments.functions";
 import { calc, fmtUsd, type FirmConfig, type Expense } from "@/lib/finance";
@@ -971,13 +971,10 @@ function CommitTab({
     [baseBilled, baseHrs, scenario],
   );
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const [saved, setSaved] = useState(false);
   const createSet = useServerFn(createCommitmentSet);
 
   // Persist commitments on first mount (Tab 3 accessed)
-  useMemo(() => {
-    if (saved) return;
-    setSaved(true);
+  useEffect(() => {
     createSet({
       data: {
         items: commitments.map((c) => ({
