@@ -64,7 +64,7 @@ export const getActionEngineState = createServerFn({ method: "GET" })
       supabase.from("owner_compensation").select("*").eq("firm_id", firmId),
       supabase
         .from("firm_members")
-        .select("id, role_type, burdened_weekly_cost, weeks_per_year, expected_hrs_per_week")
+        .select("id, role_type, burdened_weekly_cost, weeks_per_year, expected_hrs_per_week, billed_rate")
         .eq("firm_id", firmId)
         .eq("is_active", true)
         .neq("role_type", "principal"),
