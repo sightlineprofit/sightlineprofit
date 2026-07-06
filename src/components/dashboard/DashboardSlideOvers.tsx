@@ -458,175 +458,21 @@ export function RateBreakdownSlideOver({
 export function CapacitySlideOver({
   open,
   onClose,
-  weekBillable,
-  target,
-  availableHrsPerWeek,
-  trend,
-  committedHrs,
+  data,
 }: {
   open: boolean;
   onClose: () => void;
-  weekBillable: number;
-  target: number;
-  availableHrsPerWeek: number;
-  trend: Array<{ start: string; billable: number }>;
-  committedHrs: number;
+  data: CapacityExpandedData;
 }) {
-  const navigate = useNavigate();
-  const remaining = Math.max(0, target - weekBillable);
-  const onTarget = target > 0 && weekBillable >= target;
-  const pct = target > 0 ? Math.min(100, (weekBillable / target) * 100) : 0;
-  const barColor = pct < 60 ? "var(--terra)" : pct <= 85 ? "var(--gold)" : "var(--success)";
-
-  const utilization =
-    availableHrsPerWeek > 0 ? Math.round((target / availableHrsPerWeek) * 100) : 0;
-  const annualTarget = target * 48;
-  const availableCapacity = annualTarget - committedHrs;
-
-  const loggedColor = target > 0 && weekBillable >= target ? "text-success" : "text-gold";
-  const remainingColor = remaining > 0 ? "text-gold" : "text-success";
-
-  const go = (to: string, hash?: string) => {
-    onClose();
-    setTimeout(() => {
-      navigate({ to, hash } as any);
-    }, 240);
-  };
-
   return (
-    <Shell open={open} onClose={onClose} eyebrow="CAPACITY" title="Your time">
-      {/* Section 1: This week summary */}
-      <div
-        style={{
-          background: "white",
-          border: "0.5px solid var(--border)",
-          borderRadius: 4,
-          padding: "14px 16px",
-        }}
-      >
-        <DetailRow
-          label="Billable hours logged"
-          value={`${prettyN(weekBillable)} hrs`}
-          valueClassName={loggedColor}
-        />
-        <DetailRow label="Target billable hours" value={`${prettyN(target)} hrs`} />
-        <DetailRow
-          label="Hours remaining"
-          value={onTarget ? "On target" : `${prettyN(remaining)} hrs`}
-          valueClassName={remainingColor}
-          last
-        />
-        <div
-          className="mt-3 h-[6px] w-full overflow-hidden rounded-[3px]"
-          style={{ background: "var(--creamd)" }}
-        >
-          <div
-            className="h-full transition-all duration-500"
-            style={{ width: `${pct}%`, background: barColor }}
-          />
-        </div>
-      </div>
-
-      <Divider />
-
-      {/* Section 2: Weekly setup */}
-      <SectionLabel>YOUR WEEKLY SETUP</SectionLabel>
-      <div className="mt-2">
-        <DetailRow label="Target billable hrs/week" value={`${prettyN(target)} hrs`} />
-        <DetailRow
-          label="Available hrs/week"
-          value={`${prettyN(availableHrsPerWeek)} hrs`}
-        />
-        <DetailRow label="Utilization target" value={`${utilization}%`} last />
-      </div>
-      <p
-        className="mt-3 text-[11px] font-light text-ch/70"
-        style={{ lineHeight: 1.7 }}
-      >
-        Based on {prettyN(target)} billable hours per week across 48 working weeks, your
-        annual billable target is {prettyN(annualTarget)} hours.
-      </p>
-
-      <Divider />
-
-      {/* Section 3: 4-week rolling */}
-      <SectionLabel>4-WEEK TREND</SectionLabel>
-      <div className="mt-2">
-        {trend.map((w, i) => {
-          const isThisWeek = i === trend.length - 1;
-          const label = isThisWeek
-            ? "This week"
-            : `Week of ${new Date(w.start + "T00:00:00").toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })}`;
-          const diff = target - w.billable;
-          const color =
-            target > 0 && w.billable >= target
-              ? "text-success"
-              : diff <= 4
-                ? "text-gold"
-                : "text-terra";
-          const barFill =
-            target > 0 && w.billable >= target
-              ? "var(--success)"
-              : diff <= 4
-                ? "var(--gold)"
-                : "var(--terra)";
-          const rowPct = target > 0 ? Math.min(100, (w.billable / target) * 100) : 0;
-          return (
-            <div
-              key={w.start}
-              style={{
-                padding: "8px 0",
-                borderBottom:
-                  i === trend.length - 1 ? "none" : "0.5px solid rgba(44,44,44,.06)",
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-ch/60">{label}</span>
-                <span className={cn("text-[11px] font-medium num", color)}>
-                  {prettyN(w.billable)} / {prettyN(target)} hrs
-                </span>
-              </div>
-              <div
-                className="mt-1 h-[3px] w-full overflow-hidden rounded-[2px]"
-                style={{ background: "var(--creamd)" }}
-              >
-                <div
-                  className="h-full"
-                  style={{ width: `${rowPct}%`, background: barFill }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <Divider />
-
-      {/* Section 4: Annual picture */}
-      <SectionLabel>ANNUAL PICTURE</SectionLabel>
-      <div className="mt-2">
-        <DetailRow label="Annual billable target" value={`${prettyN(annualTarget)} hrs`} />
-        <DetailRow
-          label="Committed hours (active projects)"
-          value={`${prettyN(committedHrs)} hrs`}
-          tip="Total scoped hours across all active projects"
-        />
-        <DetailRow
-          label="Available capacity"
-          value={`${prettyN(availableCapacity)} hrs`}
-          valueClassName={availableCapacity >= 0 ? "text-success" : "text-danger"}
-          last
-        />
-      </div>
-
-      <EditPromptFooter
-        primary={{ label: "Edit capacity settings →", to: "/settings?panel=rate" }}
-        secondary={{ label: "View time calendar →", to: "/calendar" }}
-        onNavigate={go}
-      />
+    <Shell
+      open={open}
+      onClose={onClose}
+      eyebrow="CAPACITY"
+      title="Your time"
+      widthStyle={{ width: "50vw", minWidth: 640, maxWidth: 860 }}
+    >
+      <CapacityExpanded data={data} />
     </Shell>
   );
 }
