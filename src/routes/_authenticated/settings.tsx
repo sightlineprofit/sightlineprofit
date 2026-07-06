@@ -12,6 +12,7 @@ import {
   upsertFirmConfig, listExpenses, addExpense, deleteExpense,
   updateTeamMember, setPreferredHome,
   listOwnerCompensations, upsertOwnerCompensation,
+  listFirmMembers, saveFirmMember, deleteFirmMember,
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { ModulePage } from "@/components/shell/ModulePage";
