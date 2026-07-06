@@ -8,6 +8,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
 import { MetricBreakdown } from "@/components/dashboard/MetricBreakdown";
+import { CapacityExpanded, type CapacityExpandedData } from "@/components/capacity/CapacityExpanded";
 
 type PanelKind = "rate" | "capacity" | null;
 
@@ -86,12 +87,14 @@ function Shell({
   eyebrow,
   title,
   children,
+  widthStyle,
 }: {
   open: boolean;
   onClose: () => void;
   eyebrow: string;
   title: string;
   children: React.ReactNode;
+  widthStyle?: React.CSSProperties;
 }) {
   const isMobile = useIsMobile();
   const [mounted, setMounted] = useState(false);
@@ -150,6 +153,7 @@ function Shell({
         padding: "28px 28px 48px",
         transform: visible ? "translateX(0)" : "translateX(100%)",
         transition: "transform 0.22s ease",
+        ...(widthStyle ?? {}),
       };
 
   return createPortal(
@@ -166,7 +170,16 @@ function Shell({
         }}
       />
       <aside style={panelStyle} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="mb-6 flex items-start justify-between">
+        <div
+          className="mb-6 flex items-start justify-between"
+          style={{
+            position: "sticky",
+            top: 0,
+            background: "var(--cream)",
+            zIndex: 1,
+            paddingBottom: 8,
+          }}
+        >
           <div>
             <div
               className="text-[9px] font-semibold uppercase text-gold"
