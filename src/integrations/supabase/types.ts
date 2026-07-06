@@ -373,6 +373,7 @@ export type Database = {
         Row: {
           annual_base_salary: number | null
           annual_benefits: number | null
+          billed_rate: number | null
           burdened_hourly_rate: number | null
           burdened_weekly_cost: number | null
           compensation_type: string
@@ -400,6 +401,7 @@ export type Database = {
         Insert: {
           annual_base_salary?: number | null
           annual_benefits?: number | null
+          billed_rate?: number | null
           burdened_hourly_rate?: number | null
           burdened_weekly_cost?: number | null
           compensation_type?: string
@@ -427,6 +429,7 @@ export type Database = {
         Update: {
           annual_base_salary?: number | null
           annual_benefits?: number | null
+          billed_rate?: number | null
           burdened_hourly_rate?: number | null
           burdened_weekly_cost?: number | null
           compensation_type?: string
