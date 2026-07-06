@@ -228,6 +228,7 @@ export function RateArchitecturePanel({
             <MetricBreakdown metric="breakeven" c={c} cfg={cfg} side="bottom" iconSize={12} />
           }
           divider
+          center
         />
         <NumCell
           label="Margin target"
@@ -472,6 +473,7 @@ function NumCell({
   hintColor,
   trailing,
   divider,
+  center,
 }: {
   label: string;
   value: string;
@@ -480,19 +482,20 @@ function NumCell({
   hintColor: string;
   trailing?: React.ReactNode;
   divider?: boolean;
+  center?: boolean;
 }) {
   return (
     <div style={divider ? { borderRight: `1px solid ${BORDER}`, paddingRight: 16 } : { paddingLeft: 16 }}>
-      <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+      <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600, textAlign: center ? "center" : undefined }}>
         {label}
       </div>
-      <div className="flex items-baseline gap-1" style={{ marginTop: 4 }}>
+      <div className={`flex items-baseline gap-1 ${center ? "justify-center" : ""}`} style={{ marginTop: 4 }}>
         <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 28, color: valueColor, lineHeight: 1 }}>
           {value}
         </span>
         {trailing}
       </div>
-      {hint && <div style={{ fontSize: 10, color: hintColor, marginTop: 4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 10, color: hintColor, marginTop: 4, textAlign: center ? "center" : undefined }}>{hint}</div>}
     </div>
   );
 }
