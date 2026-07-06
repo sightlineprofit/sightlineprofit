@@ -996,148 +996,314 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
   const { data: me } = useMe();
   const firmState = ((me?.firm as any)?.state ?? null) as string | null;
   const stateDefault = getDefaultEmployerTaxRate(firmState).total;
-  const listT = useServerFn(listTeam);
-  const update = useServerFn(updateTeamMember);
-  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listT() });
-  const members = (teamData?.members ?? []).filter((m: any) => m.role !== "principal");
+
+  const listFM = useServerFn(listFirmMembers);
+  const save = useServerFn(saveFirmMember);
+  const del = useServerFn(deleteFirmMember);
+  const { data: fmData } = useQuery({ queryKey: ["firmMembers"], queryFn: () => listFM() });
+  const members = ((fmData ?? []) as any[]).filter((m: any) => m.role_type !== "principal");
+
+  // sort: active users → internal records → pending invites
+  const sorted = [...members].sort((a, b) => {
+    const rank = (m: any) =>
+      m.is_platform_user ? 0 : m.invite_sent_at && !m.invite_accepted_at ? 2 : 1;
+    return rank(a) - rank(b);
+  });
 
   const [openId, setOpenId] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, any>>({});
-  useEffect(() => {
-    const next: Record<string, any> = {};
-    for (const m of members) {
-      next[m.id] = {
-        compensation_type: m.compensation_type ?? "hourly",
-        cost_rate: m.cost_rate,
-        annual_base_salary: m.annual_base_salary,
-        // Use saved value if present; otherwise fall back to state-aware default.
-        employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? stateDefault,
-        annual_benefits: m.annual_benefits,
-        other_annual_costs: m.other_annual_costs,
-        expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
-        weeks_per_year: m.weeks_per_year ?? 48,
-      };
-    }
-    setDrafts(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members.length, stateDefault]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<any>({
+    name: "", email: "", role_type: "team", employment_type: "employee",
+  });
 
-  async function save(m: any) {
-    const d = drafts[m.id];
-    if (!d) return;
+  async function saveMember(id: string | undefined, d: any) {
     try {
-      await update({ data: { id: m.id, ...d } as any });
-      toast.success("Team member saved.");
-      qc.invalidateQueries({ queryKey: ["team"] });
+      const res = await save({ data: { id, ...d } });
+      toast.success(id ? "Team member saved." : "Team member added.");
+      qc.invalidateQueries({ queryKey: ["firmMembers"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
-      setOpenId(null);
+      if (!id && res?.id) setOpenId(res.id);
+      return res?.id;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save.");
     }
   }
 
-  const initials = (name: string, email: string) =>
-    (name || email).split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase();
+  async function addQuick() {
+    if (!addForm.name.trim()) { toast.error("Name required."); return; }
+    const newId = await saveMember(undefined, {
+      name: addForm.name.trim(),
+      email: addForm.email.trim() || null,
+      role_type: addForm.role_type,
+      employment_type: addForm.employment_type,
+      compensation_type: addForm.employment_type === "employee" ? "hourly" : "contract_hourly",
+      employer_payroll_tax_pct: addForm.employment_type === "employee" ? stateDefault : null,
+      expected_hrs_per_week: 40,
+      weeks_per_year: 48,
+    });
+    setAddForm({ name: "", email: "", role_type: "team", employment_type: "employee" });
+    setAddOpen(false);
+    if (newId) setOpenId(newId);
+  }
+
+  const initials = (name: string, email: string | null) =>
+    (name || email || "?").split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase();
 
   return (
     <FinancialLayout
       title="Team cost"
-      subtitle="Fully burdened annual cost of each team member."
+      subtitle="Fully burdened cost of each team member. Add cost records independently of Sightline access."
       onClose={onClose}
       cfg={liveConfig} expenses={expenses}
       left={
-        members.length === 0 ? (
-          <div className="rounded-[7px] border border-border bg-cream/50 px-4 py-6 text-center text-[11px] text-ch/60">
-            No team members yet.
-            <br />
-            Add team members from <span className="text-gold">Account → Team</span> and they will appear here.
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            {members.map((m: any) => {
-              const d = drafts[m.id] ?? {};
-              const configured = Number(m.burdened_weekly_cost) > 0;
-              const open = openId === m.id;
-              return (
-                <div key={m.id} className="overflow-hidden rounded-[7px] border border-border bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setOpenId(open ? null : m.id)}
-                    className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-cream/50"
-                  >
-                    <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials(m.name, m.email)}</div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[12px] font-medium text-ch">
-                        {m.name || m.email}
-                        <span className="ml-1.5 text-[10px] font-normal text-ch/60 capitalize">· {m.role.replace("_", " ")}</span>
-                      </div>
-                      <div className="mt-0.5 text-[10px]" style={{ color: configured ? "rgba(44,44,44,0.6)" : "#BA7517" }}>
-                        {configured
-                          ? `$${Math.round(Number(m.burdened_hourly_rate) || 0)}/hr burdened · $${Math.round((Number(m.burdened_weekly_cost) || 0) * (Number(m.weeks_per_year) || 48) / 1000)}k/yr`
-                          : "Not configured"}
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-ch/40">{open ? "▲" : "▼"}</span>
-                  </button>
-                  {open && (
-                    <div className="border-t border-border px-3.5 py-3">
-                      <Row2>
-                        <Field label="Compensation type">
-                          <select
-                            className={selectCls}
-                            value={d.compensation_type ?? "hourly"}
-                            onChange={(e) => setDrafts((s) => ({ ...s, [m.id]: { ...d, compensation_type: e.target.value } }))}
-                          >
-                            <option value="hourly">Hourly</option>
-                            <option value="salaried">Salaried</option>
-                          </select>
-                        </Field>
-                        <EmployerTaxField
-                          firmState={firmState}
-                          value={d.employer_payroll_tax_pct}
-                          onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, employer_payroll_tax_pct: v } }))}
-                        />
-                      </Row2>
-                      {d.compensation_type === "salaried" ? (
-                        <Row2>
-                          <Field label="Annual base salary">
-                            <NumInput value={d.annual_base_salary?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, annual_base_salary: v === "" ? null : Number(v) } }))} prefix="$" />
-                          </Field>
-                          <Field label="Weeks per year">
-                            <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, weeks_per_year: v === "" ? null : Number(v) } }))} />
-                          </Field>
-                        </Row2>
-                      ) : (
-                        <Row2>
-                          <Field label="Hourly cost rate">
-                            <NumInput value={d.cost_rate?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, cost_rate: v === "" ? null : Number(v) } }))} prefix="$" />
-                          </Field>
-                          <Field label="Weeks per year">
-                            <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, weeks_per_year: v === "" ? null : Number(v) } }))} />
-                          </Field>
-                        </Row2>
-                      )}
-                      <Row2>
-                        <Field label="Annual benefits">
-                          <NumInput value={d.annual_benefits?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, annual_benefits: v === "" ? null : Number(v) } }))} prefix="$" placeholder="0" />
-                        </Field>
-                        <Field label="Other annual costs">
-                          <NumInput value={d.other_annual_costs?.toString() ?? ""} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, other_annual_costs: v === "" ? null : Number(v) } }))} prefix="$" placeholder="0" />
-                        </Field>
-                      </Row2>
-                      <Field label="Expected hours per week">
-                        <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setDrafts((s) => ({ ...s, [m.id]: { ...d, expected_hrs_per_week: v === "" ? null : Number(v) } }))} />
-                      </Field>
-                      <SaveRow onCancel={() => setOpenId(null)} onSave={() => save(m)} />
-                    </div>
-                  )}
+        <>
+          {sorted.length === 0 && !addOpen ? (
+            <div className="rounded-[7px] border border-border bg-cream/50 px-4 py-6 text-center text-[11px] text-ch/60">
+              No team members yet. Click <span className="text-gold">+ Add team member</span> below.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {sorted.map((m: any) => (
+                <MemberCard
+                  key={m.id}
+                  m={m}
+                  open={openId === m.id}
+                  onToggle={() => setOpenId(openId === m.id ? null : m.id)}
+                  onSave={(d) => saveMember(m.id, d)}
+                  onDelete={async () => {
+                    if (!window.confirm(`Remove ${m.name}?`)) return;
+                    await del({ data: { id: m.id } });
+                    qc.invalidateQueries({ queryKey: ["firmMembers"] });
+                    qc.invalidateQueries({ queryKey: ["dashboard"] });
+                  }}
+                  firmState={firmState}
+                  stateDefault={stateDefault}
+                  initials={initials}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="mt-3">
+            {!addOpen ? (
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="inline-flex items-center gap-1.5 text-[11px] text-gold hover:underline"
+              >
+                <Plus size={13} /> Add team member
+              </button>
+            ) : (
+              <div className="rounded-[7px] border border-border bg-cream/50 p-3">
+                <div className="mb-2 text-[11px] font-medium text-ch">New team member</div>
+                <Row2>
+                  <Field label="Name">
+                    <input className={inputCls} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} autoFocus />
+                  </Field>
+                  <Field label="Role">
+                    <select className={selectCls} value={addForm.role_type} onChange={(e) => setAddForm({ ...addForm, role_type: e.target.value })}>
+                      <option value="admin">Admin</option>
+                      <option value="team">Team</option>
+                      <option value="contractor">Contractor</option>
+                      <option value="view_only">View only</option>
+                    </select>
+                  </Field>
+                </Row2>
+                <Row2>
+                  <Field label="Employment type">
+                    <select className={selectCls} value={addForm.employment_type} onChange={(e) => setAddForm({ ...addForm, employment_type: e.target.value })}>
+                      <option value="employee">Employee</option>
+                      <option value="contractor">Contractor</option>
+                      <option value="1099">1099</option>
+                    </select>
+                  </Field>
+                  <Field label="Email (optional)">
+                    <input className={inputCls} type="email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} placeholder="Only needed to invite later" />
+                  </Field>
+                </Row2>
+                <p className="mb-2 text-[10px] text-ch/60">
+                  Only needed if you want to invite them to Sightline later. You can add cost data now without an email.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" className={ghostBtn} onClick={() => setAddOpen(false)}>Cancel</button>
+                  <button type="button" className={goldBtn} onClick={addQuick}>Add member</button>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
-        )
+        </>
       }
     />
+  );
+}
+
+function MemberCard({
+  m, open, onToggle, onSave, onDelete, firmState, stateDefault, initials,
+}: {
+  m: any; open: boolean; onToggle: () => void;
+  onSave: (d: any) => Promise<any>; onDelete: () => Promise<void>;
+  firmState: string | null; stateDefault: number;
+  initials: (n: string, e: string | null) => string;
+}) {
+  const isContract = m.employment_type === "contractor" || m.employment_type === "1099";
+  const [d, setD] = useState<any>(() => ({
+    name: m.name,
+    email: m.email,
+    role_type: m.role_type,
+    employment_type: m.employment_type ?? "employee",
+    compensation_type: m.compensation_type ?? (isContract ? "contract_hourly" : "hourly"),
+    hourly_wage: m.hourly_wage,
+    annual_base_salary: m.annual_base_salary,
+    employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? stateDefault,
+    annual_benefits: m.annual_benefits,
+    other_annual_costs: m.other_annual_costs,
+    expected_hrs_per_week: m.expected_hrs_per_week ?? 40,
+    weeks_per_year: m.weeks_per_year ?? 48,
+  }));
+
+  const status: { dot: string; label: string; border: string } = m.is_platform_user
+    ? { dot: "#3B7A57", label: "Sightline user", border: "border-gold" }
+    : m.invite_sent_at && !m.invite_accepted_at
+      ? { dot: "#BA7517", label: "Invite pending", border: "border-gold border-dashed" }
+      : { dot: "#C0B8AA", label: "Internal record · Not invited", border: "border-border" };
+
+  const configured = Number(m.burdened_weekly_cost) > 0;
+  const summary = configured
+    ? `$${Math.round(Number(m.burdened_hourly_rate) || 0)}/hr burdened · $${Math.round((Number(m.burdened_weekly_cost) || 0) * (Number(m.weeks_per_year) || 48) / 1000)}k/yr`
+    : "No cost data";
+
+  const empType = d.employment_type;
+  const contract = empType === "contractor" || empType === "1099";
+
+  return (
+    <div className="overflow-hidden rounded-[7px] border border-border bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-cream/50"
+      >
+        <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ backgroundColor: status.dot }} />
+        <div className={cn("grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border bg-cream text-[9px] font-medium text-gold", status.border)}>
+          {initials(m.name, m.email)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-medium text-ch">
+            {m.name}
+            <span className="ml-1.5 text-[10px] font-normal text-ch/60 capitalize">· {String(m.role_type).replace("_", " ")}</span>
+          </div>
+          <div className="mt-0.5 text-[10px] text-ch/60">
+            {status.label}{configured ? ` · ${summary}` : ""}
+          </div>
+        </div>
+        <span className="text-[10px] text-ch/40">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border px-3.5 py-3">
+          <Row2>
+            <Field label="Name">
+              <input className={inputCls} value={d.name ?? ""} onChange={(e) => setD({ ...d, name: e.target.value })} />
+            </Field>
+            <Field label="Employment type">
+              <select className={selectCls} value={empType} onChange={(e) => {
+                const et = e.target.value;
+                const nextCT = et === "employee" ? "hourly" : "contract_hourly";
+                setD({ ...d, employment_type: et, compensation_type: nextCT });
+              }}>
+                <option value="employee">Employee</option>
+                <option value="contractor">Contractor</option>
+                <option value="1099">1099</option>
+              </select>
+            </Field>
+          </Row2>
+
+          {contract ? (
+            <>
+              <Row2>
+                <Field label="Rate type">
+                  <select className={selectCls} value={d.compensation_type} onChange={(e) => setD({ ...d, compensation_type: e.target.value })}>
+                    <option value="contract_hourly">Contract rate ($/hr)</option>
+                    <option value="contract_annual">Annual contract amount</option>
+                  </select>
+                </Field>
+                {d.compensation_type === "contract_hourly" ? (
+                  <Field label="Contract rate ($/hr)">
+                    <NumInput value={d.hourly_wage?.toString() ?? ""} onChange={(v) => setD({ ...d, hourly_wage: v === "" ? null : Number(v) })} prefix="$" />
+                  </Field>
+                ) : (
+                  <Field label="Annual contract amount">
+                    <NumInput value={d.annual_base_salary?.toString() ?? ""} onChange={(v) => setD({ ...d, annual_base_salary: v === "" ? null : Number(v) })} prefix="$" />
+                  </Field>
+                )}
+              </Row2>
+              <Row2>
+                <Field label="Expected hours / week">
+                  <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setD({ ...d, expected_hrs_per_week: v === "" ? null : Number(v) })} />
+                </Field>
+                <Field label="Weeks / year">
+                  <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
+                </Field>
+              </Row2>
+              <p className="mb-2 text-[10px] leading-[1.5] text-ch/60">
+                Contractor costs are not subject to employer payroll tax. Ensure you are correctly classifying this worker — misclassification carries significant legal and tax risk.
+              </p>
+            </>
+          ) : (
+            <>
+              <Row2>
+                <Field label="Compensation type">
+                  <select className={selectCls} value={d.compensation_type} onChange={(e) => setD({ ...d, compensation_type: e.target.value })}>
+                    <option value="hourly">Hourly</option>
+                    <option value="salaried">Salaried</option>
+                  </select>
+                </Field>
+                <EmployerTaxField
+                  firmState={firmState}
+                  value={d.employer_payroll_tax_pct}
+                  onChange={(v) => setD({ ...d, employer_payroll_tax_pct: v })}
+                />
+              </Row2>
+              {d.compensation_type === "salaried" ? (
+                <Row2>
+                  <Field label="Annual base salary">
+                    <NumInput value={d.annual_base_salary?.toString() ?? ""} onChange={(v) => setD({ ...d, annual_base_salary: v === "" ? null : Number(v) })} prefix="$" />
+                  </Field>
+                  <Field label="Weeks per year">
+                    <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
+                  </Field>
+                </Row2>
+              ) : (
+                <Row2>
+                  <Field label="Hourly wage">
+                    <NumInput value={d.hourly_wage?.toString() ?? ""} onChange={(v) => setD({ ...d, hourly_wage: v === "" ? null : Number(v) })} prefix="$" />
+                  </Field>
+                  <Field label="Weeks per year">
+                    <NumInput value={d.weeks_per_year?.toString() ?? "48"} onChange={(v) => setD({ ...d, weeks_per_year: v === "" ? null : Number(v) })} />
+                  </Field>
+                </Row2>
+              )}
+              <Row2>
+                <Field label="Annual benefits">
+                  <NumInput value={d.annual_benefits?.toString() ?? ""} onChange={(v) => setD({ ...d, annual_benefits: v === "" ? null : Number(v) })} prefix="$" placeholder="0" />
+                </Field>
+                <Field label="Other annual costs">
+                  <NumInput value={d.other_annual_costs?.toString() ?? ""} onChange={(v) => setD({ ...d, other_annual_costs: v === "" ? null : Number(v) })} prefix="$" placeholder="0" />
+                </Field>
+              </Row2>
+              <Field label="Expected hours per week">
+                <NumInput value={d.expected_hrs_per_week?.toString() ?? "40"} onChange={(v) => setD({ ...d, expected_hrs_per_week: v === "" ? null : Number(v) })} />
+              </Field>
+            </>
+          )}
+
+          <div className="mt-2 flex items-center justify-between">
+            <button type="button" onClick={onDelete} className="text-[10px] text-danger/70 hover:text-danger inline-flex items-center gap-1">
+              <Trash2 size={11} /> Remove
+            </button>
+            <SaveRow onCancel={onToggle} onSave={() => onSave(d)} />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
