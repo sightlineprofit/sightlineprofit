@@ -301,8 +301,9 @@ export function RateBreakdownSlideOver({
       <SectionLabel tip="The minimum hourly rate your cost structure requires. Calculated from your compensation, expenses, and target billable hours.">
         ALIGNED RATE
       </SectionLabel>
-      <div className="font-display text-[44px] font-normal leading-none text-ch mt-2 num">
-        {fmtUsd(aligned)}
+      <div className="font-display text-[44px] font-normal leading-none text-ch mt-2 num flex items-center">
+        <span>{fmtUsd(aligned)}</span>
+        <AlignedRateBreakdown c={c} targetMarginPct={targetMarginPct} side="bottom" />
       </div>
       <div className="mt-1 text-[11px] font-light text-ch/60">
         Your floor. The minimum you can charge.
