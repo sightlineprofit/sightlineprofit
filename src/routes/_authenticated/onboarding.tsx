@@ -497,8 +497,21 @@ function Onboarding() {
                       ${tBurden.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </div>
                   </div>
-                  <button className={`${ghostBtnClass} w-auto`} onClick={addTeamLocal} type="button">Add team member</button>
+                  <button className={`${ghostBtnClass} w-auto`} onClick={addTeamLocal} type="button">Save team member</button>
                 </div>
+                <p className="text-[10px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+                  This saves their cost for your rate calculations. You can invite them to Sightline from Settings → Team when you're ready.
+                </p>
+                {tEmail.trim() && (
+                  <label className="flex items-center gap-2 text-[11px] text-ch/70">
+                    <input
+                      type="checkbox"
+                      checked={tInviteNow}
+                      onChange={(e) => setTInviteNow(e.target.checked)}
+                    />
+                    Also send a Sightline invitation to {tEmail.trim()}?
+                  </label>
+                )}
                 {sentInvites.length > 0 && (
                   <div
                     className="pt-3 text-xs"
