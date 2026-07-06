@@ -773,52 +773,120 @@ function WhatIfTool({
 }
 
 /* ───────── Team tab ───────── */
+type TeamMemberRow = {
+  key: string;
+  lookupId: string;
+  name: string;
+  roleLabel: string;
+  isPrincipal: boolean;
+  target: number;
+  tracks: boolean;
+};
+
+function colorFromName(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const palette = ["#B8860B", "#5C8A6E", "#C4714A", "#8A7CB8", "#4A7A9C", "#B85C7C"];
+  return palette[h % palette.length];
+}
+
 function TeamTab({ data }: { data: CapacityExpandedData }) {
-  const target = data.inputs.targetHrsPerWeek;
+  const firmTarget = data.inputs.targetHrsPerWeek;
+  const weeksPerYear = data.inputs.weeksPerYear || 48;
+  const weeksElapsed = Math.max(1, data.weeksElapsed ?? 1);
+  const ytdMap = data.ytdHoursByUser ?? {};
+  const lastEntryMap = data.lastEntryByUser ?? {};
+
+  // Build member list — principal first, then non-principals in insertion order.
+  // Dedupe principal if they also appear inside firm_members.
+  const principal = data.principal;
+  const nonPrincipal = data.team.filter(
+    (m) => !principal || (m.profile_id ?? m.id) !== principal.id,
+  );
+
+  const rows: TeamMemberRow[] = [];
+  if (principal) {
+    rows.push({
+      key: `principal-${principal.id}`,
+      lookupId: principal.id,
+      name: principal.name,
+      roleLabel: "PRINCIPAL",
+      isPrincipal: true,
+      target: Number(principal.target) || 0,
+      tracks: true,
+    });
+  }
+  for (const m of nonPrincipal) {
+    rows.push({
+      key: m.id,
+      lookupId: m.profile_id ?? m.id,
+      name: m.name || m.email || "Team member",
+      roleLabel: (m.role_type || "TEAM").toUpperCase(),
+      isPrincipal: false,
+      target: Number(m.expected_hrs_per_week) || 0,
+      tracks: m.is_platform_user !== false,
+    });
+  }
+
+  // Combined firm totals for the summary bar.
+  const totalLogged = rows.reduce(
+    (s, r) => s + (r.tracks ? data.weeklyHoursByUser.get(r.lookupId) ?? 0 : 0),
+    0,
+  );
+  const totalTarget = rows.reduce((s, r) => s + r.target, 0);
+  const summaryPct = totalTarget > 0 ? Math.min(100, (totalLogged / totalTarget) * 100) : 0;
+
   return (
     <div className="space-y-5 pt-4">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        {data.team.map((m) => {
-          const memberTarget = Number(m.expected_hrs_per_week ?? target) || 0;
-          const lookupId = m.profile_id ?? m.id;
-          const logged = data.weeklyHoursByUser.get(lookupId) ?? 0;
-          const tracks = m.is_platform_user !== false;
-          const pct = memberTarget > 0 ? Math.min(100, (logged / memberTarget) * 100) : 0;
-          const over = logged > memberTarget;
-          return (
-            <div key={m.id} className="rounded-xl border border-border bg-white p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#B8860B" }} />
-                  <div>
-                    <div className="font-display text-base text-ch">{m.name || m.email}</div>
-                    <div className="text-[10px] uppercase tracking-wider text-ch/50">{m.role_type ?? ""}</div>
-                  </div>
-                </div>
-                <div className="text-right text-[11px] text-ch/60">
-                  {tracks ? (
-                    <>
-                      <div className="num text-ch">{logged.toFixed(1)} / {memberTarget.toFixed(0)} hrs</div>
-                      <div>this week</div>
-                    </>
-                  ) : (
-                    <div className="italic text-ch/50">Time not tracked in Sightline</div>
-                  )}
-                </div>
-              </div>
-              {tracks && (
-                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-cream">
-                  <div
-                    className="h-full"
-                    style={{ width: `${pct}%`, background: over ? "#C4714A" : "#B8860B" }}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
+      {rows.map((r) => (
+        <MemberCard
+          key={r.key}
+          row={r}
+          logged={data.weeklyHoursByUser.get(r.lookupId) ?? 0}
+          lastEntry={lastEntryMap[r.lookupId] ?? null}
+          ytd={ytdMap[r.lookupId] ?? { billable: 0, nonBillable: 0 }}
+          weeksElapsed={weeksElapsed}
+          weeksPerYear={weeksPerYear}
+        />
+      ))}
+
+      {nonPrincipal.length === 0 && (
+        <div
+          className="rounded-lg bg-white p-4 text-[12px] font-light"
+          style={{ border: "0.5px solid var(--border)", color: "#777" }}
+        >
+          Add team members in{" "}
+          <Link to="/settings" className="underline" style={{ color: "#B8860B" }}>
+            settings
+          </Link>{" "}
+          to track their capacity here.
+        </div>
+      )}
+
+      {/* Firm summary bar */}
+      <div
+        className="rounded-lg bg-white p-4"
+        style={{ border: "0.5px solid var(--border)" }}
+      >
+        <div
+          className="mb-2 text-[9px] uppercase"
+          style={{ letterSpacing: "0.14em", color: "#8A8578", fontFamily: "Jost, sans-serif" }}
+        >
+          Firm this week — combined
+        </div>
+        <div
+          className="h-1 w-full overflow-hidden rounded-sm"
+          style={{ background: "var(--border)" }}
+        >
+          <div className="h-full" style={{ width: `${summaryPct}%`, background: "#5C8A6E" }} />
+        </div>
+        <div className="mt-2 text-[10px]" style={{ color: "#777", fontFamily: "Jost, sans-serif" }}>
+          {totalLogged.toFixed(1)} of {totalTarget.toFixed(0)} hrs logged across {rows.length}{" "}
+          {rows.length === 1 ? "person" : "people"} this week
+        </div>
       </div>
 
+      {/* Utilization table */}
       <div className="rounded-xl border border-border bg-white p-5">
         <h3 className="font-display text-lg text-ch">Utilization this week</h3>
         <div className="mt-3 overflow-x-auto">
@@ -828,23 +896,40 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
                 <th className="text-left py-1">Member</th>
                 <th className="text-right py-1">Target/wk</th>
                 <th className="text-right py-1">Logged</th>
+                <th className="text-right py-1">Billable</th>
+                <th className="text-right py-1">Non-billable</th>
                 <th className="text-right py-1">Utilization</th>
+                <th className="text-right py-1">YTD logged</th>
+                <th className="text-right py-1">Annual target</th>
               </tr>
             </thead>
             <tbody>
-              {data.team.map((m) => {
-                const t = Number(m.expected_hrs_per_week ?? target) || 0;
-                const lookupId = m.profile_id ?? m.id;
-                const logged = data.weeklyHoursByUser.get(lookupId) ?? 0;
-                const tracks = m.is_platform_user !== false;
-                const util = t > 0 ? (logged / t) * 100 : 0;
-                const border = logged > t ? "#C4714A" : util < 80 ? "#B8860B" : "transparent";
+              {rows.map((r) => {
+                const logged = r.tracks ? data.weeklyHoursByUser.get(r.lookupId) ?? 0 : 0;
+                const y = ytdMap[r.lookupId] ?? { billable: 0, nonBillable: 0 };
+                const ytdTotal = y.billable + y.nonBillable;
+                const annual = r.target * weeksPerYear;
+                const util = r.target > 0 ? (logged / r.target) * 100 : 0;
+                let border = "transparent";
+                if (!r.tracks || logged === 0) border = "rgba(44,44,44,0.15)";
+                else if (logged > r.target) border = "#5C8A6E";
+                else if (util >= 90) border = "transparent";
+                else if (util >= 80) border = "#B8860B";
+                else border = "rgba(44,44,44,0.15)";
                 return (
-                  <tr key={m.id} style={{ borderLeft: `2px solid ${border}` }}>
-                    <td className="py-1 pl-2 text-ch">{m.name || m.email}</td>
-                    <td className="py-1 text-right num">{t.toFixed(0)}</td>
-                    <td className="py-1 text-right num">{tracks ? logged.toFixed(1) : "—"}</td>
-                    <td className="py-1 text-right num">{tracks ? `${Math.round(util)}%` : "—"}</td>
+                  <tr key={r.key} style={{ borderLeft: `2px solid ${border}` }}>
+                    <td className="py-1 pl-2 text-ch">{r.name}</td>
+                    <td className="py-1 text-right num">{r.target.toFixed(0)}</td>
+                    <td className="py-1 text-right num">{r.tracks ? logged.toFixed(1) : "—"}</td>
+                    <td className="py-1 text-right num">{r.tracks ? y.billable.toFixed(0) : "—"}</td>
+                    <td className="py-1 text-right num">{r.tracks ? y.nonBillable.toFixed(0) : "—"}</td>
+                    <td className="py-1 text-right num">
+                      {r.tracks && r.target > 0 ? `${Math.round(util)}%` : "—"}
+                    </td>
+                    <td className="py-1 text-right num">
+                      {r.tracks ? ytdTotal.toFixed(0) : "—"}
+                    </td>
+                    <td className="py-1 text-right num">{annual.toFixed(0)}</td>
                   </tr>
                 );
               })}
@@ -852,6 +937,393 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MemberCard({
+  row,
+  logged,
+  lastEntry,
+  ytd,
+  weeksElapsed,
+  weeksPerYear,
+}: {
+  row: TeamMemberRow;
+  logged: number;
+  lastEntry: string | null;
+  ytd: { billable: number; nonBillable: number };
+  weeksElapsed: number;
+  weeksPerYear: number;
+}) {
+  const [showAnnual, setShowAnnual] = useState(false);
+  const target = row.target;
+  const needsSetup = row.isPrincipal && target <= 0;
+
+  // Freshness pill
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = today.getDay();
+  const startWeek = new Date(today);
+  startWeek.setDate(today.getDate() - day);
+  const todayIso = today.toISOString().slice(0, 10);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const yIso = yesterday.toISOString().slice(0, 10);
+  const weekStartIso = startWeek.toISOString().slice(0, 10);
+
+  let freshLabel = "No entries yet";
+  let freshBg = "rgba(44,44,44,0.07)";
+  let freshColor = "#777";
+  if (lastEntry) {
+    if (lastEntry === todayIso || lastEntry === yIso) {
+      freshLabel = "Up to date";
+      freshBg = "rgba(92,138,110,0.10)";
+      freshColor = "#27500A";
+    } else if (lastEntry >= weekStartIso) {
+      freshLabel = "Up to date";
+      freshBg = "rgba(92,138,110,0.10)";
+      freshColor = "#27500A";
+    } else {
+      freshLabel = "No entry this week";
+      freshBg = "rgba(184,134,11,0.10)";
+      freshColor = "#854F0B";
+    }
+  }
+  if (!row.tracks) {
+    freshLabel = "Not tracked";
+  }
+
+  // Value colors
+  const pct = target > 0 ? (logged / target) * 100 : 0;
+  let valueColor = "#777";
+  if (target > 0 && logged > 0) {
+    if (logged >= target) valueColor = "#5C8A6E";
+    else if (pct >= 50) valueColor = "#B8860B";
+    else valueColor = "#C4714A";
+  }
+
+  // Status pill
+  let statusLabel = "Not tracked";
+  let statusBg = "rgba(44,44,44,0.07)";
+  let statusColor = "#777";
+  if (row.tracks && target > 0) {
+    const halfWeek = day >= 3; // Wed or later
+    if (pct >= 80) {
+      statusLabel = "On track";
+      statusBg = "rgba(92,138,110,0.10)";
+      statusColor = "#27500A";
+    } else if (pct >= 30) {
+      statusLabel = "Behind";
+      statusBg = "rgba(184,134,11,0.10)";
+      statusColor = "#854F0B";
+    } else if (pct < 30 && halfWeek) {
+      statusLabel = "Not started";
+      statusBg = "rgba(196,113,74,0.12)";
+      statusColor = "#C4714A";
+    } else {
+      statusLabel = "Early in week";
+      statusBg = "rgba(44,44,44,0.07)";
+      statusColor = "#777";
+    }
+  }
+
+  // Progress bar
+  const barPct = target > 0 ? Math.min(100, pct) : 0;
+  let barColor = "#C4714A";
+  if (target > 0 && logged >= target) barColor = "#5C8A6E";
+  else if (pct >= 80) barColor = "#5C8A6E";
+  else if (pct >= 30) barColor = "#B8860B";
+  const overHrs = target > 0 && logged > target ? logged - target : 0;
+
+  // Annual projection
+  const ytdLogged = ytd.billable + ytd.nonBillable;
+  const annualTarget = target * weeksPerYear;
+  const projected = weeksElapsed > 0 ? (ytdLogged / weeksElapsed) * weeksPerYear : 0;
+  const onPace = projected >= annualTarget;
+  const gap = Math.max(0, annualTarget - projected);
+
+  const dotColor = colorFromName(row.name);
+
+  return (
+    <div
+      className="bg-white"
+      style={{
+        border: "0.5px solid var(--border)",
+        borderRadius: 8,
+        padding: "16px 18px",
+        marginBottom: 10,
+        fontFamily: "Jost, sans-serif",
+      }}
+    >
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span
+            className="inline-block h-2.5 w-2.5 rounded-full"
+            style={{ background: dotColor }}
+          />
+          <div>
+            <div
+              style={{
+                fontFamily: "Cormorant Garamond, serif",
+                fontSize: 16,
+                color: "#2C2C2C",
+                lineHeight: 1.1,
+              }}
+            >
+              {row.name}
+            </div>
+            <div
+              className="mt-0.5"
+              style={{
+                fontSize: 9,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "#8A8578",
+              }}
+            >
+              {row.roleLabel}
+            </div>
+          </div>
+        </div>
+        <span
+          className="rounded-full px-2 py-0.5"
+          style={{
+            fontSize: 9,
+            letterSpacing: "0.06em",
+            background: freshBg,
+            color: freshColor,
+          }}
+        >
+          {freshLabel}
+        </span>
+      </div>
+
+      {needsSetup ? (
+        <div className="mt-4 text-[11px]" style={{ color: "#777" }}>
+          Set your billable hours target in{" "}
+          <Link to="/settings?panel=rate" className="underline" style={{ color: "#B8860B" }}>
+            settings
+          </Link>{" "}
+          to track your capacity.
+        </div>
+      ) : (
+        <>
+          {/* Three-column stats */}
+          <div
+            className="mt-4 grid grid-cols-3"
+            style={{ borderRadius: 4 }}
+          >
+            <StatCol
+              label="TARGET"
+              value={target > 0 ? `${target.toFixed(0)} hrs/wk` : "—"}
+              sub={target > 0 ? `${(target * weeksPerYear).toFixed(0)} hrs/yr` : ""}
+            />
+            <div
+              className="px-4"
+              style={{ borderLeft: "0.5px solid var(--border)", borderRight: "0.5px solid var(--border)" }}
+            >
+              <StatCol
+                label="THIS WEEK"
+                value={row.tracks ? `${logged.toFixed(1)} hrs logged` : "—"}
+                valueColor={valueColor}
+                sub={
+                  !row.tracks
+                    ? ""
+                    : logged === 0
+                      ? "Nothing logged yet this week"
+                      : logged >= target
+                        ? "Target reached"
+                        : `${(target - logged).toFixed(1)} hrs to target`
+                }
+                subColor={valueColor}
+                inline
+              />
+            </div>
+            <div className="pl-4">
+              <div
+                style={{
+                  fontSize: 8,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "#8A8578",
+                }}
+              >
+                STATUS
+              </div>
+              <div className="mt-2">
+                <span
+                  className="rounded-full px-2.5 py-1"
+                  style={{
+                    fontSize: 10,
+                    background: statusBg,
+                    color: statusColor,
+                    fontWeight: 500,
+                  }}
+                >
+                  {statusLabel}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="mt-4">
+            <div
+              className="w-full overflow-hidden"
+              style={{ height: 4, background: "var(--border)", borderRadius: 2 }}
+            >
+              <div
+                className="h-full"
+                style={{
+                  width: `${barPct}%`,
+                  background: barColor,
+                  borderRadius: 2,
+                }}
+              />
+            </div>
+            <div className="mt-1 flex items-center justify-between">
+              <span style={{ fontSize: 8, color: "#8A8578" }}>0 hrs</span>
+              <div className="flex items-center gap-2">
+                {overHrs > 0 && (
+                  <span style={{ fontSize: 9, color: "#5C8A6E" }}>
+                    +{overHrs.toFixed(1)} hrs over
+                  </span>
+                )}
+                <span style={{ fontSize: 8, color: "#8A8578" }}>
+                  {target > 0 ? `${target.toFixed(0)} hrs target` : "no target set"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Annual snapshot toggle */}
+          <button
+            type="button"
+            onClick={() => setShowAnnual((v) => !v)}
+            className="mt-3 cursor-pointer"
+            style={{ fontSize: 9, color: "#B8860B", background: "transparent" }}
+          >
+            {showAnnual ? "Hide annual picture ›" : "See annual picture ›"}
+          </button>
+          {showAnnual && (
+            <div
+              className="mt-3 pt-3"
+              style={{ borderTop: "0.5px dashed var(--border)" }}
+            >
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <div
+                    style={{
+                      fontSize: 8,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: "#8A8578",
+                    }}
+                  >
+                    YTD LOGGED
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "Cormorant Garamond, serif",
+                      fontSize: 18,
+                      color: "#2C2C2C",
+                    }}
+                  >
+                    {ytdLogged.toFixed(0)}{" "}
+                    <span style={{ fontSize: 11, color: "#8A8578" }}>hrs logged this year</span>
+                  </div>
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 8,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: "#8A8578",
+                    }}
+                  >
+                    ANNUAL TARGET
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "Cormorant Garamond, serif",
+                      fontSize: 18,
+                      color: "#2C2C2C",
+                    }}
+                  >
+                    {annualTarget.toFixed(0)}{" "}
+                    <span style={{ fontSize: 11, color: "#8A8578" }}>hrs target this year</span>
+                  </div>
+                </div>
+              </div>
+              <div
+                className="mt-2"
+                style={{
+                  fontSize: 10,
+                  fontWeight: 300,
+                  color: onPace ? "#5C8A6E" : "#B8860B",
+                }}
+              >
+                {onPace
+                  ? `On pace for ${projected.toFixed(0)} hrs this year.`
+                  : `At current pace: ${projected.toFixed(0)} hrs by year end. ${gap.toFixed(0)} hrs short of target.`}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatCol({
+  label,
+  value,
+  sub,
+  valueColor,
+  subColor,
+  inline,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  valueColor?: string;
+  subColor?: string;
+  inline?: boolean;
+}) {
+  return (
+    <div className={inline ? "text-center" : ""}>
+      <div
+        style={{
+          fontSize: 8,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: "#8A8578",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-1"
+        style={{
+          fontFamily: "Cormorant Garamond, serif",
+          fontSize: 22,
+          color: valueColor ?? "#2C2C2C",
+          lineHeight: 1.1,
+        }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div
+          className="mt-0.5"
+          style={{ fontSize: 10, color: subColor ?? "#8A8578" }}
+        >
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
