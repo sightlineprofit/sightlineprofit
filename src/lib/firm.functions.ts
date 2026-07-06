@@ -272,6 +272,38 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
 
+    // Mirror invite state on firm_members (so the Team panel shows Pending on
+    // an internal record). If no internal record exists yet, create a stub.
+    {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: existing } = await supabaseAdmin
+        .from("firm_members")
+        .select("id")
+        .eq("firm_id", profile.firm_id)
+        .ilike("email", data.email)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      const patch = {
+        invite_sent_at: new Date().toISOString(),
+        invite_accepted_at: null as string | null,
+        role_type: data.role,
+      };
+      if (existing?.id) {
+        await supabaseAdmin.from("firm_members").update(patch).eq("id", existing.id);
+      } else {
+        await supabaseAdmin.from("firm_members").insert({
+          firm_id: profile.firm_id,
+          name: data.name ?? data.email,
+          email: data.email,
+          role_type: data.role,
+          employment_type: "employee",
+          is_platform_user: false,
+          invite_sent_at: patch.invite_sent_at,
+        });
+      }
+    }
+
     // Fire off invitation email (async, non-blocking on failure) +
     // log to webhook_log so Ivorey.io / observability has a record.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
