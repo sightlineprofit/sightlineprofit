@@ -189,7 +189,7 @@ function Dashboard() {
   const [openPanel, setOpenPanel] = useState<PanelKind>(null);
 
   // Build data for the CapacityTile and CapacitySlideOver
-  const capacityData: CapacityTileData & CapacityExpandedData = useMemo(() => {
+  const capacityData = useMemo(() => {
     const cap: any = (data as any)?.capacity ?? {};
     const team = (cap.team ?? []) as CapacityExpandedData["team"];
     const weeklyHoursByUser = new Map<string, number>();
@@ -209,7 +209,7 @@ function Dashboard() {
       weeksPerYear: Number((data?.config as any)?.weeks_per_year ?? 48),
       ratePerHr: rateBilled,
     };
-    return {
+    const out: CapacityExpandedData = {
       inputs,
       weekHours: weekMetrics.billable,
       bdWeekHours: Number((data as any)?.bdWeekHours ?? 0),
@@ -220,6 +220,7 @@ function Dashboard() {
       annualRevenue: c.annualRevenue,
       alignedAnnualRevenue: c.alignedRate * targetHrs * Number((data?.config as any)?.weeks_per_year ?? 48),
     };
+    return out;
   }, [data, weekStartIso, weekEndIso, weekMetrics.billable, targetHrs, rateBilled, setupIncomplete, c.annualRevenue, c.alignedRate]);
 
   useHealthChangeToast(c.rateHealth);
@@ -311,7 +312,7 @@ function Dashboard() {
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         <ActiveProjectsTile projects={activeProjects} />
         <FourWeekTrendTile trend={trend} target={targetHrs} rate={rateBilled} />
-        <CapacityTile data={capacityData} onOpen={() => setOpenPanel("capacity")} />
+        <CapacityTile data={capacityData as unknown as CapacityTileData} onOpen={() => setOpenPanel("capacity")} />
       </div>
 
       {/* Quick log */}
