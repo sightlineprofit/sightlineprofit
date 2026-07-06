@@ -1487,6 +1487,147 @@ function RatePanel({ onClose }: { onClose: () => void }) {
 
 /* ────────────────────────────── account panels ────────────────────────────── */
 
+function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
+  const qc = useQueryClient();
+  const listFM = useServerFn(listFirmMembers);
+  const save = useServerFn(saveFirmMember);
+  const { data: members } = useQuery({ queryKey: ["firmMembers"], queryFn: () => listFM() });
+  const team = (members ?? []).filter((m: any) => m.role_type !== "principal" && m.is_active !== false);
+
+  const [drafts, setDrafts] = useState<Record<string, { hrs: string; rate: string }>>({});
+  const [savedFlash, setSavedFlash] = useState<Record<string, number>>({});
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Seed drafts from server whenever the roster changes.
+  useEffect(() => {
+    const next: Record<string, { hrs: string; rate: string }> = {};
+    for (const m of team) {
+      next[m.id] = {
+        hrs: m.expected_hrs_per_week != null ? String(m.expected_hrs_per_week) : "",
+        rate: m.billed_rate != null ? String(m.billed_rate) : "",
+      };
+    }
+    setDrafts((prev) => ({ ...next, ...Object.fromEntries(Object.entries(prev).filter(([id]) => next[id] !== undefined && (prev[id]?.hrs !== next[id].hrs || prev[id]?.rate !== next[id].rate) ? false : true)) }));
+    // simpler: overwrite with server values on roster change
+    setDrafts(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team.map((m: any) => `${m.id}:${m.expected_hrs_per_week ?? ""}:${m.billed_rate ?? ""}`).join("|")]);
+
+  function schedule(m: any, patch: Partial<{ hrs: string; rate: string }>) {
+    setDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], ...patch } }));
+    if (timers.current[m.id]) clearTimeout(timers.current[m.id]);
+    timers.current[m.id] = setTimeout(async () => {
+      const cur = { ...drafts[m.id], ...patch };
+      const hrsNum = cur.hrs === "" ? null : Number(cur.hrs);
+      const rateNum = cur.rate === "" ? null : Number(cur.rate);
+      try {
+        await save({
+          data: {
+            id: m.id,
+            name: m.name,
+            email: m.email ?? null,
+            role_type: m.role_type,
+            employment_type: m.employment_type ?? "employee",
+            notes: m.notes ?? null,
+            compensation_type: m.compensation_type ?? "hourly",
+            hourly_wage: m.hourly_wage ?? null,
+            annual_base_salary: m.annual_base_salary ?? null,
+            employer_payroll_tax_pct: m.employer_payroll_tax_pct ?? null,
+            employer_tax_rate_is_custom: m.employer_tax_rate_is_custom ?? false,
+            annual_benefits: m.annual_benefits ?? null,
+            other_annual_costs: m.other_annual_costs ?? null,
+            expected_hrs_per_week: hrsNum,
+            weeks_per_year: m.weeks_per_year ?? null,
+            billed_rate: rateNum,
+          },
+        });
+        setSavedFlash((s) => ({ ...s, [m.id]: Date.now() }));
+        qc.invalidateQueries({ queryKey: ["firmMembers"] });
+        qc.invalidateQueries({ queryKey: ["dashboard"] });
+        setTimeout(() => {
+          setSavedFlash((s) => {
+            const copy = { ...s };
+            delete copy[m.id];
+            return copy;
+          });
+        }, 1800);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Save failed");
+      }
+    }, 500);
+  }
+
+  return (
+    <div className="mt-5 border-t border-border pt-4">
+      <h3 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 16, color: "#2C2C2C" }}>
+        Team billable capacity
+      </h3>
+      <p
+        className="mt-1 mb-3"
+        style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300, color: "rgba(44,44,44,0.6)" }}
+      >
+        Set each team member's expected billable hours and rate. These feed your budget revenue and aligned rate calculation.
+      </p>
+
+      {team.length === 0 ? (
+        <div className="rounded-[7px] border border-border bg-cream/50 px-3.5 py-3 text-[11px] text-ch/70">
+          Add team members in{" "}
+          <Link to="/settings" search={{ panel: "team_cost" as any }} className="text-gold hover:underline">
+            Team Cost
+          </Link>{" "}
+          to set their billable capacity.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {team.map((m: any) => {
+            const d = drafts[m.id] ?? { hrs: "", rate: "" };
+            const flashed = !!savedFlash[m.id];
+            const ratePlaceholder = firmRate > 0 ? `Defaults to firm rate ($${Math.round(firmRate)})` : "Defaults to firm rate";
+            return (
+              <div key={m.id} className="rounded-[6px] border border-border bg-white px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-[12px] font-medium text-ch">{m.name}</div>
+                    <div className="text-[10px] text-ch/55 capitalize">
+                      {String(m.role_type || "team").replace(/_/g, " ")}
+                    </div>
+                  </div>
+                  {flashed ? (
+                    <span
+                      style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "#5C8A6E" }}
+                    >
+                      Saved
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={fieldLabel}>Billable hrs/wk</label>
+                    <NumInput
+                      value={d.hrs}
+                      onChange={(v) => schedule(m, { hrs: v })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabel}>Billed rate/hr</label>
+                    <NumInput
+                      value={d.rate}
+                      onChange={(v) => schedule(m, { rate: v })}
+                      prefix="$"
+                      placeholder={ratePlaceholder}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProfilePanelBody() {
   const qc = useQueryClient();
   const { data } = useMe();
