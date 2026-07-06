@@ -18,7 +18,42 @@ type Member = {
   role_type?: string | null;
   burdened_weekly_cost?: number | null;
   weeks_per_year?: number | null;
+  employment_type?: string | null;
+  compensation_type?: string | null;
+  hourly_wage?: number | null;
+  annual_base_salary?: number | null;
+  employer_payroll_tax_pct?: number | null;
+  annual_benefits?: number | null;
+  other_annual_costs?: number | null;
+  expected_hrs_per_week?: number | null;
 };
+
+function memberCostBreakdown(m: Member) {
+  const isContract = m.employment_type === "contractor" || m.employment_type === "1099";
+  const isW2 = !isContract;
+  const wks = Number(m.weeks_per_year) || 48;
+  const hpw = Number(m.expected_hrs_per_week) || 40;
+  const ptaxPct = isContract ? 0 : Number(m.employer_payroll_tax_pct ?? 7.65) || 0;
+  const benefits = isContract ? 0 : Number(m.annual_benefits) || 0;
+  const other = Number(m.other_annual_costs) || 0;
+  const comp = m.compensation_type || "hourly";
+
+  let base = 0;
+  let baseLabel = "Base wage";
+  if (comp === "salaried") {
+    base = Number(m.annual_base_salary) || 0;
+    baseLabel = "Salary";
+  } else if (comp === "contract_annual") {
+    base = Number(m.annual_base_salary) || 0;
+    baseLabel = "Contract";
+  } else {
+    base = (Number(m.hourly_wage) || 0) * hpw * wks;
+    baseLabel = "Hourly wage";
+  }
+  const tax = base * (ptaxPct / 100);
+  const total = base + tax + benefits + other;
+  return { base, baseLabel, tax, benefits, equipment: other, total, isW2 };
+}
 
 export type RevenueContributor = {
   label: string;   // e.g. "Caprice Gossett"
