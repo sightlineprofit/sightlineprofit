@@ -338,9 +338,6 @@ function Dashboard() {
         />
       )}
 
-      <div className="mt-4">
-        <ActionEnginePanel />
-      </div>
 
       {/* Quick log */}
       <div className="mt-3">
