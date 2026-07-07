@@ -657,6 +657,66 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const activityLog = (data as unknown as {
+    activityLog?: Array<{ event_type: string; occurred_at: string; note: string | null }>;
+  }).activityLog ?? [];
+
+  // ── Freshness state (mirrors the tile-level logic in getProjectList) ──
+  // lastActivityAt = MAX(most recent time entry date, most recent
+  // 'nothing_to_report' override). The confirm button + override live below.
+  const lastEntryIso = entries.length ? String(entries[0].date) : null; // entries pre-sorted desc
+  const lastNtrIso = (() => {
+    const r = activityLog.find((x) => x.event_type === "nothing_to_report");
+    return r ? String(r.occurred_at).slice(0, 10) : null;
+  })();
+  const lastActivityIso =
+    lastEntryIso && lastNtrIso
+      ? (lastEntryIso > lastNtrIso ? lastEntryIso : lastNtrIso)
+      : (lastEntryIso ?? lastNtrIso);
+  const daysSinceActivity = (() => {
+    if (!lastActivityIso) return null;
+    const ts = new Date(lastActivityIso).getTime();
+    if (Number.isNaN(ts)) return null;
+    return Math.floor((Date.now() - ts) / (24 * 3600 * 1000));
+  })();
+  const freshnessState: "current" | "stale" | "critical" =
+    daysSinceActivity == null
+      ? "critical"
+      : daysSinceActivity <= 2
+        ? "current"
+        : daysSinceActivity <= 20
+          ? "stale"
+          : "critical";
+  const lastConfirmedIso = (project as { last_confirmed_at?: string | null }).last_confirmed_at ?? null;
+  const confirmedCoversActivity =
+    !!lastConfirmedIso && !!lastActivityIso && lastConfirmedIso >= lastActivityIso;
+  // Three display states from spec:
+  //   1 = stale/critical → full warning, confirm disabled, override enabled
+  //   2 = current + unconfirmed → light prompt, confirm enabled
+  //   3 = current + confirmed → nothing shown
+  const displayState: 1 | 2 | 3 =
+    freshnessState !== "current" ? 1 : confirmedCoversActivity ? 3 : 2;
+
+  const confirmMut = useMutation({
+    mutationFn: () => confirmFn({ data: { project_id: id } }),
+    onSuccess: () => {
+      toast.success("Marked as up to date");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+  const nothingMut = useMutation({
+    mutationFn: (phrase: string) => nothingFn({ data: { project_id: id, phrase } }),
+    onSuccess: () => {
+      toast.success("Recorded — nothing to report this period");
+      setNtrOpen(false);
+      setNtrPhrase("");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
   const projectRate = Number(project.scoped_rate) || Number(config?.rate_billed) || 0;
   const hasExplicitRate = Number(project.scoped_rate) > 0;
   const fixedFee = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
