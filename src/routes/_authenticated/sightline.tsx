@@ -16,6 +16,7 @@ import {
   updateProjectMeta, updateProjectFinancial, updateProjectPhaseFinancial,
   patchTimeEntry, listSopTemplatesLite,
   updateProjectStepHrs, createProjectStep, deleteProjectStep,
+  confirmProjectReviewed, logNothingToReport, NOTHING_TO_REPORT_PHRASE,
 } from "@/lib/sightline.functions";
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
@@ -553,6 +554,8 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const updateStepHrsFn = useServerFn(updateProjectStepHrs);
   const createStepFn = useServerFn(createProjectStep);
   const deleteStepFn = useServerFn(deleteProjectStep);
+  const confirmFn = useServerFn(confirmProjectReviewed);
+  const nothingFn = useServerFn(logNothingToReport);
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
@@ -605,6 +608,10 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
     name: "", client_name: "", start_date: "", end_date: "",
   });
 
+  // "Nothing to report" dialog state
+  const [ntrOpen, setNtrOpen] = useState(false);
+  const [ntrPhrase, setNtrPhrase] = useState("");
+
   // Add-from-template picker state
   const [tplPickerOpen, setTplPickerOpen] = useState(false);
   const [tplPicked, setTplPicked] = useState<string>("");
@@ -650,6 +657,66 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const activityLog = (data as unknown as {
+    activityLog?: Array<{ event_type: string; occurred_at: string; note: string | null }>;
+  }).activityLog ?? [];
+
+  // ── Freshness state (mirrors the tile-level logic in getProjectList) ──
+  // lastActivityAt = MAX(most recent time entry date, most recent
+  // 'nothing_to_report' override). The confirm button + override live below.
+  const lastEntryIso = entries.length ? String(entries[0].date) : null; // entries pre-sorted desc
+  const lastNtrIso = (() => {
+    const r = activityLog.find((x) => x.event_type === "nothing_to_report");
+    return r ? String(r.occurred_at).slice(0, 10) : null;
+  })();
+  const lastActivityIso =
+    lastEntryIso && lastNtrIso
+      ? (lastEntryIso > lastNtrIso ? lastEntryIso : lastNtrIso)
+      : (lastEntryIso ?? lastNtrIso);
+  const daysSinceActivity = (() => {
+    if (!lastActivityIso) return null;
+    const ts = new Date(lastActivityIso).getTime();
+    if (Number.isNaN(ts)) return null;
+    return Math.floor((Date.now() - ts) / (24 * 3600 * 1000));
+  })();
+  const freshnessState: "current" | "stale" | "critical" =
+    daysSinceActivity == null
+      ? "critical"
+      : daysSinceActivity <= 2
+        ? "current"
+        : daysSinceActivity <= 20
+          ? "stale"
+          : "critical";
+  const lastConfirmedIso = (project as { last_confirmed_at?: string | null }).last_confirmed_at ?? null;
+  const confirmedCoversActivity =
+    !!lastConfirmedIso && !!lastActivityIso && lastConfirmedIso >= lastActivityIso;
+  // Three display states from spec:
+  //   1 = stale/critical → full warning, confirm disabled, override enabled
+  //   2 = current + unconfirmed → light prompt, confirm enabled
+  //   3 = current + confirmed → nothing shown
+  const displayState: 1 | 2 | 3 =
+    freshnessState !== "current" ? 1 : confirmedCoversActivity ? 3 : 2;
+
+  const confirmMut = useMutation({
+    mutationFn: () => confirmFn({ data: { project_id: id } }),
+    onSuccess: () => {
+      toast.success("Marked as up to date");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+  const nothingMut = useMutation({
+    mutationFn: (phrase: string) => nothingFn({ data: { project_id: id, phrase } }),
+    onSuccess: () => {
+      toast.success("Recorded — nothing to report this period");
+      setNtrOpen(false);
+      setNtrPhrase("");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
   const projectRate = Number(project.scoped_rate) || Number(config?.rate_billed) || 0;
   const hasExplicitRate = Number(project.scoped_rate) > 0;
   const fixedFee = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
@@ -905,26 +972,112 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
           </Select>
         </div>
 
-        {/* HEALTH PILL */}
+        {/* HEALTH PILL — State 1 (stale) overrides the ON TRACK confidence
+            with the same unreliable-margin treatment shown on the tile.
+            State 2 shows a lighter unconfirmed prompt; State 3 unchanged. */}
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]",
-              health.tone === "track" && "bg-success/10 text-success",
-              health.tone === "watch" && "bg-goldp text-gold",
-              health.tone === "over" && "bg-terra/10 text-terra",
-            )}
-          >
-            <span className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              health.tone === "track" && "bg-success",
-              health.tone === "watch" && "bg-gold",
-              health.tone === "over" && "bg-terra",
-            )} />
-            {health.pillLabel}
-          </span>
-          <span className="text-sm text-ch/70">{health.detail}</span>
+          {displayState === 1 ? (
+            <>
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]"
+                style={{ background: "rgba(196,113,74,0.12)", color: "#7A3A22" }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#C4714A" }} />
+                {daysSinceActivity == null ? "Data missing" : freshnessState === "critical" ? "Data missing" : "Needs update"}
+              </span>
+              {hasActuals && health.detail ? (
+                <span className="text-sm">
+                  <span
+                    className="text-ch/50"
+                    style={{ textDecoration: "line-through" }}
+                  >
+                    {health.detail}
+                  </span>
+                  <span className="ml-2 text-[#C4714A]">· unreliable — unknown until hours are logged</span>
+                </span>
+              ) : (
+                <span className="text-sm text-[#C4714A]">
+                  Unknown until hours are logged
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]",
+                  health.tone === "track" && "bg-success/10 text-success",
+                  health.tone === "watch" && "bg-goldp text-gold",
+                  health.tone === "over" && "bg-terra/10 text-terra",
+                )}
+              >
+                <span className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  health.tone === "track" && "bg-success",
+                  health.tone === "watch" && "bg-gold",
+                  health.tone === "over" && "bg-terra",
+                )} />
+                {health.pillLabel}
+              </span>
+              <span className="text-sm text-ch/70">{health.detail}</span>
+            </>
+          )}
         </div>
+
+        {/* Freshness banner + action row (States 1 & 2) */}
+        {displayState !== 3 && (
+          <div
+            className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-md px-3 py-2.5"
+            style={
+              displayState === 1
+                ? { background: "rgba(196,113,74,0.08)", border: "1px solid rgba(196,113,74,0.30)" }
+                : { background: "rgba(184,134,11,0.06)", border: "1px solid rgba(184,134,11,0.25)" }
+            }
+          >
+            <div className="flex items-start gap-2 text-[12px]">
+              <AlertTriangle
+                className="mt-0.5 h-4 w-4 shrink-0"
+                style={{ color: displayState === 1 ? "#C4714A" : "#B8860B" }}
+              />
+              <span style={{ color: displayState === 1 ? "#7A3A22" : "#5C3D00" }}>
+                {displayState === 1
+                  ? daysSinceActivity == null
+                    ? "No time has been logged on this project yet. This margin figure is unreliable."
+                    : `${daysSinceActivity} days without a time entry. This margin figure is unreliable — unlogged hours may have already consumed part of this margin, or all of it.`
+                  : "A new time entry was logged. Confirm this project's numbers are current."}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => confirmMut.mutate()}
+                disabled={displayState !== 2 || confirmMut.isPending}
+                className={cn(
+                  "rounded-md border px-3 py-1.5 text-[11px] font-medium transition-colors",
+                  displayState === 2
+                    ? "border-ch/30 bg-white text-ch hover:bg-ch/5"
+                    : "cursor-not-allowed border-ch/10 bg-white/50 text-ch/30",
+                )}
+                title={
+                  displayState === 2
+                    ? "Mark reviewed"
+                    : "Log a time entry or use 'Nothing to report' before confirming"
+                }
+              >
+                {confirmMut.isPending ? "Saving…" : "Time entries are up to date"}
+              </button>
+              {displayState === 1 && (
+                <button
+                  type="button"
+                  onClick={() => { setNtrPhrase(""); setNtrOpen(true); }}
+                  className="rounded-md border border-ch/20 bg-white px-3 py-1.5 text-[11px] text-ch/70 hover:bg-ch/5"
+                >
+                  Nothing to report this period
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* WARNINGS PANEL — only when there is something to say */}
@@ -1495,6 +1648,54 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
         }}
         onViewBreakdown={() => setPendingClose(false)}
       />
+
+      {/* NOTHING TO REPORT DIALOG — deliberate friction so this shortcut
+          isn't taken by accident. Typing the exact phrase is the confirm
+          step; per spec no second click is required afterward. */}
+      <Dialog open={ntrOpen} onOpenChange={(o) => { if (!o) { setNtrOpen(false); setNtrPhrase(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nothing to report this period</DialogTitle>
+            <DialogDescription>
+              Use this only if there was genuinely no billable or non-billable work on this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div
+            className="rounded-md p-3 text-[12px]"
+            style={{ background: "rgba(196,113,74,0.08)", border: "1px solid rgba(196,113,74,0.30)", color: "#7A3A22" }}
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "#C4714A" }} />
+              <span>
+                This skips a real time entry. If any billable or non-billable work actually happened
+                and wasn't logged, this will overstate your remaining margin and understate hours used.
+                Only confirm if there was genuinely no work this period.
+              </span>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+              Type <span className="font-mono text-ch">{NOTHING_TO_REPORT_PHRASE}</span> to enable submission
+            </label>
+            <Input
+              value={ntrPhrase}
+              onChange={(e) => setNtrPhrase(e.target.value)}
+              placeholder={NOTHING_TO_REPORT_PHRASE}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setNtrOpen(false); setNtrPhrase(""); }}>Cancel</Button>
+            <Button
+              className="bg-ch text-cream hover:bg-ch/90"
+              disabled={ntrPhrase.trim().toUpperCase() !== NOTHING_TO_REPORT_PHRASE || nothingMut.isPending}
+              onClick={() => nothingMut.mutate(ntrPhrase.trim())}
+            >
+              {nothingMut.isPending ? "Saving…" : "Confirm — nothing to report"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

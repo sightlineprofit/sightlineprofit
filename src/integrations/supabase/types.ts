@@ -969,6 +969,54 @@ export type Database = {
           },
         ]
       }
+      project_activity_log: {
+        Row: {
+          created_at: string
+          event_type: Database["public"]["Enums"]["project_activity_event"]
+          firm_id: string
+          id: string
+          logged_by: string | null
+          note: string | null
+          occurred_at: string
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: Database["public"]["Enums"]["project_activity_event"]
+          firm_id: string
+          id?: string
+          logged_by?: string | null
+          note?: string | null
+          occurred_at?: string
+          project_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: Database["public"]["Enums"]["project_activity_event"]
+          firm_id?: string
+          id?: string
+          logged_by?: string | null
+          note?: string | null
+          occurred_at?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_activity_log_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_activity_log_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_assignments: {
         Row: {
           project_id: string
@@ -1148,6 +1196,7 @@ export type Database = {
           firm_id: string
           fixed_fee: number | null
           id: string
+          last_confirmed_at: string | null
           name: string
           scoped_hrs: number | null
           scoped_rate: number | null
@@ -1162,6 +1211,7 @@ export type Database = {
           firm_id: string
           fixed_fee?: number | null
           id?: string
+          last_confirmed_at?: string | null
           name: string
           scoped_hrs?: number | null
           scoped_rate?: number | null
@@ -1176,6 +1226,7 @@ export type Database = {
           firm_id?: string
           fixed_fee?: number | null
           id?: string
+          last_confirmed_at?: string | null
           name?: string
           scoped_hrs?: number | null
           scoped_rate?: number | null
@@ -1716,6 +1767,7 @@ export type Database = {
       kb_kind: "article" | "video"
       kb_status: "draft" | "published"
       manual_hour_period: "week" | "month"
+      project_activity_event: "nothing_to_report" | "confirmed_reviewed"
       project_status:
         | "active"
         | "pipeline"
@@ -1878,6 +1930,7 @@ export const Constants = {
       kb_kind: ["article", "video"],
       kb_status: ["draft", "published"],
       manual_hour_period: ["week", "month"],
+      project_activity_event: ["nothing_to_report", "confirmed_reviewed"],
       project_status: [
         "active",
         "pipeline",
