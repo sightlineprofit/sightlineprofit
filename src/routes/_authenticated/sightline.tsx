@@ -554,6 +554,8 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const updateStepHrsFn = useServerFn(updateProjectStepHrs);
   const createStepFn = useServerFn(createProjectStep);
   const deleteStepFn = useServerFn(deleteProjectStep);
+  const confirmFn = useServerFn(confirmProjectReviewed);
+  const nothingFn = useServerFn(logNothingToReport);
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
@@ -605,6 +607,10 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
   const [metaDraft, setMetaDraft] = useState({
     name: "", client_name: "", start_date: "", end_date: "",
   });
+
+  // "Nothing to report" dialog state
+  const [ntrOpen, setNtrOpen] = useState(false);
+  const [ntrPhrase, setNtrPhrase] = useState("");
 
   // Add-from-template picker state
   const [tplPickerOpen, setTplPickerOpen] = useState(false);
