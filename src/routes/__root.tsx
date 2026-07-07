@@ -77,13 +77,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Sightline — Financial clarity for interior design firms" },
-      { name: "description", content: "Sightline is the financial operating system for interior design firm owners — rate, targets, and project profitability in one editorial dashboard." },
+      { title: "Sightline — Financial Management for Interior Design Firms" },
+      { name: "description", content: "Sightline answers the three questions most designers have never got a straight answer to— what to charge, how to plan, and when to grow." },
       { name: "author", content: "Sightline" },
-      { property: "og:title", content: "Sightline" },
-      { property: "og:description", content: "Financial clarity for interior design firms." },
+      { property: "og:title", content: "Sightline — Financial Management for Interior Design Firms" },
+      { property: "og:description", content: "Sightline answers the three questions most designers have never got a straight answer to— what to charge, how to plan, and when to grow." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Sightline — Financial Management for Interior Design Firms" },
+      { name: "twitter:description", content: "Sightline answers the three questions most designers have never got a straight answer to— what to charge, how to plan, and when to grow." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/xA0BL01GgtROG842aJt18MpvQoq2/social-images/social-1783400101704-sightline-icon-light-v2.webp" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/xA0BL01GgtROG842aJt18MpvQoq2/social-images/social-1783400101704-sightline-icon-light-v2.webp" },
     ],
     links: [
       {
