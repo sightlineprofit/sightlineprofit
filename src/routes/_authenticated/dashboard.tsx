@@ -48,7 +48,7 @@ import {
   PricingStrip,
   useHealthChangeToast,
 } from "@/components/dashboard/RateArchitectureHeader";
-import { ActionEnginePanel } from "@/components/dashboard/ActionEnginePanel";
+
 import { TeamHoursTile } from "@/components/dashboard/TeamHoursTile";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -338,9 +338,6 @@ function Dashboard() {
         />
       )}
 
-      <div className="mt-4">
-        <ActionEnginePanel />
-      </div>
 
       {/* Quick log */}
       <div className="mt-3">
