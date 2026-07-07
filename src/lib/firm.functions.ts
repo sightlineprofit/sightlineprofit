@@ -840,6 +840,11 @@ export const saveFirmMember = createServerFn({ method: "POST" })
     };
 
     if (data.id) {
+      const { data: prevMember } = await supabase
+        .from("firm_members")
+        .select("*")
+        .eq("id", data.id)
+        .maybeSingle();
       const { error } = await supabase
         .from("firm_members")
         .update(row)
@@ -847,6 +852,7 @@ export const saveFirmMember = createServerFn({ method: "POST" })
         .eq("firm_id", me.firm_id);
       if (error) throw new Error(error.message);
       await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+      await logMemberChanges(supabase, me.firm_id, userId, data.name, prevMember, row);
       return { ok: true, id: data.id };
     }
     const { data: inserted, error } = await supabase
@@ -856,8 +862,43 @@ export const saveFirmMember = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+    await logMemberChanges(supabase, me.firm_id, userId, data.name, null, row);
     return { ok: true, id: inserted!.id };
   });
+
+async function logMemberChanges(
+  supabase: Parameters<typeof logChange>[0],
+  firmId: string,
+  userId: string | null,
+  entityLabel: string,
+  prev: Record<string, unknown> | null,
+  next: Record<string, unknown>,
+) {
+  const costChanges: ChangedField[] = diffFields(prev, next, [
+    { key: "compensation_type", label: "Compensation type", type: "enum" },
+    { key: "employment_type", label: "Employment type", type: "enum" },
+    { key: "hourly_wage", label: "Hourly wage", type: "rate_per_hour" },
+    { key: "annual_base_salary", label: "Annual salary", type: "currency_annual" },
+    { key: "employer_payroll_tax_pct", label: "Employer payroll tax", type: "percent" },
+    { key: "annual_benefits", label: "Annual benefits", type: "currency_annual" },
+    { key: "other_annual_costs", label: "Equipment / other", type: "currency_annual" },
+    { key: "billed_rate", label: "Billed rate", type: "rate_per_hour" },
+  ]);
+  const capChanges: ChangedField[] = diffFields(prev, next, [
+    { key: "expected_hrs_per_week", label: "Expected hours / week", type: "hours_per_week" },
+    { key: "weeks_per_year", label: "Weeks / year", type: "weeks" },
+  ]);
+  if (costChanges.length) {
+    await logChange(supabase, {
+      firmId, userId, category: "team_cost", entityLabel, changes: costChanges,
+    });
+  }
+  if (capChanges.length) {
+    await logChange(supabase, {
+      firmId, userId, category: "team_capacity", entityLabel, changes: capChanges,
+    });
+  }
+}
 
 export const deleteFirmMember = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -871,6 +912,11 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .single();
     if (!me?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+    const { data: prev } = await supabase
+      .from("firm_members")
+      .select("name, is_active")
+      .eq("id", data.id)
+      .maybeSingle();
     const { error } = await supabase
       .from("firm_members")
       .update({ is_active: false })
@@ -878,6 +924,13 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .eq("firm_id", me.firm_id);
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+    await logChange(supabase, {
+      firmId: me.firm_id,
+      userId,
+      category: "team_capacity",
+      entityLabel: (prev?.name as string) || "Team member",
+      changes: [{ field: "Active", key: "is_active", old_value: true, new_value: false, type: "boolean" }],
+    });
     return { ok: true };
   });
 
