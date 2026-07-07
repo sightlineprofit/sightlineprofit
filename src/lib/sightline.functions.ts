@@ -149,7 +149,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     if (!profile?.firm_id) throw new Error("No firm");
     const isPrincipal = profile.role === "principal";
     const isAdmin = profile.role === "principal" || profile.role === "admin";
-    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }] = await Promise.all([
+    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }, { data: activityLog }] = await Promise.all([
       supabase.from("projects").select("*").eq("id", data.id).eq("firm_id", profile.firm_id).single(),
       supabase.from("project_phases").select("*").eq("project_id", data.id).order("sort_order"),
       supabase.from("time_entries").select("*").eq("project_id", data.id).order("date", { ascending: false }),
@@ -160,6 +160,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
         return supabase.from("sop_templates").select("id, name, category").eq("id", tid).maybeSingle();
       }),
       supabase.from("profiles").select("id, name, email, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
+      supabase.from("project_activity_log").select("*").eq("project_id", data.id).order("occurred_at", { ascending: false }),
     ]);
     if (!project) throw new Error("Project not found");
     const phaseIds = (phases ?? []).map((p) => p.id);
@@ -182,9 +183,75 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       template,
       team: team ?? [],
       audit: audit ?? [],
+      activityLog: activityLog ?? [],
       isPrincipal,
       isAdmin,
     };
+  });
+
+// Log a 'confirmed_reviewed' event and stamp projects.last_confirmed_at.
+// Enabled only in State 2 (fresh but unconfirmed) client-side; server writes
+// unconditionally so any RLS-authorized firm member can acknowledge.
+export const confirmProjectReviewed = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const now = new Date().toISOString();
+    const { error: logErr } = await supabase.from("project_activity_log").insert({
+      project_id: data.project_id,
+      firm_id: profile.firm_id,
+      event_type: "confirmed_reviewed",
+      occurred_at: now,
+      logged_by: userId,
+      note: null,
+    });
+    if (logErr) throw new Error(logErr.message);
+    const { error: upErr } = await supabase
+      .from("projects").update({ last_confirmed_at: now }).eq("id", data.project_id);
+    if (upErr) throw new Error(upErr.message);
+    return { ok: true, last_confirmed_at: now };
+  });
+
+// Log a 'nothing_to_report' override. Requires the exact typed phrase to
+// enforce deliberate friction. Also stamps last_confirmed_at (per spec,
+// this doubles as confirmation) and — because lastActivityAt is derived as
+// MAX(time_entries.date, nothing_to_report.occurred_at) — resets the
+// freshness clock without a fabricated time entry.
+export const NOTHING_TO_REPORT_PHRASE = "NOTHING TO REPORT";
+export const logNothingToReport = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      project_id: z.string().uuid(),
+      phrase: z.string(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    if (data.phrase.trim().toUpperCase() !== NOTHING_TO_REPORT_PHRASE) {
+      throw new Error(`You must type "${NOTHING_TO_REPORT_PHRASE}" exactly to confirm.`);
+    }
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const now = new Date().toISOString();
+    const { error: logErr } = await supabase.from("project_activity_log").insert({
+      project_id: data.project_id,
+      firm_id: profile.firm_id,
+      event_type: "nothing_to_report",
+      occurred_at: now,
+      logged_by: userId,
+      note: data.phrase.trim(),
+    });
+    if (logErr) throw new Error(logErr.message);
+    const { error: upErr } = await supabase
+      .from("projects").update({ last_confirmed_at: now }).eq("id", data.project_id);
+    if (upErr) throw new Error(upErr.message);
+    return { ok: true, last_confirmed_at: now };
   });
 
 export const updateProjectStatus = createServerFn({ method: "POST" })
