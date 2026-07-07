@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { computeBurden } from "@/lib/cost";
 import { seedDefaultSops } from "@/lib/sop-seed.server";
 import { recordAlignedRate } from "@/lib/rate-history.server";
+import { logChange, diffFields, type ChangedField } from "@/lib/change-log.server";
 
 const tierEnum = z.enum(["foundation", "studio", "practice"]);
 
