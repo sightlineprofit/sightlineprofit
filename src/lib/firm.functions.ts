@@ -1110,6 +1110,15 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
       .single();
     if (!me?.firm_id) throw new Error("No firm");
     if (me.role !== "principal") throw new Error("Only principals can update their compensation.");
+    const { data: prev } = await supabase
+      .from("owner_compensation")
+      .select("*")
+      .eq("firm_id", me.firm_id)
+      .eq("profile_id", userId)
+      .maybeSingle();
+    const { data: meProfile } = await supabase
+      .from("profiles").select("name, email").eq("id", userId).maybeSingle();
+    const entityLabel = (meProfile?.name as string) || (meProfile?.email as string) || "Principal";
     const { error } = await supabase
       .from("owner_compensation")
       .upsert(
@@ -1123,6 +1132,22 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
+    const changes = diffFields(prev as Record<string, unknown> | null, data as Record<string, unknown>, [
+      { key: "comp_draw_annual", label: "Compensation draw", type: "currency_annual" },
+      { key: "payroll_tax_pct", label: "Payroll tax", type: "percent" },
+      { key: "health_insurance_annual", label: "Health insurance", type: "currency_annual" },
+      { key: "retirement_annual", label: "Retirement", type: "currency_annual" },
+      { key: "distribution_annual", label: "Distributions", type: "currency_annual" },
+      { key: "reserve_target", label: "Reserve target", type: "currency" },
+      { key: "reserve_months", label: "Reserve months", type: "weeks" },
+      { key: "employee_payroll_tax_pct", label: "Employee payroll tax", type: "percent" },
+    ]);
+    if (changes.length) {
+      await logChange(supabase, {
+        firmId: me.firm_id, userId, category: "owner_compensation",
+        entityLabel, changes,
+      });
+    }
     return { ok: true };
   });
 
@@ -1137,6 +1162,14 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .single();
     if (!me?.firm_id) throw new Error("No firm");
     if (me.role !== "principal") throw new Error("Only principals can remove their compensation.");
+    const { data: prev } = await supabase
+      .from("owner_compensation")
+      .select("comp_draw_annual")
+      .eq("firm_id", me.firm_id)
+      .eq("profile_id", userId)
+      .maybeSingle();
+    const { data: meProfile } = await supabase
+      .from("profiles").select("name, email").eq("id", userId).maybeSingle();
     const { error } = await supabase
       .from("owner_compensation")
       .delete()
@@ -1144,5 +1177,10 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .eq("profile_id", userId);
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
+    await logChange(supabase, {
+      firmId: me.firm_id, userId, category: "owner_compensation",
+      entityLabel: (meProfile?.name as string) || (meProfile?.email as string) || "Principal",
+      changes: [{ field: "Removed compensation record", key: "comp_draw_annual", old_value: prev?.comp_draw_annual ?? null, new_value: null, type: "currency_annual" }],
+    });
     return { ok: true };
   });
