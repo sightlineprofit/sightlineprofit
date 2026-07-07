@@ -217,6 +217,7 @@ function AdminSettings() {
           {active === "notifications" && <NotificationsPanel onClose={close} />}
           {active === "preferences" && <PreferencesPanel onClose={close} />}
           {active === "security" && <SecurityPanel onClose={close} />}
+          {active === "history" && <HistoryPanel onClose={close} />}
         </div>
       )}
     </div>
