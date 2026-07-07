@@ -214,6 +214,17 @@ export const addExpense = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Operating expenses updated");
+    await logChange(supabase, {
+      firmId: profile.firm_id,
+      userId,
+      category: "operating_expenses",
+      entityLabel: data.name || "Expense",
+      changes: [
+        { field: "Added expense", key: "amount", old_value: null, new_value: data.amount, type: "currency" },
+        { field: "Frequency", key: "frequency", old_value: null, new_value: data.frequency, type: "enum" },
+        ...(data.category ? [{ field: "Category", key: "category", old_value: null, new_value: data.category, type: "text" as const }] : []),
+      ],
+    });
     return row;
   });
 
@@ -227,9 +238,25 @@ export const deleteExpense = createServerFn({ method: "POST" })
       .select("firm_id")
       .eq("id", userId)
       .single();
+    const { data: prev } = await supabase
+      .from("expenses")
+      .select("name, amount, frequency, category")
+      .eq("id", data.id)
+      .maybeSingle();
     const { error } = await supabase.from("expenses").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     if (me?.firm_id) await recordAlignedRate(supabase, me.firm_id, "Operating expenses updated");
+    if (me?.firm_id && prev) {
+      await logChange(supabase, {
+        firmId: me.firm_id,
+        userId,
+        category: "operating_expenses",
+        entityLabel: (prev.name as string) || "Expense",
+        changes: [
+          { field: "Removed expense", key: "amount", old_value: prev.amount, new_value: null, type: "currency" },
+        ],
+      });
+    }
     return { ok: true };
   });
 
