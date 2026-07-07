@@ -151,6 +151,11 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
+    const { data: prevConfig } = await supabase
+      .from("firm_config")
+      .select("*")
+      .eq("firm_id", profile.firm_id)
+      .maybeSingle();
     const { error } = await supabase
       .from("firm_config")
       .upsert(
@@ -159,6 +164,26 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Capacity or rate updated");
+    const rateChanges = diffFields(
+      (prevConfig ?? {}) as Record<string, unknown>,
+      data as Record<string, unknown>,
+      [
+        { key: "rate_billed", label: "Billed rate", type: "rate_per_hour" },
+        { key: "target_billable_hrs_per_week", label: "Target billable hours / week", type: "hours_per_week" },
+        { key: "target_gross_margin_pct", label: "Target margin", type: "percent" },
+        { key: "available_hrs_per_week", label: "Available hours / week", type: "hours_per_week" },
+        { key: "actual_billed_rate", label: "Actual billed rate", type: "rate_per_hour" },
+      ],
+    );
+    if (rateChanges.length) {
+      await logChange(supabase, {
+        firmId: profile.firm_id,
+        userId,
+        category: "rate_architecture",
+        entityLabel: "Firm rate settings",
+        changes: rateChanges,
+      });
+    }
     return { ok: true };
   });
 
