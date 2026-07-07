@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   DollarSign, Receipt, Calculator, User, Building2, Users,
-  CreditCard, Bell, SlidersHorizontal, Lock, X, Plus, Trash2,
+  CreditCard, Bell, SlidersHorizontal, Lock, X, Plus, Trash2, History, ChevronDown, ChevronRight,
 } from "lucide-react";
 import {
   getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
@@ -22,11 +22,12 @@ import { cn } from "@/lib/utils";
 import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
 import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricBreakdown";
+import { listChangeLog } from "@/lib/change-log.functions";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
   | "profile" | "firm" | "team" | "billing"
-  | "notifications" | "preferences" | "security";
+  | "notifications" | "preferences" | "security" | "history";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Sightline" }] }),
