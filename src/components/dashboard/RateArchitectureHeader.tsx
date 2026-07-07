@@ -559,23 +559,26 @@ function NumCell({
 export function WeeklyPulse({
   weekBillable,
   targetHrs,
-  rate,
   activeProjects,
+  trend,
 }: {
   weekBillable: number;
   targetHrs: number;
-  rate: number;
   activeProjects: Array<{ health: "healthy" | "watch" | "at_risk" }>;
+  trend: Array<{ billable: number; total: number }>;
 }) {
   const remaining = Math.max(0, targetHrs - weekBillable);
   const hoursPct = targetHrs > 0 ? (weekBillable / targetHrs) * 100 : 0;
-  const actualRev = weekBillable * rate;
-  const targetRev = targetHrs * rate;
-  const revPct = targetRev > 0 ? (actualRev / targetRev) * 100 : 0;
-  const revGap = Math.max(0, targetRev - actualRev);
   const healthy = activeProjects.filter((p) => p.health === "healthy").length;
   const watch = activeProjects.filter((p) => p.health === "watch").length;
   const atRisk = activeProjects.filter((p) => p.health === "at_risk").length;
+
+  const trendAvg =
+    trend.length > 0 ? trend.reduce((s, w) => s + w.billable, 0) / trend.length : 0;
+  const trendUtil = targetHrs > 0 ? (trendAvg / targetHrs) * 100 : 0;
+  const weeksOnTarget = trend.filter((w) => targetHrs > 0 && w.billable >= targetHrs).length;
+  const trendColor =
+    weeksOnTarget >= 3 ? SAGE : weeksOnTarget === 2 ? GOLD : TERRA;
 
   return (
     <div className="flex flex-col" style={{ gap: 10 }}>
@@ -594,15 +597,14 @@ export function WeeklyPulse({
         </div>
       </PulseCard>
 
-      <PulseCard label="Revenue this week">
+      <PulseCard label="4-week trend">
         <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: CHARCOAL }}>
-          {fmtUsd(actualRev, { decimals: 0 })}/{fmtUsd(targetRev, { decimals: 0 })}
+          {trendAvg.toFixed(1)}/{targetHrs} hrs/wk
         </div>
-        <MiniBar pct={revPct} />
-        <div style={{ fontSize: 10, color: revGap <= 0 && targetRev > 0 ? SAGE : MUTED, marginTop: 4 }}>
-          {revGap <= 0 && targetRev > 0
-            ? "Weekly target met"
-            : `${fmtUsd(revGap, { decimals: 0 })} to weekly target`}
+        <MiniBar pct={trendUtil} />
+        <div className="mt-1 flex items-center justify-between" style={{ fontSize: 10, color: MUTED }}>
+          <span>Utilization {Math.round(trendUtil)}%</span>
+          <span style={{ color: trendColor }}>{weeksOnTarget} of 4 on target</span>
         </div>
       </PulseCard>
 

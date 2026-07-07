@@ -37,6 +37,7 @@ import { format, parseISO } from "date-fns";
 import { RoleGuard } from "@/lib/role";
 import { CapacityTile, type CapacityTileData } from "@/components/capacity/CapacityTile";
 import { CapacityExpanded, type CapacityExpandedData } from "@/components/capacity/CapacityExpanded";
+import { FirmCapacitySection } from "@/components/capacity/FirmCapacitySection";
 import type { CapacityInputs } from "@/lib/capacity-math";
 import { RateInsightCard } from "@/components/dashboard/RateInsightCard";
 import { NarrativeStrip } from "@/components/dashboard/NarrativeStrip";
@@ -308,8 +309,8 @@ function Dashboard() {
               <WeeklyPulse
                 weekBillable={weekMetrics.billable}
                 targetHrs={targetHrs}
-                rate={rateBilled}
                 activeProjects={activeProjects}
+                trend={trend}
               />
               <TeamHoursTile
                 members={((data as any)?.capacity?.team ?? []).filter((m: any) => m.is_active !== false)}
@@ -324,12 +325,13 @@ function Dashboard() {
         </>
       )}
 
-      {/* Supporting tiles */}
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        <ActiveProjectsTile projects={activeProjects} />
-        <FourWeekTrendTile trend={trend} target={targetHrs} rate={rateBilled} />
-        <CapacityTile data={capacityData as unknown as CapacityTileData} onOpen={() => setOpenPanel("capacity")} />
-      </div>
+      {/* Firm Capacity — full section below Rate Architecture */}
+      {!setupIncomplete && (
+        <FirmCapacitySection
+          data={capacityData}
+          onOpen={() => setOpenPanel("capacity")}
+        />
+      )}
 
       <div className="mt-4">
         <ActionEnginePanel />

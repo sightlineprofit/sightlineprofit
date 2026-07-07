@@ -440,7 +440,7 @@ function ProspectsSection({
   );
 }
 
-function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
+export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
   const maxH = Math.max(target * 1.6, 1);
   return (
     <div className="mt-3">
@@ -486,7 +486,7 @@ function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"
   );
 }
 
-function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; phases: PhaseRow[] }) {
+export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; phases: PhaseRow[] }) {
   const now = new Date();
   const windowStart = startOfISOWeek(now);
   const windowEnd = addWeeks(windowStart, 26); // 6 months
@@ -773,7 +773,7 @@ function WhatIfTool({
 }
 
 /* ───────── Team tab ───────── */
-type TeamMemberRow = {
+export type TeamMemberRow = {
   key: string;
   lookupId: string;
   name: string;
@@ -783,11 +783,46 @@ type TeamMemberRow = {
   tracks: boolean;
 };
 
-function colorFromName(name: string): string {
+export function colorFromName(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   const palette = ["#B8860B", "#5C8A6E", "#C4714A", "#8A7CB8", "#4A7A9C", "#B85C7C"];
   return palette[h % palette.length];
+}
+
+/**
+ * Build the ordered member rows used by TeamTab / dashboard capacity section.
+ * Principal first (dedup'd if also present in firm_members), team follows.
+ */
+export function buildTeamRows(data: CapacityExpandedData): TeamMemberRow[] {
+  const principal = data.principal;
+  const nonPrincipal = data.team.filter(
+    (m) => !principal || (m.profile_id ?? m.id) !== principal.id,
+  );
+  const rows: TeamMemberRow[] = [];
+  if (principal) {
+    rows.push({
+      key: `principal-${principal.id}`,
+      lookupId: principal.id,
+      name: principal.name,
+      roleLabel: "PRINCIPAL",
+      isPrincipal: true,
+      target: Number(principal.target) || 0,
+      tracks: true,
+    });
+  }
+  for (const m of nonPrincipal) {
+    rows.push({
+      key: m.id,
+      lookupId: m.profile_id ?? m.id,
+      name: m.name || m.email || "Team member",
+      roleLabel: (m.role_type || "TEAM").toUpperCase(),
+      isPrincipal: false,
+      target: Number(m.expected_hrs_per_week) || 0,
+      tracks: m.is_platform_user !== false,
+    });
+  }
+  return rows;
 }
 
 function TeamTab({ data }: { data: CapacityExpandedData }) {
@@ -941,7 +976,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
   );
 }
 
-function MemberCard({
+export function MemberCard({
   row,
   logged,
   lastEntry,
