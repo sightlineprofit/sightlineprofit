@@ -790,6 +790,41 @@ export function colorFromName(name: string): string {
   return palette[h % palette.length];
 }
 
+/**
+ * Build the ordered member rows used by TeamTab / dashboard capacity section.
+ * Principal first (dedup'd if also present in firm_members), team follows.
+ */
+export function buildTeamRows(data: CapacityExpandedData): TeamMemberRow[] {
+  const principal = data.principal;
+  const nonPrincipal = data.team.filter(
+    (m) => !principal || (m.profile_id ?? m.id) !== principal.id,
+  );
+  const rows: TeamMemberRow[] = [];
+  if (principal) {
+    rows.push({
+      key: `principal-${principal.id}`,
+      lookupId: principal.id,
+      name: principal.name,
+      roleLabel: "PRINCIPAL",
+      isPrincipal: true,
+      target: Number(principal.target) || 0,
+      tracks: true,
+    });
+  }
+  for (const m of nonPrincipal) {
+    rows.push({
+      key: m.id,
+      lookupId: m.profile_id ?? m.id,
+      name: m.name || m.email || "Team member",
+      roleLabel: (m.role_type || "TEAM").toUpperCase(),
+      isPrincipal: false,
+      target: Number(m.expected_hrs_per_week) || 0,
+      tracks: m.is_platform_user !== false,
+    });
+  }
+  return rows;
+}
+
 function TeamTab({ data }: { data: CapacityExpandedData }) {
   const firmTarget = data.inputs.targetHrsPerWeek;
   const weeksPerYear = data.inputs.weeksPerYear || 48;
