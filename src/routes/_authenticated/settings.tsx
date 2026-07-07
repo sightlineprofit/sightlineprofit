@@ -671,11 +671,17 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
     return compByProfile.get(p.id) ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, reserve_target: null };
   });
 
-  // In advanced mode with a structure selected, override the config's structure live.
+  // Always calc() against the firm's saved business_structure so the modal's
+  // Live Output panel matches the dashboard's cost floor / break-even /
+  // aligned rate for the same underlying data. Advanced mode may preview a
+  // different structure live; simple mode inherits the saved structure
+  // rather than forcing it to null (which would drop distributions and
+  // reserve contributions and produce a lower cost floor than the
+  // dashboard shows).
   const cfgForCalc: any =
     mode === "advanced"
-      ? { ...(liveConfig as any), business_structure: structure, __ownerCompOverride: liveRows }
-      : { ...(liveConfig as any), business_structure: null, __ownerCompOverride: liveRows };
+      ? { ...(liveConfig as any), business_structure: structure ?? savedStructure, __ownerCompOverride: liveRows }
+      : { ...(liveConfig as any), business_structure: savedStructure, __ownerCompOverride: liveRows };
 
   return (
     <FinancialLayout
