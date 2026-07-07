@@ -1648,6 +1648,54 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
         }}
         onViewBreakdown={() => setPendingClose(false)}
       />
+
+      {/* NOTHING TO REPORT DIALOG — deliberate friction so this shortcut
+          isn't taken by accident. Typing the exact phrase is the confirm
+          step; per spec no second click is required afterward. */}
+      <Dialog open={ntrOpen} onOpenChange={(o) => { if (!o) { setNtrOpen(false); setNtrPhrase(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nothing to report this period</DialogTitle>
+            <DialogDescription>
+              Use this only if there was genuinely no billable or non-billable work on this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div
+            className="rounded-md p-3 text-[12px]"
+            style={{ background: "rgba(196,113,74,0.08)", border: "1px solid rgba(196,113,74,0.30)", color: "#7A3A22" }}
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "#C4714A" }} />
+              <span>
+                This skips a real time entry. If any billable or non-billable work actually happened
+                and wasn't logged, this will overstate your remaining margin and understate hours used.
+                Only confirm if there was genuinely no work this period.
+              </span>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+              Type <span className="font-mono text-ch">{NOTHING_TO_REPORT_PHRASE}</span> to enable submission
+            </label>
+            <Input
+              value={ntrPhrase}
+              onChange={(e) => setNtrPhrase(e.target.value)}
+              placeholder={NOTHING_TO_REPORT_PHRASE}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setNtrOpen(false); setNtrPhrase(""); }}>Cancel</Button>
+            <Button
+              className="bg-ch text-cream hover:bg-ch/90"
+              disabled={ntrPhrase.trim().toUpperCase() !== NOTHING_TO_REPORT_PHRASE || nothingMut.isPending}
+              onClick={() => nothingMut.mutate(ntrPhrase.trim())}
+            >
+              {nothingMut.isPending ? "Saving…" : "Confirm — nothing to report"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
