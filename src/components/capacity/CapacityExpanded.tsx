@@ -440,7 +440,7 @@ function ProspectsSection({
   );
 }
 
-function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
+export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
   const maxH = Math.max(target * 1.6, 1);
   return (
     <div className="mt-3">
@@ -486,7 +486,7 @@ function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"
   );
 }
 
-function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; phases: PhaseRow[] }) {
+export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; phases: PhaseRow[] }) {
   const now = new Date();
   const windowStart = startOfISOWeek(now);
   const windowEnd = addWeeks(windowStart, 26); // 6 months
@@ -773,7 +773,7 @@ function WhatIfTool({
 }
 
 /* ───────── Team tab ───────── */
-type TeamMemberRow = {
+export type TeamMemberRow = {
   key: string;
   lookupId: string;
   name: string;
@@ -783,7 +783,7 @@ type TeamMemberRow = {
   tracks: boolean;
 };
 
-function colorFromName(name: string): string {
+export function colorFromName(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   const palette = ["#B8860B", "#5C8A6E", "#C4714A", "#8A7CB8", "#4A7A9C", "#B85C7C"];
@@ -941,7 +941,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
   );
 }
 
-function MemberCard({
+export function MemberCard({
   row,
   logged,
   lastEntry,
