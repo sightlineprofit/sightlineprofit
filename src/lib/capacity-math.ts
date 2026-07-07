@@ -42,6 +42,17 @@ export type CapacityInputs = {
   targetHrsPerWeek: number;
   weeksPerYear: number;
   ratePerHr: number;
+  /**
+   * Optional override for the firm-wide annual billable capacity used in the
+   * summary (committed / available). When provided, this is the SAME
+   * annualBillableHrs computed by finance.ts calc() — i.e.
+   *   (principal_target_hrs_per_week + Σ active_member.expected_hrs_per_week)
+   *     × weeks_per_year
+   * so the dashboard's Firm Capacity totals stay in lock-step with every
+   * other "$X/hr" surface. `targetHrsPerWeek` still drives the per-week
+   * pressure chart / windows (principal target line), which is intentional.
+   */
+  annualCapacityHrs?: number;
 };
 
 export type WeekBucket = {
@@ -135,9 +146,12 @@ function summaryStatus(committedPct: number): CapacitySummary["status"] {
 }
 
 export function computeCapacity(input: CapacityInputs): CapacitySummary {
-  const { projects, phases, pipeline, trailingEntries, avgWeeklyNonBillable, targetHrsPerWeek, weeksPerYear } = input;
+  const { projects, phases, pipeline, trailingEntries, avgWeeklyNonBillable, targetHrsPerWeek, weeksPerYear, annualCapacityHrs } = input;
   const active = projects.filter(isActive);
-  const annualTarget = targetHrsPerWeek * weeksPerYear;
+  const annualTarget =
+    annualCapacityHrs && annualCapacityHrs > 0
+      ? annualCapacityHrs
+      : targetHrsPerWeek * weeksPerYear;
 
   const committed = active.reduce((s, p) => s + projectHours(p, phases), 0);
 
