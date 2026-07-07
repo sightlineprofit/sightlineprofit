@@ -803,11 +803,13 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
   const isAdv = mode === "advanced";
   const struct = isAdv ? structure : null;
   const isSCorp = struct === "s_corp";
-  // In simple mode we present salary + distributions as separate inputs but persist
-  // comp_draw_annual = salary + distributions (per onboarding contract).
+  // comp_draw_annual stores the salary/draw ONLY (matches finance.ts calc()).
+  // Distributions live in distribution_annual and are added separately —
+  // never folded into comp_draw_annual (that produced double-counting when
+  // toggling Simple ↔ Advanced).
   const draw = Number(v.comp_draw_annual) || 0;
   const dist = Number(v.distribution_annual) || 0;
-  const simpleSalary = Math.max(0, draw - dist);
+  const simpleSalary = draw;
   const health = Number(v.health_insurance_annual) || 0;
   const retire = Number(v.retirement_annual) || 0;
   const reserve = Number(v.reserve_target) || 0;
@@ -815,16 +817,19 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
   const ptaxPct = Number(v.payroll_tax_pct) || 0;
   const ptax =
     isAdv && isSCorp ? (draw * (ptaxPct + empePct)) / 100 : (draw * ptaxPct) / 100;
+  // Simple mode always surfaces distributions in the total; Advanced only
+  // exposes them for S-Corp.
+  const includeDist = !isAdv || isSCorp;
   const total =
-    draw + ptax + health + retire + (isAdv && isSCorp ? dist + reserve : 0);
+    draw + ptax + health + retire + (includeDist ? dist : 0) + (isAdv && isSCorp ? reserve : 0);
 
   function setSimpleSalary(x: string) {
     const s = x === "" ? 0 : Number(x);
-    onChange({ ...v, comp_draw_annual: s + dist });
+    onChange({ ...v, comp_draw_annual: s });
   }
   function setSimpleDist(x: string) {
     const d = x === "" ? 0 : Number(x);
-    onChange({ ...v, distribution_annual: d, comp_draw_annual: simpleSalary + d });
+    onChange({ ...v, distribution_annual: d });
   }
 
   const initials = ((principal.name || principal.email) as string)
