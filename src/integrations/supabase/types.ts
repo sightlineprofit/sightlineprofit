@@ -289,6 +289,47 @@ export type Database = {
           },
         ]
       }
+      firm_change_log: {
+        Row: {
+          category: Database["public"]["Enums"]["change_log_category"]
+          changed_by: string | null
+          changed_by_name: string | null
+          changed_fields: Json
+          created_at: string
+          entity_label: string
+          firm_id: string
+          id: string
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["change_log_category"]
+          changed_by?: string | null
+          changed_by_name?: string | null
+          changed_fields?: Json
+          created_at?: string
+          entity_label: string
+          firm_id: string
+          id?: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["change_log_category"]
+          changed_by?: string | null
+          changed_by_name?: string | null
+          changed_fields?: Json
+          created_at?: string
+          entity_label?: string
+          firm_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_change_log_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firm_config: {
         Row: {
           accounting_basis: string
@@ -1659,6 +1700,12 @@ export type Database = {
       }
     }
     Enums: {
+      change_log_category:
+        | "rate_architecture"
+        | "owner_compensation"
+        | "team_cost"
+        | "team_capacity"
+        | "operating_expenses"
       expense_frequency: "annual" | "monthly" | "quarterly" | "onetime"
       kb_category:
         | "rate_architecture"
@@ -1813,6 +1860,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      change_log_category: [
+        "rate_architecture",
+        "owner_compensation",
+        "team_cost",
+        "team_capacity",
+        "operating_expenses",
+      ],
       expense_frequency: ["annual", "monthly", "quarterly", "onetime"],
       kb_category: [
         "rate_architecture",

@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { computeBurden } from "@/lib/cost";
 import { seedDefaultSops } from "@/lib/sop-seed.server";
 import { recordAlignedRate } from "@/lib/rate-history.server";
+import { logChange, diffFields, type ChangedField } from "@/lib/change-log.server";
 
 const tierEnum = z.enum(["foundation", "studio", "practice"]);
 
@@ -150,6 +151,11 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
+    const { data: prevConfig } = await supabase
+      .from("firm_config")
+      .select("*")
+      .eq("firm_id", profile.firm_id)
+      .maybeSingle();
     const { error } = await supabase
       .from("firm_config")
       .upsert(
@@ -158,6 +164,26 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Capacity or rate updated");
+    const rateChanges = diffFields(
+      (prevConfig ?? {}) as Record<string, unknown>,
+      data as Record<string, unknown>,
+      [
+        { key: "rate_billed", label: "Billed rate", type: "rate_per_hour" },
+        { key: "target_billable_hrs_per_week", label: "Target billable hours / week", type: "hours_per_week" },
+        { key: "target_gross_margin_pct", label: "Target margin", type: "percent" },
+        { key: "available_hrs_per_week", label: "Available hours / week", type: "hours_per_week" },
+        { key: "actual_billed_rate", label: "Actual billed rate", type: "rate_per_hour" },
+      ],
+    );
+    if (rateChanges.length) {
+      await logChange(supabase, {
+        firmId: profile.firm_id,
+        userId,
+        category: "rate_architecture",
+        entityLabel: "Firm rate settings",
+        changes: rateChanges,
+      });
+    }
     return { ok: true };
   });
 
@@ -188,6 +214,17 @@ export const addExpense = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Operating expenses updated");
+    await logChange(supabase, {
+      firmId: profile.firm_id,
+      userId,
+      category: "operating_expenses",
+      entityLabel: data.name || "Expense",
+      changes: [
+        { field: "Added expense", key: "amount", old_value: null, new_value: data.amount, type: "currency" },
+        { field: "Frequency", key: "frequency", old_value: null, new_value: data.frequency, type: "enum" },
+        ...(data.category ? [{ field: "Category", key: "category", old_value: null, new_value: data.category, type: "text" as const }] : []),
+      ],
+    });
     return row;
   });
 
@@ -201,9 +238,25 @@ export const deleteExpense = createServerFn({ method: "POST" })
       .select("firm_id")
       .eq("id", userId)
       .single();
+    const { data: prev } = await supabase
+      .from("expenses")
+      .select("name, amount, frequency, category")
+      .eq("id", data.id)
+      .maybeSingle();
     const { error } = await supabase.from("expenses").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     if (me?.firm_id) await recordAlignedRate(supabase, me.firm_id, "Operating expenses updated");
+    if (me?.firm_id && prev) {
+      await logChange(supabase, {
+        firmId: me.firm_id,
+        userId,
+        category: "operating_expenses",
+        entityLabel: (prev.name as string) || "Expense",
+        changes: [
+          { field: "Removed expense", key: "amount", old_value: prev.amount, new_value: null, type: "currency" },
+        ],
+      });
+    }
     return { ok: true };
   });
 
@@ -787,6 +840,11 @@ export const saveFirmMember = createServerFn({ method: "POST" })
     };
 
     if (data.id) {
+      const { data: prevMember } = await supabase
+        .from("firm_members")
+        .select("*")
+        .eq("id", data.id)
+        .maybeSingle();
       const { error } = await supabase
         .from("firm_members")
         .update(row)
@@ -794,6 +852,7 @@ export const saveFirmMember = createServerFn({ method: "POST" })
         .eq("firm_id", me.firm_id);
       if (error) throw new Error(error.message);
       await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+      await logMemberChanges(supabase, me.firm_id, userId, data.name, prevMember, row);
       return { ok: true, id: data.id };
     }
     const { data: inserted, error } = await supabase
@@ -803,8 +862,43 @@ export const saveFirmMember = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+    await logMemberChanges(supabase, me.firm_id, userId, data.name, null, row);
     return { ok: true, id: inserted!.id };
   });
+
+async function logMemberChanges(
+  supabase: Parameters<typeof logChange>[0],
+  firmId: string,
+  userId: string | null,
+  entityLabel: string,
+  prev: Record<string, unknown> | null,
+  next: Record<string, unknown>,
+) {
+  const costChanges: ChangedField[] = diffFields(prev, next, [
+    { key: "compensation_type", label: "Compensation type", type: "enum" },
+    { key: "employment_type", label: "Employment type", type: "enum" },
+    { key: "hourly_wage", label: "Hourly wage", type: "rate_per_hour" },
+    { key: "annual_base_salary", label: "Annual salary", type: "currency_annual" },
+    { key: "employer_payroll_tax_pct", label: "Employer payroll tax", type: "percent" },
+    { key: "annual_benefits", label: "Annual benefits", type: "currency_annual" },
+    { key: "other_annual_costs", label: "Equipment / other", type: "currency_annual" },
+    { key: "billed_rate", label: "Billed rate", type: "rate_per_hour" },
+  ]);
+  const capChanges: ChangedField[] = diffFields(prev, next, [
+    { key: "expected_hrs_per_week", label: "Expected hours / week", type: "hours_per_week" },
+    { key: "weeks_per_year", label: "Weeks / year", type: "weeks" },
+  ]);
+  if (costChanges.length) {
+    await logChange(supabase, {
+      firmId, userId, category: "team_cost", entityLabel, changes: costChanges,
+    });
+  }
+  if (capChanges.length) {
+    await logChange(supabase, {
+      firmId, userId, category: "team_capacity", entityLabel, changes: capChanges,
+    });
+  }
+}
 
 export const deleteFirmMember = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -818,6 +912,11 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .single();
     if (!me?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+    const { data: prev } = await supabase
+      .from("firm_members")
+      .select("name, is_active")
+      .eq("id", data.id)
+      .maybeSingle();
     const { error } = await supabase
       .from("firm_members")
       .update({ is_active: false })
@@ -825,6 +924,13 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .eq("firm_id", me.firm_id);
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+    await logChange(supabase, {
+      firmId: me.firm_id,
+      userId,
+      category: "team_capacity",
+      entityLabel: (prev?.name as string) || "Team member",
+      changes: [{ field: "Active", key: "is_active", old_value: true, new_value: false, type: "boolean" }],
+    });
     return { ok: true };
   });
 
@@ -1004,6 +1110,15 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
       .single();
     if (!me?.firm_id) throw new Error("No firm");
     if (me.role !== "principal") throw new Error("Only principals can update their compensation.");
+    const { data: prev } = await supabase
+      .from("owner_compensation")
+      .select("*")
+      .eq("firm_id", me.firm_id)
+      .eq("profile_id", userId)
+      .maybeSingle();
+    const { data: meProfile } = await supabase
+      .from("profiles").select("name, email").eq("id", userId).maybeSingle();
+    const entityLabel = (meProfile?.name as string) || (meProfile?.email as string) || "Principal";
     const { error } = await supabase
       .from("owner_compensation")
       .upsert(
@@ -1017,6 +1132,22 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
+    const changes = diffFields(prev as Record<string, unknown> | null, data as Record<string, unknown>, [
+      { key: "comp_draw_annual", label: "Compensation draw", type: "currency_annual" },
+      { key: "payroll_tax_pct", label: "Payroll tax", type: "percent" },
+      { key: "health_insurance_annual", label: "Health insurance", type: "currency_annual" },
+      { key: "retirement_annual", label: "Retirement", type: "currency_annual" },
+      { key: "distribution_annual", label: "Distributions", type: "currency_annual" },
+      { key: "reserve_target", label: "Reserve target", type: "currency" },
+      { key: "reserve_months", label: "Reserve months", type: "weeks" },
+      { key: "employee_payroll_tax_pct", label: "Employee payroll tax", type: "percent" },
+    ]);
+    if (changes.length) {
+      await logChange(supabase, {
+        firmId: me.firm_id, userId, category: "owner_compensation",
+        entityLabel, changes,
+      });
+    }
     return { ok: true };
   });
 
@@ -1031,6 +1162,14 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .single();
     if (!me?.firm_id) throw new Error("No firm");
     if (me.role !== "principal") throw new Error("Only principals can remove their compensation.");
+    const { data: prev } = await supabase
+      .from("owner_compensation")
+      .select("comp_draw_annual")
+      .eq("firm_id", me.firm_id)
+      .eq("profile_id", userId)
+      .maybeSingle();
+    const { data: meProfile } = await supabase
+      .from("profiles").select("name, email").eq("id", userId).maybeSingle();
     const { error } = await supabase
       .from("owner_compensation")
       .delete()
@@ -1038,5 +1177,10 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .eq("profile_id", userId);
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
+    await logChange(supabase, {
+      firmId: me.firm_id, userId, category: "owner_compensation",
+      entityLabel: (meProfile?.name as string) || (meProfile?.email as string) || "Principal",
+      changes: [{ field: "Removed compensation record", key: "comp_draw_annual", old_value: prev?.comp_draw_annual ?? null, new_value: null, type: "currency_annual" }],
+    });
     return { ok: true };
   });
