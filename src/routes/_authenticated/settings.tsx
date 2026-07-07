@@ -2194,3 +2194,154 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
     </PanelShell>
   );
 }
+
+/* ────────────────────────────── history panel ────────────────────────────── */
+
+type ChangeCategory =
+  | "rate_architecture" | "owner_compensation" | "team_cost" | "team_capacity" | "operating_expenses";
+
+const CATEGORY_LABELS: Record<ChangeCategory, string> = {
+  rate_architecture: "Rate architecture",
+  owner_compensation: "Owner compensation",
+  team_cost: "Team cost",
+  team_capacity: "Team capacity",
+  operating_expenses: "Operating expenses",
+};
+
+type ChangedField = {
+  field: string;
+  old_value: unknown;
+  new_value: unknown;
+  type: string;
+};
+
+type LogRow = {
+  id: string;
+  category: ChangeCategory;
+  entity_label: string;
+  changed_fields: ChangedField[];
+  changed_by_name: string | null;
+  created_at: string;
+};
+
+function formatValue(v: unknown, type: string): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (type === "boolean") return v ? "Active" : "Inactive";
+  const num = typeof v === "number" ? v : Number(v);
+  if (Number.isFinite(num) && (
+    type === "currency" || type === "currency_annual" ||
+    type === "rate_per_hour" || type === "hours_per_week" ||
+    type === "weeks" || type === "percent"
+  )) {
+    if (type === "rate_per_hour") return `$${Math.round(num)}/hr`;
+    if (type === "hours_per_week") return `${num} hrs/wk`;
+    if (type === "weeks") return `${num} wks`;
+    if (type === "percent") return `${num}%`;
+    return `$${Math.round(num).toLocaleString()}`;
+  }
+  return String(v).replace(/_/g, " ");
+}
+
+function formatWhen(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
+function HistoryPanel({ onClose }: { onClose: () => void }) {
+  const [category, setCategory] = useState<ChangeCategory>("rate_architecture");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const list = useServerFn(listChangeLog);
+  const { data, isLoading } = useQuery({
+    queryKey: ["changeLog", category],
+    queryFn: () => list({ data: { category } }),
+  });
+
+  const rows = (data ?? []) as LogRow[];
+
+  function toggle(id: string) {
+    const s = new Set(expanded);
+    if (s.has(id)) s.delete(id); else s.add(id);
+    setExpanded(s);
+  }
+
+  return (
+    <PanelShell
+      title="Historical reference"
+      subtitle="Every change made to your financial settings, grouped by category."
+      onClose={onClose}
+    >
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {(Object.keys(CATEGORY_LABELS) as ChangeCategory[]).map((c) => {
+          const on = c === category;
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategory(c)}
+              className={cn(
+                "rounded-[4px] border px-2.5 py-[6px] text-[11px] transition-colors",
+                on
+                  ? "border-gold bg-gold text-white"
+                  : "border-border bg-white text-ch/70 hover:border-gold/60",
+              )}
+            >
+              {CATEGORY_LABELS[c]}
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoading ? (
+        <p className="text-[11px] text-ch/50">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-[11px] italic text-ch/50">
+          No changes recorded yet for {CATEGORY_LABELS[category].toLowerCase()}.
+        </p>
+      ) : (
+        <div className="divide-y divide-border rounded-[6px] border border-border bg-white">
+          {rows.map((r) => {
+            const isOpen = expanded.has(r.id);
+            const count = r.changed_fields?.length ?? 0;
+            return (
+              <div key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => toggle(r.id)}
+                  className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-cream/60"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      {isOpen ? <ChevronDown size={12} className="text-ch/50" /> : <ChevronRight size={12} className="text-ch/50" />}
+                      <span className="truncate text-[12px] font-medium text-ch">{r.entity_label}</span>
+                    </div>
+                    <div className="mt-0.5 pl-[18px] text-[10px] text-ch/50">
+                      {formatWhen(r.created_at)}
+                      {r.changed_by_name ? ` · ${r.changed_by_name}` : ""}
+                      {` · ${count} field${count === 1 ? "" : "s"} updated`}
+                    </div>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="border-t border-border bg-cream/40 px-3.5 py-2.5">
+                    <ul className="space-y-1.5">
+                      {(r.changed_fields ?? []).map((f, i) => (
+                        <li key={i} className="text-[11px] text-ch/80">
+                          <span className="text-ch/60">{f.field}:</span>{" "}
+                          <span className="line-through text-ch/40">{formatValue(f.old_value, f.type)}</span>
+                          <span className="mx-1.5 text-ch/40">→</span>
+                          <span className="font-medium text-ch">{formatValue(f.new_value, f.type)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </PanelShell>
+  );
+}
