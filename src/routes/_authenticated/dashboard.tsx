@@ -210,6 +210,11 @@ function Dashboard() {
       targetHrsPerWeek: targetHrs,
       weeksPerYear: Number((data?.config as any)?.weeks_per_year ?? 48),
       ratePerHr: rateBilled,
+      // Firm-wide annual capacity = principal target + Σ active team members'
+      // expected hours, annualized — the SAME value calc() uses as
+      // annualBillableHrs. Keeps Firm Capacity's total in sync with every
+      // other rate/architecture surface.
+      annualCapacityHrs: c.annualBillableHrs,
     };
     const out: CapacityExpandedData = {
       inputs,
