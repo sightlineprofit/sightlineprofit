@@ -385,6 +385,7 @@ function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id:
     { id: "notifications", name: "Notifications", desc: "Alerts and email preferences.", icon: Bell, status: { tone: "muted", text: "Default settings" } },
     { id: "preferences", name: "Preferences", desc: "Display and regional settings.", icon: SlidersHorizontal, status: { tone: "muted", text: "Default settings" } },
     { id: "security", name: "Security", desc: "Password and account access.", icon: Lock, status: { tone: "ok", text: "Secure" } },
+    { id: "history", name: "Historical reference", desc: "Change log across your financial settings.", icon: History, status: { tone: "muted", text: "View change history" } },
   ];
   return <>{tiles.map(t => <Tile key={t.id} t={t} active={active} onOpen={onOpen} />)}</>;
 }
