@@ -41,6 +41,25 @@ export const getProjectList = createServerFn({ method: "GET" })
           .in("project_id", projectIds)
       : { data: [] as Array<{ project_id: string | null; user_id: string; hrs: number; billable: boolean; date: string }> };
 
+    // Pull most recent 'nothing_to_report' event per project so the freshness
+    // clock resets on a legitimate override (see project detail page).
+    const { data: ntrRows } = projectIds.length
+      ? await supabase
+          .from("project_activity_log")
+          .select("project_id, occurred_at")
+          .eq("event_type", "nothing_to_report")
+          .in("project_id", projectIds)
+          .order("occurred_at", { ascending: false })
+      : { data: [] as Array<{ project_id: string; occurred_at: string }> };
+    const lastNtrByProject = new Map<string, string>();
+    for (const r of ntrRows ?? []) {
+      if (!lastNtrByProject.has(r.project_id)) {
+        // First hit is the most recent thanks to the order clause.
+        // Store as YYYY-MM-DD so it composes with time_entries.date below.
+        lastNtrByProject.set(r.project_id, String(r.occurred_at).slice(0, 10));
+      }
+    }
+
     const costRateByUser = new Map<string, number>();
     const billRateByUser = new Map<string, number>();
     for (const t of team ?? []) {
@@ -102,10 +121,18 @@ export const getProjectList = createServerFn({ method: "GET" })
           projectFee = scopedRate * scopedHrs;
           marginRemaining = (scopedRate * scopedHrs) - a.totalCost;
         }
-        // Freshness computation
+        // Freshness computation.
+        // lastActivityAt = MAX(most recent time entry, most recent
+        // 'nothing_to_report' override). Real time entries live in
+        // time_entries; the override lives in project_activity_log.
+        const lastNtr = lastNtrByProject.get(p.id) ?? null;
+        const lastActivityAt =
+          a.lastEntryAt && lastNtr
+            ? (a.lastEntryAt > lastNtr ? a.lastEntryAt : lastNtr)
+            : (a.lastEntryAt ?? lastNtr);
         let daysSince: number | null = null;
-        if (a.lastEntryAt) {
-          const ts = new Date(a.lastEntryAt as string).getTime();
+        if (lastActivityAt) {
+          const ts = new Date(lastActivityAt as string).getTime();
           if (!Number.isNaN(ts)) daysSince = Math.floor((now - ts) / (24 * 3600 * 1000));
         }
         let freshnessState: "current" | "stale" | "critical";
@@ -117,7 +144,7 @@ export const getProjectList = createServerFn({ method: "GET" })
           ...p,
           totals: totals[p.id] ?? { scoped: Number(p.scoped_hrs || 0), actual: 0 },
           freshness: {
-            lastEntryAt: a.lastEntryAt,
+            lastEntryAt: lastActivityAt,
             daysSince,
             state: freshnessState,
           },
