@@ -1,93 +1,131 @@
-# Catalog cleanup: remove Foundation tier
+Prompt 03 is the largest of the three: it rewrites `/billing`, the TrialBanner, the onboarding wrapper, the first-time dashboard experience, post-auth routing, and adds two new Settings sections (Default landing page + Billing management). It also needs a small DB migration to store the new preferences.
 
-## Goal
+I'll implement it as one cohesive commit set. Below is what changes, grouped by area.
 
-Reduce the catalog to exactly 4 sellable products and eliminate the "foundation" tier from the app entirely:
+---
 
-1. **Studio** — `sightline_studio_monthly_v2`
-2. **Practice** — `sightline_practice_monthly_v2`
-3. **Early Access — Studio** — renamed from "Early Access — Foundation", price stays **$39/mo locked-for-life**
-4. **Early Access — Practice** — `sightline_early_practice_monthly`
+## 1. Database migration
 
-New trial/no-subscription users default to `studio` instead of `foundation`.
+Two additive changes, no destructive edits:
 
-## Part 1 — Stripe (you do this in More → Payments)
+**`firms`**
+- `onboarding_completed boolean not null default false`
+- `onboarding_completed_at timestamptz`
+- `welcome_banner_dismissed boolean not null default false`
+- `default_landing_page text default 'dashboard'` (constrained to: `dashboard`, `projects`, `capacity`, `time_calendar`, `rate_architecture`)
 
-Since this is catalog-only cleanup with no live foundation subscribers, in the Payments dashboard:
+**Backfill**
+- Any firm that already has `firm_config` rows OR `stripe_subscription_id` gets `onboarding_completed = true` and `welcome_banner_dismissed = true` — existing users don't see the welcome banner or onboarding again.
 
-1. **Rename** product "Sightline Early Access — Foundation" → **"Sightline Early Access — Studio"**. Keep its existing $39/mo price and its `sightline_early_foundation_monthly` lookup key (the lookup key is a stable ID; renaming the display name is safe and does not require a code change to the key itself — but we will remap it to tier `studio` in code, see Part 2).
-2. **Archive** the standalone "Foundation $39/mo" product/price (`sightline_foundation_monthly`). Archiving hides it from checkout without deleting historical records.
+`firm_preferences` in the prompt is folded into the `firms` table (single row per firm — no need for a separate table). If you'd rather have a separate `firm_preferences` table, say so.
 
-After this, the Payments dashboard should show 4 active products.
+## 2. New / updated server functions (`billing.functions.ts`, `firm.functions.ts`)
 
-## Part 2 — Code changes
+- `getBillingSummary` — extend the returned firm shape to include `stripe_price_id`, `billing_frequency`, `stripe_payment_method_id`, plus resolved card info (brand / last4 / exp) from Stripe when a payment method is on file, and `nextChargeAmountCents` from Stripe upcoming-invoice when subscribed.
+- `activateSubscription({ frequency })` — new. Uses firm's `stripe_customer_id` + stored payment method to create a Stripe subscription at the correct price (founding vs standard based on original stored `stripe_price_id`), honors remaining trial via `trial_end`, writes back `subscription_status='active'`, `billing_frequency`, `stripe_subscription_id`, `stripe_price_id`.
+- `updatePaymentMethod({ paymentMethodId })` — new. Attaches new PM to customer, sets as default. Called from "Use a different card" flow.
+- `switchBillingFrequency({ target: 'monthly' | 'annual', mode: 'immediate' | 'at_period_end' })` — new. Monthly → annual: immediate proration to matching price; Annual → monthly: schedule change at `current_period_end` via Stripe subscription schedule.
+- `setDefaultLandingPage({ page })` — new. Writes `firms.default_landing_page`.
+- `dismissWelcomeBanner()` — new. Sets `firms.welcome_banner_dismissed = true`.
+- `completeOnboarding()` — new. Sets `firms.onboarding_completed = true` + `onboarding_completed_at = now()`. Called by onboarding "Finish".
 
-### `src/lib/stripe.server.ts`
-- `Tier` type: drop `"foundation"` → `"studio" | "practice"`.
-- `PRICE_TO_TIER`: remove `sightline_foundation_monthly`; remap `sightline_early_foundation_monthly` → `"studio"`.
-- `DEFAULT_TIER_PRICE`: remove foundation entry.
-- `CHECKOUT_PRICE_KEYS`: remove `sightline_foundation_monthly`. Final 4 keys: `sightline_studio_monthly_v2`, `sightline_practice_monthly_v2`, `sightline_early_foundation_monthly` (Early Access — Studio), `sightline_early_practice_monthly`.
+Founding detection uses `FOUNDING_PRICE_KEYS` against `firm.stripe_price_id`.
 
-### Database migration
-- Change enum `subscription_tier`: add nothing new, but update code paths. Actual Postgres enum change: `ALTER TYPE ... RENAME VALUE 'foundation' TO 'studio'` won't work because studio already exists. Instead: `UPDATE firms SET subscription_tier = 'studio' WHERE subscription_tier = 'foundation'`, then create a new enum without `foundation`, swap column type, drop old enum.
-- Update `firms.subscription_tier` default from `'foundation'` to `'studio'`.
-- All existing trialing/no-sub firms migrate to `studio`.
+## 3. `/billing` page — full replacement
 
-### `src/routes/_authenticated/billing.tsx`
-- Remove the Foundation plan card (`sightline_foundation_monthly`).
-- Rename Early Access — Foundation card display to **"Early Access — Studio"**; update blurb/features to reference Studio features (time calendar, utilization) at the locked $39 rate. Keep price key `sightline_early_foundation_monthly`.
-- Final grid: Studio, Practice, Early Access — Studio, Early Access — Practice.
+Replaces the current 4-plan grid with a single-column ($480 max-width, cream background) activation page:
 
-### `src/lib/role.tsx`
-- `AppTier`: `"studio" | "practice"`.
-- Default tier fallback: `"studio"` instead of `"foundation"`.
+- Wordmark top with link back to `/dashboard`
+- Heading "Activate your subscription" + subline with trial end date
+- Plan summary box (gold-bordered, matches `/register`) with billing frequency toggle pre-selected from `firm.billing_frequency`
+- Price display that switches on toggle; founding vs standard resolved from firm's `stripe_price_id`
+- Sage trial reminder box
+- Card section: saved card summary if PM on file, otherwise Stripe Embedded Checkout in setup mode; "Use a different card" toggles the embedded flow
+- Full-width activation button whose label and helper text update with frequency
+- On success: calls `activateSubscription`, then navigates to `/dashboard`
 
-### `src/routes/register.tsx`
-- Remove Foundation option; default `tier` to `"studio"`.
+The old plan grid, Stripe Portal button, and tier switching are removed from this page (Portal access moves to Settings → Billing).
 
-### `src/routes/post-auth.tsx`
-- Default tier `"foundation"` → `"studio"`.
+## 4. TrialBanner rewrite
 
-### `src/routes/_authenticated/settings.tsx`
-- `tierName` maps: drop foundation; if a legacy row still says "foundation", coerce display to "Studio".
-- Default tier fallback → `"studio"`.
+`src/components/TrialBanner.tsx` becomes state-driven:
 
-### `src/routes/_authenticated/dashboard.tsx`
-- Remove foundation-specific branching: `tier === "foundation"` blocks (UpgradeBridge, ManualHoursPanel gating, etc.) either delete or promote to studio behavior. Studio users already get time calendar + utilization; drop the upgrade nudges that assumed foundation.
-- Default `tier` prop → `"studio"`.
+- Suppresses itself when `firm.onboarding_completed_at` is within the last 5 minutes
+- Days 8–14: gold calm variant
+- Days 4–7: gold moderate variant
+- Days 1–3: terra urgent variant
+- Day 0 / expired: full-screen non-dismissible overlay with correct founding/standard price and support email
+- All CTAs deep-link to `/billing`
 
-### `src/routes/_authenticated/time-calendar.tsx`
-- `locked = tier === "foundation"` → always unlocked (studio is base). Remove `UpgradeModal` block.
+`AppShell` continues to mount it; no change there beyond deleting the tier-upgrade prop path (already inert after Prompt 01).
 
-### `src/routes/_authenticated/admin.tsx`
-- Remove foundation from tier `<option>` and `tier_visibility` defaults. Only `studio`, `practice`.
+## 5. Onboarding wrapper
 
-### `src/routes/_authenticated/rate-architecture.tsx`
-- The "Layer 01 — Foundation" tag is architectural naming, not tier-related. **Leave unchanged.**
+Keep all step content intact. Add:
 
-### `src/routes/index.tsx`
-- Marketing "Foundation" plan card (line 707) — remove or replace with Studio-forward messaging. Confirm the landing pricing section shows Studio + Practice + Early Access options.
+- Sticky header (wordmark left; "Step N of 5" + trial reminder right)
+- 3px gold progress bar
+- Step-label strip below (Compensation · Capacity · Expenses · Team · Review) with active/completed/upcoming states
+- On Finish: call `completeOnboarding()` before navigating to `/dashboard`
 
-### `src/lib/view-as.tsx`, `src/components/shell/ViewSwitcher.tsx`, `src/components/shell/UpgradeModal.tsx`, `src/components/shell/AppShell.tsx`, `src/lib/firm.functions.ts`, `src/lib/admin.functions.ts`, `src/lib/value-moments.functions.ts`
-- Drop `"foundation"` from union types, enums, tier lists, `TIER_RANK`, nav item `tier` filters, upgrade modal copy, and pricing tables (`tierMonthly`).
-- `AppShell` nav items with `tier: "foundation"` → set to `"studio"` (they'll be visible to all subscribed users since studio is now the base).
+## 6. First-time dashboard state
 
-### `src/routes/api/public/stripe-webhook.ts`
-- Tier type narrows to `"studio" | "practice"`. Any incoming metadata that says `"foundation"` is coerced to `"studio"` before writing (safety net during transition).
+`src/routes/_authenticated/dashboard.tsx` gets a `WelcomeBanner` block above the rate panel:
 
-## Testing in preview
+- Shown only when `firm.onboarding_completed_at` is within the last 5 minutes AND `welcome_banner_dismissed` is false
+- Sage bordered, greets the user by first name, links to `/rate-architecture`
+- Dismiss × calls `dismissWelcomeBanner()`
+- TrialBanner is suppressed on this session (handled inside TrialBanner via the 5-minute rule)
 
-1. **Verify catalog** — Open `/billing` while signed in. You should see exactly 4 cards: Studio, Practice, Early Access — Studio ($39/mo), Early Access — Practice. No Foundation card.
-2. **New signup** — Register a fresh account. In Settings, plan should show "Studio (Trial)" with `trial_ends_at` 14 days out.
-3. **Checkout — Early Access — Studio** — Click that card. Embedded checkout opens. Use **`4242 4242 4242 4242`**, any future expiry, any CVC, any ZIP. On success you should be redirected back with a toast; plan card refreshes to "Early Access — Studio".
-4. **Checkout — Studio** — Same with the Studio card at its regular price.
-5. **Verify entitlement** — After Studio purchase, `/dashboard` and `/time-calendar` should be fully unlocked (no upgrade modal, no foundation gates). Only Practice-only features should still show upgrade prompts.
-6. **Test 3-D Secure** — `4000 0025 0000 3155` triggers authentication step.
-7. **Test decline** — `4000 0000 0000 0002` — checkout should surface the decline error and no subscription row is created.
-8. **Portal** — From `/billing`, click Manage Subscription. Portal opens in new tab. Cancel; on return, plan card should show "cancels on {current_period_end}".
+## 7. `/post-auth` routing
 
-## Technical notes (for reference)
+Replace the current `landingPathFor` branch with:
 
-- The lookup key `sightline_early_foundation_monthly` stays put in Stripe and code. Only its human display name (Stripe dashboard) and its tier mapping (code) change. This avoids breaking any historical Stripe references.
-- The webhook's `tierFromSubscription` reads `PRICE_TO_TIER[lookup_key]`. After the remap, that key resolves to `studio`, so an early-access subscriber automatically gets studio entitlement without any data migration.
-- Enum migration is destructive on the Postgres side; the migration must (1) update all rows, (2) create a new enum type, (3) alter the column to the new type with a `USING` cast, (4) drop the old enum. This runs as one transaction so nothing is left half-migrated.
+1. No firm yet → existing firm creation → `/onboarding` (or `/register?step=payment` when pending)
+2. `firm.onboarding_completed !== true` → `/onboarding`
+3. Otherwise → firm's `default_landing_page` mapped to the corresponding route (defaults to `/dashboard`)
+
+## 8. Settings
+
+**Account → Default landing page** (new field)
+- Dropdown: Dashboard / Projects / Capacity / Time calendar / Rate architecture
+- Auto-saves on change with inline "Saved ✓" (2s auto-dismiss)
+- Backed by `firms.default_landing_page`
+
+**Billing section** (new)
+- Current plan display: name, frequency, price, next charge date/amount, founding-rate note when applicable
+- Switch monthly → annual (immediate, with confirm dialog showing next-charge preview)
+- Switch annual → monthly (scheduled at period end, with confirm dialog explaining renewal date)
+- During trial: switch links replaced with the "You can switch when your trial ends on [date]" message
+- Manage-in-Stripe-portal button retained here for card/invoices/cancellation
+
+## Files changed / added
+
+**New / rewritten**
+- `supabase/migrations/2026…_prompt03_prefs.sql`
+- `src/routes/_authenticated/billing.tsx` (full rewrite)
+- `src/components/TrialBanner.tsx` (full rewrite)
+- `src/components/dashboard/WelcomeBanner.tsx` (new)
+- `src/components/onboarding/OnboardingHeader.tsx` (new)
+
+**Edited**
+- `src/lib/billing.functions.ts` — new server fns + extended summary
+- `src/lib/firm.functions.ts` — `completeOnboarding`, `setDefaultLandingPage`, `dismissWelcomeBanner`
+- `src/routes/post-auth.tsx` — new routing logic
+- `src/routes/_authenticated/onboarding.tsx` — header/progress wrapper + call `completeOnboarding` on finish
+- `src/routes/_authenticated/dashboard.tsx` — mount `WelcomeBanner`
+- `src/routes/_authenticated/settings.tsx` — add Default landing page and Billing sections
+- `src/lib/role.tsx` — `landingPathFor` reads from `firm.default_landing_page`
+
+## Verification
+
+I'll typecheck after the migration types regenerate, then spot-check `/billing`, `/onboarding`, `/dashboard`, `/settings`, and `/post-auth` routing. TrialBanner variants can be visually confirmed by temporarily overriding `trial_ends_at` via the admin firm impersonation flow.
+
+## Open confirmations before I start
+
+1. **Prefs storage** — okay to add columns to `firms` (single-row per firm) rather than a separate `firm_preferences` table? Simpler and matches the current schema.
+2. **Card-on-file source of truth** — okay to derive card brand/last4/exp by fetching `paymentMethods.retrieve(firm.stripe_payment_method_id)` server-side each `getBillingSummary` call? (Cached would need a schema addition; live fetch is one Stripe call per billing page load.)
+3. **Monthly → annual switch** — proration-on: charge the difference immediately, or apply as credit and charge on next cycle? Prompt says "immediate switch"; I'll default to Stripe's standard proration behavior (charge/credit on next invoice) unless you want an immediate invoice.
+4. **Annual → monthly switch** — Stripe subscription schedules can only be set up when a subscription is already in one; if not, I create a schedule on the fly. Any concerns?
+
+Once you confirm those, I'll ship the migration and code together.
