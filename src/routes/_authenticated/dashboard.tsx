@@ -244,7 +244,9 @@ function Dashboard() {
         id: data?.profile?.id as string,
         name: (data?.profile?.name || data?.profile?.email || "You") as string,
         target: targetHrs,
+        totalWeekly: availableHrsPerWeek || undefined,
       },
+      defaultWorkingHrsPerWeek: availableHrsPerWeek || undefined,
     };
     return out;
   }, [data, weekStartIso, weekEndIso, weekMetrics.billable, targetHrs, rateBilled, setupIncomplete, c.annualRevenue, c.alignedRate]);
