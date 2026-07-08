@@ -141,8 +141,7 @@ function Onboarding() {
     const compType: "hourly" | "salaried" = isSalary ? "salaried" : "hourly";
     const hourlyWage = !isSalary ? Number(tBurdenInput.hourlyRate) || 0 : 0;
     const annualSalary = isSalary ? Number(tBurdenInput.annualSalary) || 0 : 0;
-    const benefitsOn = tBurdenInput.hasBenefits || tBurdenInput.hasRetirement;
-    const benefitsAnnual = benefitsOn ? tBurden.benefitsAmount : 0;
+    const benefitsAnnual = tBurden.benefitsAmount + tBurden.retirementAmount;
     const member: TeamDraft = {
       name: tName.trim(),
       email: tEmail.trim().toLowerCase(),
