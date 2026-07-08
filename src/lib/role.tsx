@@ -132,12 +132,71 @@ export function useShowFinancials(): boolean {
  */
 export function effectiveTier(
   profile: { is_super_admin?: boolean | null; impersonated_firm_id?: string | null } | null | undefined,
-  firm: { subscription_tier?: string | null } | null | undefined,
+  firm:
+    | {
+        subscription_tier?: string | null;
+        subscription_status?: string | null;
+        current_period_end?: string | null;
+        trial_ends_at?: string | null;
+        past_due_since?: string | null;
+      }
+    | null
+    | undefined,
 ): AppTier {
   const isSuper = !!profile?.is_super_admin;
   const isImpersonating = !!profile?.impersonated_firm_id;
   if (isSuper && !isImpersonating) return "practice";
   return ((firm?.subscription_tier as AppTier) ?? "foundation");
+}
+
+/**
+ * Whether the firm currently has active access to its tier.
+ *  - trialing: yes, until trial_ends_at
+ *  - active: yes
+ *  - past_due: yes for the first 7 days, then read-only (returns "read_only")
+ *  - canceled: yes until current_period_end, then no
+ *  - incomplete / null: no
+ * Super admins (not impersonating) always have full access.
+ */
+export type AccessState = "full" | "read_only" | "none";
+
+export function accessState(
+  profile: { is_super_admin?: boolean | null; impersonated_firm_id?: string | null } | null | undefined,
+  firm:
+    | {
+        subscription_status?: string | null;
+        current_period_end?: string | null;
+        trial_ends_at?: string | null;
+        past_due_since?: string | null;
+      }
+    | null
+    | undefined,
+): AccessState {
+  if (profile?.is_super_admin && !profile?.impersonated_firm_id) return "full";
+  if (!firm) return "none";
+  const now = Date.now();
+  const status = firm.subscription_status ?? null;
+  const periodEnd = firm.current_period_end ? new Date(firm.current_period_end).getTime() : null;
+  const trialEnd = firm.trial_ends_at ? new Date(firm.trial_ends_at).getTime() : null;
+  const pastDueSince = firm.past_due_since ? new Date(firm.past_due_since).getTime() : null;
+  switch (status) {
+    case "trialing":
+      return trialEnd && trialEnd > now ? "full" : "none";
+    case "active":
+      return "full";
+    case "past_due":
+      if (pastDueSince && now - pastDueSince > 7 * 24 * 60 * 60 * 1000) return "read_only";
+      return "full";
+    case "canceled":
+      return periodEnd && periodEnd > now ? "full" : "none";
+    default:
+      return "none";
+  }
+}
+
+export function useAccessState(): AccessState {
+  const { data } = useMe();
+  return accessState(data?.profile, data?.firm);
 }
 
 export function useEffectiveTier(): AppTier {
