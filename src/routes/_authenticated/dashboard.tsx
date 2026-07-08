@@ -249,7 +249,7 @@ function Dashboard() {
       defaultWorkingHrsPerWeek: availableHrsPerWeek || undefined,
     };
     return out;
-  }, [data, weekStartIso, weekEndIso, weekMetrics.billable, targetHrs, rateBilled, setupIncomplete, c.annualRevenue, c.alignedRate]);
+  }, [data, weekStartIso, weekEndIso, weekMetrics.billable, targetHrs, rateBilled, setupIncomplete, c.annualRevenue, c.alignedRate, availableHrsPerWeek, c.annualBillableHrs]);
 
   useHealthChangeToast(c.rateHealth);
 
