@@ -177,7 +177,7 @@ export const getBillingSummary = createServerFn({ method: "GET" })
     if (!profile?.firm_id) return null;
     const { data: firm } = await supabase
       .from("firms")
-      .select("id, name, subscription_tier, subscription_status, trial_ends_at, stripe_customer_id, stripe_subscription_id")
+      .select("id, name, subscription_tier, subscription_status, trial_ends_at, current_period_end, past_due_since, stripe_customer_id, stripe_subscription_id")
       .eq("id", profile.firm_id)
       .maybeSingle();
     return firm ?? null;
