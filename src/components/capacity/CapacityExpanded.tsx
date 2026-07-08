@@ -791,6 +791,10 @@ export type TeamMemberRow = {
   isPrincipal: boolean;
   target: number;
   tracks: boolean;
+  /** Total planned working hours per week (billable + non-billable envelope). */
+  totalWeekly: number;
+  /** Non-billable weekly envelope = max(0, totalWeekly - target). */
+  nonBillableWeekly: number;
 };
 
 export function colorFromName(name: string): string {
@@ -809,27 +813,36 @@ export function buildTeamRows(data: CapacityExpandedData): TeamMemberRow[] {
   const nonPrincipal = data.team.filter(
     (m) => !principal || (m.profile_id ?? m.id) !== principal.id,
   );
+  const defaultTotal = Number(data.defaultWorkingHrsPerWeek) || 0;
   const rows: TeamMemberRow[] = [];
   if (principal) {
+    const pTarget = Number(principal.target) || 0;
+    const pTotal = Number(principal.totalWeekly) || defaultTotal || pTarget;
     rows.push({
       key: `principal-${principal.id}`,
       lookupId: principal.id,
       name: principal.name,
       roleLabel: "PRINCIPAL",
       isPrincipal: true,
-      target: Number(principal.target) || 0,
+      target: pTarget,
       tracks: true,
+      totalWeekly: pTotal,
+      nonBillableWeekly: Math.max(0, pTotal - pTarget),
     });
   }
   for (const m of nonPrincipal) {
+    const mTarget = Number(m.expected_hrs_per_week) || 0;
+    const mTotal = defaultTotal > 0 ? Math.max(defaultTotal, mTarget) : mTarget;
     rows.push({
       key: m.id,
       lookupId: m.profile_id ?? m.id,
       name: m.name || m.email || "Team member",
       roleLabel: (m.role_type || "TEAM").toUpperCase(),
       isPrincipal: false,
-      target: Number(m.expected_hrs_per_week) || 0,
+      target: mTarget,
       tracks: m.is_platform_user !== false,
+      totalWeekly: mTotal,
+      nonBillableWeekly: Math.max(0, mTotal - mTarget),
     });
   }
   return rows;
