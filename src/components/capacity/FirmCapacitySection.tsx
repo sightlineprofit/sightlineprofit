@@ -49,7 +49,6 @@ export function FirmCapacitySection({
   const active = data.inputs.projects.filter((p) => (p.status || "").toLowerCase() === "active");
   const withDates = active.filter((p) => p.start_date && p.end_date);
   const rows = buildTeamRows(data);
-  const trackedCount = Math.max(1, rows.filter((r) => r.tracks).length);
   const weeksPerYear = data.inputs.weeksPerYear || 48;
 
   // Non-billable envelope — hours already accounted for in the rate architecture
