@@ -196,9 +196,9 @@ function Nav() {
         <button onClick={() => scrollTo("pricing")} style={navLink}>
           Pricing
         </button>
-        <button onClick={() => scrollTo("cta-form")} style={btnPrimary}>
+        <Link to="/register" style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }}>
           Get early access
-        </button>
+        </Link>
       </div>
     </nav>
   );
