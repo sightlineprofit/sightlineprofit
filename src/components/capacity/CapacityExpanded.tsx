@@ -44,8 +44,15 @@ export type CapacityExpandedData = {
   ytdHoursByUser?: Record<string, { billable: number; nonBillable: number }>;
   lastEntryByUser?: Record<string, string>;
   weeksElapsed?: number;
-  principal?: { id: string; name: string; target: number };
+  principal?: { id: string; name: string; target: number; totalWeekly?: number };
+  /**
+   * Firm default total working hours per week — used as the per-member
+   * baseline for non-billable capacity when a member has no explicit total.
+   * Non-billable weekly = max(0, totalWeekly - billableTarget).
+   */
+  defaultWorkingHrsPerWeek?: number;
 };
+
 
 const TAB_KEY = "sightline:capacity-tab";
 
@@ -784,6 +791,10 @@ export type TeamMemberRow = {
   isPrincipal: boolean;
   target: number;
   tracks: boolean;
+  /** Total planned working hours per week (billable + non-billable envelope). */
+  totalWeekly: number;
+  /** Non-billable weekly envelope = max(0, totalWeekly - target). */
+  nonBillableWeekly: number;
 };
 
 export function colorFromName(name: string): string {
@@ -802,27 +813,36 @@ export function buildTeamRows(data: CapacityExpandedData): TeamMemberRow[] {
   const nonPrincipal = data.team.filter(
     (m) => !principal || (m.profile_id ?? m.id) !== principal.id,
   );
+  const defaultTotal = Number(data.defaultWorkingHrsPerWeek) || 0;
   const rows: TeamMemberRow[] = [];
   if (principal) {
+    const pTarget = Number(principal.target) || 0;
+    const pTotal = Number(principal.totalWeekly) || defaultTotal || pTarget;
     rows.push({
       key: `principal-${principal.id}`,
       lookupId: principal.id,
       name: principal.name,
       roleLabel: "PRINCIPAL",
       isPrincipal: true,
-      target: Number(principal.target) || 0,
+      target: pTarget,
       tracks: true,
+      totalWeekly: pTotal,
+      nonBillableWeekly: Math.max(0, pTotal - pTarget),
     });
   }
   for (const m of nonPrincipal) {
+    const mTarget = Number(m.expected_hrs_per_week) || 0;
+    const mTotal = defaultTotal > 0 ? Math.max(defaultTotal, mTarget) : mTarget;
     rows.push({
       key: m.id,
       lookupId: m.profile_id ?? m.id,
       name: m.name || m.email || "Team member",
       roleLabel: (m.role_type || "TEAM").toUpperCase(),
       isPrincipal: false,
-      target: Number(m.expected_hrs_per_week) || 0,
+      target: mTarget,
       tracks: m.is_platform_user !== false,
+      totalWeekly: mTotal,
+      nonBillableWeekly: Math.max(0, mTotal - mTarget),
     });
   }
   return rows;
@@ -836,35 +856,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
   const lastEntryMap = data.lastEntryByUser ?? {};
 
   // Build member list — principal first, then non-principals in insertion order.
-  // Dedupe principal if they also appear inside firm_members.
-  const principal = data.principal;
-  const nonPrincipal = data.team.filter(
-    (m) => !principal || (m.profile_id ?? m.id) !== principal.id,
-  );
-
-  const rows: TeamMemberRow[] = [];
-  if (principal) {
-    rows.push({
-      key: `principal-${principal.id}`,
-      lookupId: principal.id,
-      name: principal.name,
-      roleLabel: "PRINCIPAL",
-      isPrincipal: true,
-      target: Number(principal.target) || 0,
-      tracks: true,
-    });
-  }
-  for (const m of nonPrincipal) {
-    rows.push({
-      key: m.id,
-      lookupId: m.profile_id ?? m.id,
-      name: m.name || m.email || "Team member",
-      roleLabel: (m.role_type || "TEAM").toUpperCase(),
-      isPrincipal: false,
-      target: Number(m.expected_hrs_per_week) || 0,
-      tracks: m.is_platform_user !== false,
-    });
-  }
+  const rows = buildTeamRows(data);
 
   // Combined firm totals for the summary bar.
   const totalLogged = rows.reduce(
@@ -887,12 +879,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
             0
           }
           loggedNonBillable={data.weeklyNonBillableByUser?.get(r.lookupId) ?? 0}
-          nonBillableWeeklyBudget={
-            data.inputs.avgWeeklyNonBillable > 0
-              ? data.inputs.avgWeeklyNonBillable /
-                Math.max(1, rows.filter((x) => x.tracks).length)
-              : 0
-          }
+          nonBillableWeeklyBudget={r.nonBillableWeekly}
           lastEntry={lastEntryMap[r.lookupId] ?? null}
           ytd={ytdMap[r.lookupId] ?? { billable: 0, nonBillable: 0 }}
           weeksElapsed={weeksElapsed}
@@ -900,7 +887,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
         />
       ))}
 
-      {nonPrincipal.length === 0 && (
+      {rows.filter((r) => !r.isPrincipal).length === 0 && (
         <div
           className="rounded-lg bg-white p-4 text-[12px] font-light"
           style={{ border: "0.5px solid var(--border)", color: "#777" }}
