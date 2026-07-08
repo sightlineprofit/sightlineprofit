@@ -99,14 +99,33 @@ export async function verifyWebhook(
   return JSON.parse(body);
 }
 
-export const PRICE_TO_TIER: Record<string, "foundation" | "studio" | "practice"> = {
+export type Tier = "foundation" | "studio" | "practice";
+
+/** Every Stripe price lookup_key the app knows about → the tier it grants. */
+export const PRICE_TO_TIER: Record<string, Tier> = {
   sightline_foundation_monthly: "foundation",
+  sightline_early_foundation_monthly: "foundation",
   sightline_studio_monthly: "studio",
+  sightline_studio_monthly_v2: "studio",
   sightline_practice_monthly: "practice",
+  sightline_practice_monthly_v2: "practice",
+  sightline_early_practice_monthly: "practice",
 };
 
-export const TIER_TO_PRICE: Record<"foundation" | "studio" | "practice", string> = {
+/** Default price to open at checkout for each standard tier. */
+export const DEFAULT_TIER_PRICE: Record<Tier, string> = {
   foundation: "sightline_foundation_monthly",
-  studio: "sightline_studio_monthly",
-  practice: "sightline_practice_monthly",
+  studio: "sightline_studio_monthly_v2",
+  practice: "sightline_practice_monthly_v2",
 };
+
+/** Every price key that the /billing page is allowed to open at checkout. */
+export const CHECKOUT_PRICE_KEYS = [
+  "sightline_foundation_monthly",
+  "sightline_studio_monthly_v2",
+  "sightline_practice_monthly_v2",
+  "sightline_early_foundation_monthly",
+  "sightline_early_practice_monthly",
+] as const;
+
+export type CheckoutPriceKey = (typeof CHECKOUT_PRICE_KEYS)[number];
