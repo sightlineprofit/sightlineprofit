@@ -171,40 +171,86 @@ function Onboarding() {
     setSaving(true);
     try {
       const drawCombined = (Number(salary) || 0) + (Number(distributions) || 0);
-      await saveConfig({
-        data: {
-          // Mirror simplified comp to firm_config for back-compat with older callers.
-          comp_draw_annual: drawCombined || null,
-          comp_ptax_pct: Number(ptax) || null,
-          comp_health_annual: Number(health) || null,
-          comp_retire_annual: Number(retire) || null,
-          available_hrs_per_week: Number(availHrs) || null,
-          target_billable_hrs_per_week: Number(billHrs) || null,
-          target_gross_margin_pct: Number(targetMargin) || null,
-        },
-      });
-      // Write the per-principal compensation row so the finance calc uses it.
-      await saveOwnerComp({
-        data: {
-          comp_draw_annual: drawCombined || null,
-          distribution_annual: Number(distributions) || null,
-          health_insurance_annual: Number(health) || null,
-          retirement_annual: Number(retire) || null,
-          payroll_tax_pct: Number(ptax) || null,
-        },
-      });
-      for (const e of expenses) {
-        await saveExpense({
+      // 1) Capacity & targets → firm_config
+      try {
+        await saveConfig({
           data: {
-            name: e.name,
-            amount: e.amount,
-            frequency: e.frequency,
-            recurring: e.frequency !== "onetime",
-            category: e.category ?? null,
-            amort_months: null,
+            comp_draw_annual: drawCombined || null,
+            comp_ptax_pct: Number(ptax) || null,
+            comp_health_annual: Number(health) || null,
+            comp_retire_annual: Number(retire) || null,
+            available_hrs_per_week: Number(availHrs) || null,
+            target_billable_hrs_per_week: Number(billHrs) || null,
+            target_gross_margin_pct: Number(targetMargin) || null,
           },
         });
+      } catch (e) {
+        console.error("[onboarding.finish] saveConfig failed", e);
+        toast.error(
+          `Couldn't save capacity & targets — ${e instanceof Error ? e.message : "unknown error"}`,
+        );
+        return;
       }
+
+      // 2) Per-principal compensation (skip when everything is zero)
+      const hasAnyComp =
+        drawCombined > 0 ||
+        Number(distributions) > 0 ||
+        Number(health) > 0 ||
+        Number(retire) > 0 ||
+        Number(ptax) > 0;
+      if (hasAnyComp) {
+        try {
+          await saveOwnerComp({
+            data: {
+              comp_draw_annual: drawCombined || null,
+              distribution_annual: Number(distributions) || null,
+              health_insurance_annual: Number(health) || null,
+              retirement_annual: Number(retire) || null,
+              payroll_tax_pct: Number(ptax) || null,
+            },
+          });
+        } catch (e) {
+          console.error("[onboarding.finish] saveOwnerComp failed", e);
+          toast.error(
+            `Couldn't save your compensation — ${e instanceof Error ? e.message : "unknown error"}`,
+          );
+          return;
+        }
+      }
+
+      // 3) Operating expenses — non-blocking per row; report failures at the end
+      const expenseFailures: Array<{ name: string; reason: string }> = [];
+      let expenseOk = 0;
+      for (const e of expenses) {
+        try {
+          await saveExpense({
+            data: {
+              name: e.name,
+              amount: e.amount,
+              frequency: e.frequency,
+              recurring: e.frequency !== "onetime",
+              category: e.category ?? null,
+              amort_months: null,
+            },
+          });
+          expenseOk += 1;
+        } catch (err) {
+          console.error("[onboarding.finish] saveExpense failed", e.name, err);
+          expenseFailures.push({
+            name: e.name,
+            reason: err instanceof Error ? err.message : "unknown error",
+          });
+        }
+      }
+      if (expenseFailures.length) {
+        toast.error(
+          `Saved ${expenseOk} of ${expenses.length} expenses. Failed: ${expenseFailures
+            .map((f) => `${f.name} (${f.reason})`)
+            .join("; ")}`,
+        );
+      }
+
       for (const t of team) {
         // Records are already saved to firm_members when added in step 4.
         // Nothing to flush here unless the user has an unsaved draft they meant to invite.
@@ -220,6 +266,7 @@ function Onboarding() {
       }
       nav({ to: "/dashboard" });
     } catch (e) {
+      console.error("[onboarding.finish] unexpected error", e);
       toast.error(e instanceof Error ? e.message : "Could not save.");
     } finally {
       setSaving(false);
