@@ -60,8 +60,14 @@ function PostAuth() {
             nav({ to: "/onboarding" });
           }
         } else {
-          const target = landingPathFor(ctx.profile);
-          nav({ to: target as any });
+          // Existing firm: honour onboarding status + default landing page.
+          const firm = ctx.firm as any;
+          if (firm && firm.onboarding_completed !== true) {
+            nav({ to: "/onboarding" });
+          } else {
+            const target = landingPathFor(ctx.profile, firm);
+            nav({ to: target as any });
+          }
         }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Setup failed");
