@@ -1281,36 +1281,15 @@ function EntryForm({
       <div>
         <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Project</Label>
         <Select
-          value={projectId ? projectId : agId ? `_firm:${agId}` : "_none"}
+          value={projectId || "_none"}
           onValueChange={(v) => {
             if (v === "_none") { setProjectId(""); setPhaseId(""); return; }
-            if (v.startsWith("_firm:")) {
-              setProjectId("");
-              setPhaseId("");
-              setAgId(v.slice(6));
-              setBillable(false);
-              return;
-            }
             setProjectId(v); setPhaseId("");
           }}
         >
           <SelectTrigger className="h-9"><SelectValue placeholder="Choose project" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="_none">— None —</SelectItem>
-            {ags.length > 0 && (
-              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ch/40">── Firm ──</div>
-            )}
-            {ags.map((a) => (
-              <SelectItem key={`_firm:${a.id}`} value={`_firm:${a.id}`}>
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
-                  {a.name}
-                </span>
-              </SelectItem>
-            ))}
-            {projects.length > 0 && (
-              <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ch/40">── Client projects ──</div>
-            )}
+            <SelectItem value="_none">— Firm (no client project) —</SelectItem>
             {projects.map((p) => (
               <SelectItem key={p.id} value={p.id}>{p.name}{p.client_name ? ` · ${p.client_name}` : ""}</SelectItem>
             ))}
