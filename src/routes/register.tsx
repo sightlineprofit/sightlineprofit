@@ -205,7 +205,7 @@ function RegisterPage() {
     setBusy(true);
     // Stash pending firm details BEFORE signUp so post-auth can pick them
     // up whether Supabase auto-confirms the session or requires a click.
-    sessionStorage.setItem(
+    localStorage.setItem(
       "sightline_pending_firm",
       JSON.stringify({
         firmName,
@@ -244,7 +244,7 @@ function RegisterPage() {
       toast.error("Fetching pricing… try again in a moment.");
       return;
     }
-    sessionStorage.setItem(
+    localStorage.setItem(
       "sightline_pending_firm",
       JSON.stringify({
         firmName: firmName || "",
