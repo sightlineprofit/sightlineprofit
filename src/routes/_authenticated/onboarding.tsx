@@ -227,7 +227,7 @@ function Onboarding() {
   };
 
   const trialEnd = (ctx?.firm as any)?.trial_ends_at
-    ? new Date((ctx.firm as any).trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    ? new Date((ctx!.firm as any).trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
     : null;
   const pct = ((step + 1) / STEPS.length) * 100;
   const STEP_LABELS = ["Compensation", "Capacity", "Expenses", "Team", "Review"];
