@@ -101,26 +101,46 @@ export async function verifyWebhook(
 
 export type Tier = "studio" | "practice";
 
-/** Every Stripe price lookup_key the app knows about → the tier it grants. */
+/**
+ * Every Stripe price lookup_key the app knows about → the tier it grants.
+ * Tier is now single-plan ("practice"). Legacy keys stay in the map so
+ * historic subscriptions on old lookup keys still normalize cleanly through
+ * the webhook and /billing views.
+ */
 export const PRICE_TO_TIER: Record<string, Tier> = {
-  // Early Access — Studio (formerly Early Access — Foundation).
-  // Lookup key is kept for stability across Stripe records; it now grants Studio.
-  sightline_early_foundation_monthly: "studio",
-  sightline_studio_monthly: "studio",
-  sightline_studio_monthly_v2: "studio",
+  // Current single-plan prices
+  sightline_founding_monthly: "practice",
+  sightline_founding_annual: "practice",
+  sightline_standard_monthly: "practice",
+  sightline_standard_annual: "practice",
+  // Legacy — remain valid subscriptions, all grant full (practice) access
+  sightline_early_foundation_monthly: "practice",
+  sightline_studio_monthly: "practice",
+  sightline_studio_monthly_v2: "practice",
   sightline_practice_monthly: "practice",
   sightline_practice_monthly_v2: "practice",
   sightline_early_practice_monthly: "practice",
 };
 
-/** Default price to open at checkout for each standard tier. */
+/** Founding-rate price keys — used to detect founding_access grants. */
+export const FOUNDING_PRICE_KEYS = new Set<string>([
+  "sightline_founding_monthly",
+  "sightline_founding_annual",
+]);
+
+/** Default price to open at checkout for each standard tier (legacy /billing). */
 export const DEFAULT_TIER_PRICE: Record<Tier, string> = {
-  studio: "sightline_studio_monthly_v2",
-  practice: "sightline_practice_monthly_v2",
+  studio: "sightline_standard_monthly",
+  practice: "sightline_standard_monthly",
 };
 
-/** Every price key that the /billing page is allowed to open at checkout. */
+/** Every price key that a checkout session is allowed to open. */
 export const CHECKOUT_PRICE_KEYS = [
+  "sightline_founding_monthly",
+  "sightline_founding_annual",
+  "sightline_standard_monthly",
+  "sightline_standard_annual",
+  // Legacy checkout keys (still permitted for existing /billing UI)
   "sightline_studio_monthly_v2",
   "sightline_practice_monthly_v2",
   "sightline_early_foundation_monthly",
