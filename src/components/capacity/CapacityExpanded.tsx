@@ -881,6 +881,18 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
           key={r.key}
           row={r}
           logged={data.weeklyHoursByUser.get(r.lookupId) ?? 0}
+          loggedBillable={
+            data.weeklyBillableByUser?.get(r.lookupId) ??
+            data.weeklyHoursByUser.get(r.lookupId) ??
+            0
+          }
+          loggedNonBillable={data.weeklyNonBillableByUser?.get(r.lookupId) ?? 0}
+          nonBillableWeeklyBudget={
+            data.inputs.avgWeeklyNonBillable > 0
+              ? data.inputs.avgWeeklyNonBillable /
+                Math.max(1, rows.filter((x) => x.tracks).length)
+              : 0
+          }
           lastEntry={lastEntryMap[r.lookupId] ?? null}
           ytd={ytdMap[r.lookupId] ?? { billable: 0, nonBillable: 0 }}
           weeksElapsed={weeksElapsed}
