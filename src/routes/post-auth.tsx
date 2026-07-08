@@ -33,7 +33,7 @@ function PostAuth() {
           if (!ctx?.profile?.firm_id) {
             const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
             const ownerName = meta.name || meta.full_name || data.user.email!.split("@")[0];
-            await createFirm({ data: { firmName: "Sightline Studio", ownerName, tier: "practice" } });
+            await createFirm({ data: { firmName: "Sightline Studio", ownerName } });
             sessionStorage.removeItem("sightline_pending_firm");
           }
           nav({ to: "/admin" as any });
@@ -45,12 +45,20 @@ function PostAuth() {
           const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
           const firmName = pending?.firmName || meta.firm_name || (meta.name ? `${meta.name}'s Studio` : "My Studio");
           const ownerName = pending?.ownerName || meta.name || meta.full_name || data.user.email!.split("@")[0];
-          const rawTier = (pending?.tier || meta.tier || "studio") as string;
-          const tier: "studio" | "practice" =
-            rawTier === "practice" ? "practice" : "studio";
-          await createFirm({ data: { firmName, ownerName, tier } });
+          const billingFrequency: "monthly" | "annual" =
+            pending?.billingFrequency === "annual" ? "annual" : "monthly";
+          const stripePriceId: string | null = pending?.stripePriceId ?? null;
+          await createFirm({
+            data: { firmName, ownerName, billingFrequency, stripePriceId },
+          });
           sessionStorage.removeItem("sightline_pending_firm");
-          nav({ to: "/onboarding" });
+          // If registration passed us a payment intent, send them back to
+          // /register to complete card capture. Otherwise straight to onboarding.
+          if (pending?.needsPayment) {
+            nav({ to: "/register", search: { step: "payment" } as any });
+          } else {
+            nav({ to: "/onboarding" });
+          }
         } else {
           const target = landingPathFor(ctx.profile);
           nav({ to: target as any });
