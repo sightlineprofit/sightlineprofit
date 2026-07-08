@@ -661,6 +661,8 @@ function Onboarding() {
                   ["Available hrs/wk", availHrs],
                   ["Billable target hrs/wk", billHrs],
                   ["Target gross margin", `${targetMargin}%`],
+                  ["Working weeks/yr", weeksPerYear || "48"],
+                  ["Current billed rate", rateBilled ? `$${Number(rateBilled).toLocaleString()}/hr` : "Not set"],
                 ]} />
                 <Summary title={`Expenses (${expenses.length})`} rows={expenses.map((e) => [e.name, `$${e.amount.toLocaleString()} ${e.frequency}`])} />
                 <Summary title={`Team (${team.length})`} rows={team.length ? team.map((t) => [t.name, t.role]) : [["No team members", "—"]]} />
