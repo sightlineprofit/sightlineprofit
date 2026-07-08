@@ -271,6 +271,10 @@ function Onboarding() {
       } catch (e) {
         console.warn("[completeOnboarding] failed", e);
       }
+      // Ensure the dashboard's first read fetches the freshly-written firm_config
+      // rather than any cached response from earlier `getMyContext` calls.
+      await qc.invalidateQueries({ queryKey: ["dashboard"] });
+      await qc.invalidateQueries({ queryKey: ["me-onboarding"] });
       nav({ to: "/dashboard" });
     } catch (e) {
       console.error("[onboarding.finish] unexpected error", e);
