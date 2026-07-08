@@ -725,13 +725,6 @@ export const resendInvitation = createServerFn({ method: "POST" })
     return { ok: true, email: inv.email };
   });
 
-export const completeOnboarding = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    // Reserved for future flag; the dashboard is reachable once a firm exists.
-    return { ok: true, userId: context.userId };
-  });
-
 export const backfillStarterSops = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
