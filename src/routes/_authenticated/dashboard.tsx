@@ -196,10 +196,18 @@ function Dashboard() {
     const cap: any = (data as any)?.capacity ?? {};
     const team = (cap.team ?? []) as CapacityExpandedData["team"];
     const weeklyHoursByUser = new Map<string, number>();
-    for (const t of (cap.trailingEntries ?? []) as Array<{ user_id?: string; hrs: number | null; date: string }>) {
+    const weeklyBillableByUser = new Map<string, number>();
+    const weeklyNonBillableByUser = new Map<string, number>();
+    for (const t of (cap.trailingEntries ?? []) as Array<{ user_id?: string; hrs: number | null; date: string; billable: boolean }>) {
       if (!t.user_id) continue;
       if (t.date >= weekStartIso && t.date < weekEndIso) {
-        weeklyHoursByUser.set(t.user_id, (weeklyHoursByUser.get(t.user_id) ?? 0) + Number(t.hrs || 0));
+        const h = Number(t.hrs || 0);
+        weeklyHoursByUser.set(t.user_id, (weeklyHoursByUser.get(t.user_id) ?? 0) + h);
+        if (t.billable) {
+          weeklyBillableByUser.set(t.user_id, (weeklyBillableByUser.get(t.user_id) ?? 0) + h);
+        } else {
+          weeklyNonBillableByUser.set(t.user_id, (weeklyNonBillableByUser.get(t.user_id) ?? 0) + h);
+        }
       }
     }
     const inputs: CapacityInputs = {
@@ -223,6 +231,8 @@ function Dashboard() {
       bdWeekHours: Number((data as any)?.bdWeekHours ?? 0),
       team,
       weeklyHoursByUser,
+      weeklyBillableByUser,
+      weeklyNonBillableByUser,
       sopTemplates: (cap.sopTemplates ?? []) as Array<{ id: string; name: string; total_hrs: number }>,
       configSetup: !setupIncomplete,
       annualRevenue: c.annualRevenue,
