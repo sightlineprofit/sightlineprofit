@@ -2195,9 +2195,23 @@ function ClosingCTA() {
   return (
     <section style={{ background: C.charcoal, padding: "100px 56px" }}>
       <div style={{ maxWidth: 680, margin: "0 auto", textAlign: "center" }}>
-        <div style={{ ...eyebrow, letterSpacing: "0.22em", marginBottom: 20 }}>
-          Early access
+        <div style={{ ...eyebrow, letterSpacing: "0.22em", marginBottom: 10 }}>
+          Not ready to sign up yet?
         </div>
+        <Link
+          to="/register"
+          style={{
+            fontFamily: FONT_SANS,
+            fontSize: 13,
+            color: C.gold,
+            display: "block",
+            textAlign: "center",
+            marginBottom: 16,
+            textDecoration: "none",
+          }}
+        >
+          Ready to start your free trial? →
+        </Link>
         <h2
           style={{
             fontFamily: FONT_DISPLAY,
@@ -2223,8 +2237,8 @@ function ClosingCTA() {
           }}
         >
           If you've ever finished a fully booked year wondering where the money
-          went — Sightline was built for you. Join the waitlist for early access
-          and founding firm pricing while early access is open.
+          went — Sightline was built for you. Join the waitlist and we'll be in
+          touch when we open fully to the public.
         </p>
         {!submitted ? (
           <>
