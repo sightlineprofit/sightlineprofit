@@ -77,7 +77,12 @@ const entrySchema = z.object({
   project_id: z.string().uuid().optional().nullable(),
   project_phase_id: z.string().uuid().optional().nullable(),
   activity_group_id: z.string().uuid().optional().nullable(),
-  user_id: z.string().uuid().optional(), // admin can set, else defaults to self
+  user_id: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v : undefined))
+    .pipe(z.string().uuid().optional()), // admin can set, else defaults to self
 });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
