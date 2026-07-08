@@ -53,19 +53,21 @@ export function FirmCapacitySection({
   const weeksPerYear = data.inputs.weeksPerYear || 48;
 
   // Non-billable envelope — hours already accounted for in the rate architecture
-  // (ideation, admin, learning). Budget is the trailing 4-wk avg annualized;
-  // usage is YTD non-billable across the firm.
-  const nonBillableBudgetAnnual = Math.max(0, data.inputs.avgWeeklyNonBillable * weeksPerYear);
+  // (ideation, admin, learning). Derived per-member from planned working hours
+  // vs their billable target — e.g. a 40 hr/wk member with a 28 hr billable
+  // target contributes 12 non-billable hrs/wk. Aggregated across the firm
+  // and annualized by weeks_per_year.
+  const nonBillableWeeklyTotal = rows.reduce(
+    (s, r) => s + (r.tracks ? r.nonBillableWeekly : 0),
+    0,
+  );
+  const nonBillableBudgetAnnual = Math.max(0, nonBillableWeeklyTotal * weeksPerYear);
   const nonBillableUsedYtd = Object.values(data.ytdHoursByUser ?? {}).reduce(
     (s, v) => s + Number(v?.nonBillable || 0),
     0,
   );
   const nonBillablePct =
     nonBillableBudgetAnnual > 0 ? (nonBillableUsedYtd / nonBillableBudgetAnnual) * 100 : 0;
-  const nonBillablePerMemberWeekly =
-    data.inputs.avgWeeklyNonBillable > 0
-      ? data.inputs.avgWeeklyNonBillable / trackedCount
-      : 0;
 
   return (
     <section
@@ -154,7 +156,7 @@ export function FirmCapacitySection({
         </div>
         {nonBillableBudgetAnnual === 0 && (
           <p className="mt-1 text-[10px] italic" style={{ color: "#aaa" }}>
-            No non-billable time logged yet — budget will appear once trailing data exists.
+            Set each member's total working hours (vs their billable target) so we can show the non-billable envelope.
           </p>
         )}
       </div>
@@ -222,7 +224,7 @@ export function FirmCapacitySection({
                 : 0
             }
             loggedNonBillable={r.tracks ? data.weeklyNonBillableByUser?.get(r.lookupId) ?? 0 : 0}
-            nonBillableWeeklyBudget={nonBillablePerMemberWeekly}
+            nonBillableWeeklyBudget={r.nonBillableWeekly}
             lastEntry={(data.lastEntryByUser ?? {})[r.lookupId] ?? null}
             ytd={(data.ytdHoursByUser ?? {})[r.lookupId] ?? { billable: 0, nonBillable: 0 }}
             weeksElapsed={Math.max(1, data.weeksElapsed ?? 1)}
