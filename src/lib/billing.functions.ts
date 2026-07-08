@@ -338,11 +338,11 @@ export const switchBillingFrequency = createServerFn({ method: "POST" })
       if (currentIsAnnual && goingToMonthly) {
         // Schedule the change at the end of the current period.
         const schedule = await stripe.subscriptionSchedules.create({ from_subscription: sub.id });
-        const phase = schedule.phases[0];
+        const phase = schedule.phases[0] as any;
         await stripe.subscriptionSchedules.update(schedule.id, {
           phases: [
             {
-              items: (phase.items as any),
+              items: phase.items,
               start_date: phase.start_date,
               end_date: phase.end_date,
             },
@@ -350,9 +350,13 @@ export const switchBillingFrequency = createServerFn({ method: "POST" })
               items: [{ price: price.id, quantity: 1 }],
               iterations: 1,
             },
-          ],
+          ] as any,
         });
-        return { ok: true, scheduledFor: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : undefined };
+        const periodEnd = (item as any)?.current_period_end ?? (sub as any).current_period_end ?? null;
+        return {
+          ok: true,
+          scheduledFor: periodEnd ? new Date(periodEnd * 1000).toISOString() : undefined,
+        };
       }
 
       // Immediate switch with proration (monthly → annual, or same-direction refresh).
