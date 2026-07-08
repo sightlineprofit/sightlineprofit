@@ -5,14 +5,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   LayoutDashboard,
-  Calculator,
   Calendar,
   LineChart,
   BookOpen,
   Compass,
   Settings,
   HelpCircle,
-  Lock,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -22,41 +20,37 @@ import {
   Eye,
 } from "lucide-react";
 import { setImpersonation } from "@/lib/admin.functions";
-import { effectiveTier, useMe } from "@/lib/role";
+import { useMe } from "@/lib/role";
 import { supabase } from "@/integrations/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
-import { UpgradeModal } from "@/components/shell/UpgradeModal";
 import { ViewSwitcher, ViewSwitcherBanner } from "@/components/shell/ViewSwitcher";
 import { RestrictedPreview } from "@/components/shell/RestrictedPreview";
 import { cn } from "@/lib/utils";
 
-type Tier = "studio" | "practice";
-const TIER_RANK: Record<Tier, number> = { studio: 0, practice: 1 };
 type Role = "principal" | "admin" | "team" | "view_only";
 
 type NavItem = {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
-  tier: Tier;
-  group: "studio" | "practice" | "general";
+  group: "workspace" | "insight" | "general";
   allowRoles?: Role[];
   search?: Record<string, string>;
 };
 
 const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "studio", group: "studio", allowRoles: ["principal", "admin"] },
-  { to: "/time-calendar", label: "Time Calendar", icon: Calendar, tier: "studio", group: "studio" },
-  { to: "/sightline", label: "Sightline", icon: LineChart, tier: "practice", group: "practice" },
-  { to: "/sop-library", label: "SOP Library", icon: BookOpen, tier: "practice", group: "practice" },
-  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, tier: "studio", group: "general", allowRoles: ["principal", "admin"] },
-  { to: "/settings", label: "Settings", icon: Settings, tier: "studio", group: "general" },
-  { to: "/knowledge-base", label: "Knowledge Base", icon: HelpCircle, tier: "studio", group: "general" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, group: "workspace", allowRoles: ["principal", "admin"] },
+  { to: "/time-calendar", label: "Time Calendar", icon: Calendar, group: "workspace" },
+  { to: "/sightline", label: "Sightline", icon: LineChart, group: "insight" },
+  { to: "/sop-library", label: "SOP Library", icon: BookOpen, group: "insight" },
+  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, group: "general", allowRoles: ["principal", "admin"] },
+  { to: "/settings", label: "Settings", icon: Settings, group: "general" },
+  { to: "/knowledge-base", label: "Knowledge Base", icon: HelpCircle, group: "general" },
 ];
 
 const GROUP_LABELS: Record<NavItem["group"], string> = {
-  studio: "Studio",
-  practice: "Practice",
+  workspace: "",
+  insight: "",
   general: "",
 };
 
@@ -78,7 +72,6 @@ function simulatedRouteRestriction(role: Role, pathname: string): Role | null {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [upgradeFor, setUpgradeFor] = useState<Tier | null>(null);
   const [userMenu, setUserMenu] = useState(false);
   const nav = useNavigate();
   const queryClient = useQueryClient();
@@ -90,11 +83,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   // filtering, tier gating, and role-conditional UI naturally degrade.
   const isSuper = realIsSuper;
   const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
-  // Single source of truth: effectiveTier() returns "practice" for super
-  // admins (unless impersonating). Every page uses the same helper so the
-  // shell and gated bodies never disagree.
-  const currentTier: Tier = effectiveTier(data?.profile, data?.firm) as Tier;
-  const currentTierRank = TIER_RANK[currentTier];
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // `data` already reflects view-as overrides (useMe flips is_super_admin to
   // false and swaps in the chosen role when an override is active).
@@ -132,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? simulatedRouteRestriction(currentRole, pathname)
     : null;
 
-  const groups: NavItem["group"][] = ["studio", "practice", "general"];
+  const groups: NavItem["group"][] = ["workspace", "insight", "general"];
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -181,14 +169,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )}
                 <ul className="space-y-0.5">
                   {items.map((item) => {
-                    const locked = TIER_RANK[item.tier] > currentTierRank;
                     const active = pathname === item.to || pathname.startsWith(item.to + "/");
                     const Icon = item.icon;
                     const content = (
                       <>
                         <Icon className="h-4 w-4 shrink-0" />
                         {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-                        {!collapsed && locked && <Lock className="h-3 w-3 text-ch/30" />}
                       </>
                     );
                     const baseClass = cn(
@@ -196,25 +182,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                       active
                         ? "bg-goldp text-ch font-medium"
                         : "text-ch/70 hover:bg-creamd hover:text-ch",
-                      locked && "text-ch/40 hover:text-ch/60",
                       collapsed && "justify-center px-2",
                     );
                     return (
                       <li key={item.to}>
-                        {locked ? (
-                          <button
-                            type="button"
-                            onClick={() => setUpgradeFor(item.tier)}
-                            className={baseClass}
-                            title={collapsed ? `${item.label} — Upgrade required` : undefined}
-                          >
-                            {content}
-                          </button>
-                        ) : (
-                          <Link to={item.to as any} search={item.search as any} className={baseClass} title={collapsed ? item.label : undefined}>
-                            {content}
-                          </Link>
-                        )}
+                        <Link to={item.to as any} search={item.search as any} className={baseClass} title={collapsed ? item.label : undefined}>
+                          {content}
+                        </Link>
                       </li>
                     );
                   })}
@@ -337,12 +311,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           {restrictedRole ? <RestrictedPreview role={restrictedRole} /> : children}
         </main>
       </div>
-
-      <UpgradeModal
-        targetTier={upgradeFor}
-        currentTier={currentTier}
-        onClose={() => setUpgradeFor(null)}
-      />
 
       <ViewSwitcher realIsSuper={isSuper} realImpersonating={impersonating} />
     </div>
