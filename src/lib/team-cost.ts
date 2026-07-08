@@ -114,6 +114,8 @@ export type BurdenEstimate = {
   taxAmount: number;
   benefitsPct: number;
   benefitsAmount: number;
+  retirementPct: number;
+  retirementAmount: number;
   total: number;
   perHour: number; // burdened hourly (total / (hours/wk × 52))
 };
@@ -131,11 +133,23 @@ export function estimateBurdenedCost(input: BurdenEstimateInput): BurdenEstimate
   }
   const taxPct = BURDEN_EMPLOYER_TAX_PCT;
   const taxAmount = base * (taxPct / 100);
-  const benefitsPct = input.hasBenefits || input.hasRetirement ? BURDEN_BENEFITS_PCT : 0;
+  const benefitsPct = input.hasBenefits ? BURDEN_BENEFITS_PCT : 0;
   const benefitsAmount = base * (benefitsPct / 100);
-  const total = base + taxAmount + benefitsAmount;
+  const retirementPct = input.hasRetirement ? BURDEN_BENEFITS_PCT : 0;
+  const retirementAmount = base * (retirementPct / 100);
+  const total = base + taxAmount + benefitsAmount + retirementAmount;
   const denomHours =
     input.basis === "hourly" ? hpw * HOURS_ANNUAL_WEEKS : hpw > 0 ? hpw * HOURS_ANNUAL_WEEKS : 0;
   const perHour = denomHours > 0 ? total / denomHours : 0;
-  return { base, taxPct, taxAmount, benefitsPct, benefitsAmount, total, perHour };
+  return {
+    base,
+    taxPct,
+    taxAmount,
+    benefitsPct,
+    benefitsAmount,
+    retirementPct,
+    retirementAmount,
+    total,
+    perHour,
+  };
 }
