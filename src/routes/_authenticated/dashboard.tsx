@@ -1707,7 +1707,7 @@ function UpgradeBridge() {
       </div>
       <UpgradeModal
         targetTier={open ? "studio" : null}
-        currentTier="foundation"
+        currentTier="studio"
         onClose={() => setOpen(false)}
       />
     </>
