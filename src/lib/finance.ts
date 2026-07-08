@@ -115,9 +115,12 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
       ptax += d * ((pct + empePct) / 100);
       health += Number(r.health_insurance_annual) || 0;
       retire += Number(r.retirement_annual) || 0;
-      // Distribution and reserve only apply to S-Corp in structure-aware mode.
+      // Distributions are real cash the firm must fund regardless of tax
+      // structure — Simple mode surfaces the field for every firm and the
+      // drawer total already includes it. Reserve target stays S-Corp-only
+      // (structural planning target, not out-the-door comp).
+      distribution += Number(r.distribution_annual) || 0;
       if (structure === "s_corp") {
-        distribution += Number(r.distribution_annual) || 0;
         const months = Number(r.reserve_months) || 0;
         if (months > 0) {
           reserveTarget += months * (opexAnnualForReserve / 12);
@@ -137,8 +140,7 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
     ptax = (draw * ptaxPct) / 100;
     health = Number(config?.comp_health_annual) || 0;
     retire = Number(config?.comp_retire_annual) || 0;
-    distribution =
-      structure === "s_corp" ? Number(config?.comp_distribution_annual) || 0 : 0;
+    distribution = Number(config?.comp_distribution_annual) || 0;
     reserveTarget =
       structure === "s_corp" ? Number(config?.comp_reserve_target_annual) || 0 : 0;
   }
