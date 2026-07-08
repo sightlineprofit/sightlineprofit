@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   getMyContext,
@@ -42,6 +42,7 @@ type TeamDraft = {
 
 function Onboarding() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const getCtx = useServerFn(getMyContext);
   const saveConfig = useServerFn(upsertFirmConfig);
   const saveExpense = useServerFn(addExpense);
@@ -73,6 +74,8 @@ function Onboarding() {
   const [availHrs, setAvailHrs] = useState<string>("40");
   const [billHrs, setBillHrs] = useState<string>("24");
   const [targetMargin, setTargetMargin] = useState<string>("55");
+  const [rateBilled, setRateBilled] = useState<string>("");
+  const [weeksPerYear, setWeeksPerYear] = useState<string>("48");
 
   // Expenses
   const [expenses, setExpenses] = useState<ExpenseDraft[]>([
@@ -173,6 +176,9 @@ function Onboarding() {
       const drawCombined = (Number(salary) || 0) + (Number(distributions) || 0);
       // 1) Capacity & targets → firm_config
       try {
+        const billHrsN = Number(billHrs);
+        const marginN = Number(targetMargin);
+        const rateN = Number(rateBilled);
         await saveConfig({
           data: {
             comp_draw_annual: drawCombined || null,
@@ -180,8 +186,9 @@ function Onboarding() {
             comp_health_annual: Number(health) || null,
             comp_retire_annual: Number(retire) || null,
             available_hrs_per_week: Number(availHrs) || null,
-            target_billable_hrs_per_week: Number(billHrs) || null,
-            target_gross_margin_pct: Number(targetMargin) || null,
+            target_billable_hrs_per_week: Number.isFinite(billHrsN) ? billHrsN : 0,
+            target_gross_margin_pct: Number.isFinite(marginN) && marginN > 0 ? marginN : 42,
+            rate_billed: Number.isFinite(rateN) ? rateN : 0,
           },
         });
       } catch (e) {
