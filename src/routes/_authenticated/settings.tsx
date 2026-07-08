@@ -25,6 +25,11 @@ import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricB
 import { listChangeLog } from "@/lib/change-log.functions";
 import { switchBillingFrequency } from "@/lib/billing.functions";
 import { getStripeEnvironment } from "@/lib/stripe";
+import {
+  BurdenedCostCalculator,
+  type BurdenedCostValue,
+} from "@/components/team/BurdenedCostCalculator";
+import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
