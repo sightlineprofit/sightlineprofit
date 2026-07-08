@@ -62,7 +62,7 @@ export const setFirmOverrides = createServerFn({ method: "POST" })
     z
       .object({
         firm_id: z.string().uuid(),
-        subscription_tier: z.enum(["foundation", "studio", "practice"]).optional(),
+        subscription_tier: z.enum(["studio", "practice"]).optional(),
         subscription_status: z.enum(["trialing", "active", "past_due", "canceled"]).optional(),
         trial_ends_at: z.string().datetime().nullable().optional(),
       })
@@ -199,7 +199,7 @@ const kbItemSchema = z.object({
   video_file_path: z.string().nullable().optional(),
   thumbnail_path: z.string().nullable().optional(),
   tags: z.array(z.string().min(1).max(40)).max(20).default([]),
-  tier_visibility: z.array(z.enum(["foundation", "studio", "practice"])).min(1),
+  tier_visibility: z.array(z.enum(["studio", "practice"])).min(1),
   status: z.enum(["draft", "published"]),
   featured: z.boolean().default(false),
   published_at: z.string().nullable().optional(),

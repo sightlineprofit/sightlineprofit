@@ -108,38 +108,8 @@ type View = "week" | "day" | "team";
 function TimeCalendarPage() {
   const getCtx = useServerFn(getMyContext);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
-  const tier = effectiveTier(ctx?.profile, ctx?.firm);
-  const locked = tier === "foundation";
-
-  if (locked) {
-    return <LockedView />;
-  }
+  // Time calendar is available at all paid tiers (Studio is the base).
   return <Calendar isAdmin={["principal", "admin"].includes((ctx?.profile?.role as string) || "")} />;
-}
-
-function LockedView() {
-  const [open, setOpen] = useState(true);
-  return (
-    <>
-      <ModulePage
-        eyebrow="Studio"
-        title="Time Calendar"
-        description="Log hours by project, phase, and activity. Watch your weekly billable target in real time."
-      >
-        <div className="rounded-lg border border-dashed border-border bg-white/60 p-12 text-center">
-          <Lock className="mx-auto h-7 w-7 text-gold" />
-          <p className="font-display text-3xl text-ch mt-3">Studio tier</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ch/65">
-            Time tracking lives in Studio. When you're ready to know where the hours actually go, upgrade.
-          </p>
-          <Button className="mt-5 bg-gold text-white hover:bg-goldl" onClick={() => setOpen(true)}>
-            See what Studio includes
-          </Button>
-        </div>
-      </ModulePage>
-      <UpgradeModal targetTier={open ? "studio" : null} currentTier="foundation" onClose={() => setOpen(false)} />
-    </>
-  );
 }
 
 // ───────── calendar shell ─────────

@@ -153,7 +153,6 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
                     }
                     className="rounded border border-border bg-white px-2 py-1 text-xs"
                   >
-                    <option value="foundation">Foundation</option>
                     <option value="studio">Studio</option>
                     <option value="practice">Practice</option>
                   </select>
@@ -361,7 +360,7 @@ function KbTab() {
               summary: "",
               body: "",
               tags: [],
-              tier_visibility: ["foundation", "studio", "practice"],
+              tier_visibility: ["studio", "practice"],
               status: "draft",
               featured: false,
             })
@@ -433,7 +432,7 @@ function KbTab() {
 
 function KbEditor({ item, onClose, onSave, saving }: { item: any; onClose: () => void; onSave: (p: any) => void; saving: boolean }) {
   const [f, setF] = useState<any>(item);
-  const tiers: ("foundation" | "studio" | "practice")[] = ["foundation", "studio", "practice"];
+  const tiers: ("studio" | "practice")[] = ["studio", "practice"];
   const slugify = (s: string) =>
     s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
   function toggleTier(t: any) {

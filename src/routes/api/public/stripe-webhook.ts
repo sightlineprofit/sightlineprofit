@@ -15,14 +15,16 @@ function normalizeStatus(s: string): SubStatus {
   return "incomplete";
 }
 
-function tierFromSubscription(sub: any): "foundation" | "studio" | "practice" | null {
+function tierFromSubscription(sub: any): "studio" | "practice" | null {
   const item = sub?.items?.data?.[0];
   const lookup = item?.price?.lookup_key
     || item?.price?.metadata?.lovable_external_id
     || null;
   if (lookup && PRICE_TO_TIER[lookup]) return PRICE_TO_TIER[lookup];
   const metaTier = sub?.metadata?.tier;
-  if (metaTier === "foundation" || metaTier === "studio" || metaTier === "practice") return metaTier;
+  // Legacy metadata may say "foundation" — coerce to "studio".
+  if (metaTier === "foundation") return "studio";
+  if (metaTier === "studio" || metaTier === "practice") return metaTier;
   return null;
 }
 
@@ -56,7 +58,7 @@ async function upsertFromSubscription(sub: any) {
     stripe_customer_id: string | null;
     stripe_subscription_id: string | null;
     subscription_status: SubStatus;
-    subscription_tier?: "foundation" | "studio" | "practice";
+    subscription_tier?: "studio" | "practice";
     trial_ends_at?: string | null;
     current_period_end?: string | null;
     past_due_since?: string | null;

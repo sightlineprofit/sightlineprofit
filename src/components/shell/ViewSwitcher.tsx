@@ -22,7 +22,6 @@ const ROLES: { value: ViewAsRole; label: string }[] = [
 ];
 
 const TIERS: { value: ViewAsTier; label: string }[] = [
-  { value: "foundation", label: "Foundation" },
   { value: "studio", label: "Studio" },
   { value: "practice", label: "Practice" },
 ];
@@ -32,7 +31,7 @@ const PRESETS: {
   role: ViewAsRole;
   tier: ViewAsTier;
 }[] = [
-  { label: "New Foundation owner", role: "principal", tier: "foundation" },
+  { label: "New Studio owner", role: "principal", tier: "studio" },
   { label: "Studio with team", role: "team", tier: "studio" },
   { label: "Practice admin", role: "admin", tier: "practice" },
   { label: "View only", role: "view_only", tier: "practice" },

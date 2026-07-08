@@ -7,7 +7,7 @@ import {
 } from "react";
 
 export type ViewAsRole = "principal" | "admin" | "team" | "view_only";
-export type ViewAsTier = "foundation" | "studio" | "practice";
+export type ViewAsTier = "studio" | "practice";
 
 export type ViewAsState = {
   role: ViewAsRole | null;

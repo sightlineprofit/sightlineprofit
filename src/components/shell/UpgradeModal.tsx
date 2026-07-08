@@ -2,21 +2,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Link } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 
-type Tier = "foundation" | "studio" | "practice";
+type Tier = "studio" | "practice";
 
 const TIER_DETAILS: Record<Tier, { name: string; tagline: string; solves: string; includes: string[] }> = {
-  foundation: {
-    name: "Foundation",
-    tagline: "Your rate, your costs, your starting point.",
-    solves: "Know what your rate needs to be to actually pay yourself.",
-    includes: ["Dashboard", "Rate & Cost Architecture", "Growth Roadmap"],
-  },
   studio: {
     name: "Studio",
     tagline: "Track where the hours actually go.",
     solves: "Stop guessing whether you're hitting your billable target each week.",
     includes: [
-      "Everything in Foundation",
+      "Dashboard, Rate Architecture & Growth Roadmap",
       "Time Calendar — log hours by project & activity",
       "Team utilization tracking",
       "Weekly billable target monitoring",
