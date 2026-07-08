@@ -10,7 +10,7 @@ import {
 import {
   getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
   upsertFirmConfig, listExpenses, addExpense, deleteExpense,
-  updateTeamMember, setPreferredHome,
+  updateTeamMember, setPreferredHome, setDefaultLandingPage,
   listOwnerCompensations, upsertOwnerCompensation,
   listFirmMembers, saveFirmMember, deleteFirmMember,
 } from "@/lib/firm.functions";
@@ -23,6 +23,8 @@ import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
 import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricBreakdown";
 import { listChangeLog } from "@/lib/change-log.functions";
+import { switchBillingFrequency } from "@/lib/billing.functions";
+import { getStripeEnvironment } from "@/lib/stripe";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
@@ -1802,12 +1804,27 @@ function FirmPanel({ onClose }: { onClose: () => void }) {
   const upd = useServerFn(updateFirm);
   const updCfg = useServerFn(upsertFirmConfig);
   const saveHome = useServerFn(setPreferredHome);
+  const saveLanding = useServerFn(setDefaultLandingPage);
   const [name, setName] = useState(data?.firm?.name ?? "");
   const [structure, setStructure] = useState((data?.config?.business_structure as string) ?? "sole_prop");
   const [basis, setBasis] = useState((data?.config?.accounting_basis as string) ?? "cash");
   const [home, setHome] = useState(((data?.profile as any)?.preferred_home as string) ?? "dashboard");
+  const [landing, setLanding] = useState(((data?.firm as any)?.default_landing_page as string) ?? "dashboard");
+  const [landingSaved, setLandingSaved] = useState(false);
   const [state, setState] = useState((data?.firm as any)?.state ?? "");
   const [saving, setSaving] = useState(false);
+
+  async function onLandingChange(v: string) {
+    setLanding(v);
+    try {
+      await saveLanding({ data: { page: v as any } });
+      setLandingSaved(true);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      setTimeout(() => setLandingSaved(false), 2000);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save");
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -1854,6 +1871,26 @@ function FirmPanel({ onClose }: { onClose: () => void }) {
           </select>
         </Field>
       </Row2>
+      <div className="mt-3">
+        <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 500, color: "#2C2C2C", marginBottom: 8 }}>
+          Default landing page
+        </div>
+        <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#6B6259", marginBottom: 10 }}>
+          Choose where Sightline takes you each time you log in.
+        </div>
+        <div className="flex items-center gap-3">
+          <select className={selectCls} value={landing} onChange={(e) => onLandingChange(e.target.value)}>
+            <option value="dashboard">Dashboard</option>
+            <option value="projects">Projects</option>
+            <option value="capacity">Capacity</option>
+            <option value="time_calendar">Time calendar</option>
+            <option value="rate_architecture">Rate architecture</option>
+          </select>
+          {landingSaved && (
+            <span style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#5C8A6E" }}>Saved ✓</span>
+          )}
+        </div>
+      </div>
       <SaveRow onCancel={onClose} onSave={save} saving={saving} />
     </PanelShell>
   );
@@ -2060,23 +2097,108 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
 
 function BillingPanel({ onClose }: { onClose: () => void }) {
   const { data } = useMe();
-  const tier = (data?.firm?.subscription_tier as string) ?? "studio";
-  const status = data?.firm?.subscription_status;
-  const tierPrice: Record<string, string> = { studio: "$79/mo", practice: "$129/mo" };
-  const tierName: Record<string, string> = { studio: status === "trialing" ? "Studio (Trial)" : "Studio", practice: "Practice" };
-  const nextBill = (data?.firm as any)?.current_period_end ?? "—";
+  const qc = useQueryClient();
+  const switchFreq = useServerFn(switchBillingFrequency);
+  const [busy, setBusy] = useState(false);
+  const firm: any = data?.firm ?? null;
+  const status = firm?.subscription_status;
+  const isTrial = status === "trialing";
+  const isFounding = firm?.stripe_price_id
+    ? ["sightline_founding_monthly", "sightline_founding_annual"].includes(firm.stripe_price_id)
+    : false;
+  const freq: "monthly" | "annual" = firm?.billing_frequency === "annual" ? "annual" : "monthly";
+  const prices = isFounding
+    ? { monthly: 3999, annual: 39990, save: 7998 }
+    : { monthly: 6999, annual: 69990, save: 13998 };
+  const priceCents = prices[freq];
+  const priceLabel = `$${(priceCents / 100).toFixed(2)}/${freq === "monthly" ? "month" : "year"}`;
+  const nextBillRaw = firm?.current_period_end ?? firm?.trial_ends_at ?? null;
+  const nextBillLabel = nextBillRaw
+    ? new Date(nextBillRaw).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    : "—";
+
+  const trialEndLabel = firm?.trial_ends_at
+    ? new Date(firm.trial_ends_at).toLocaleDateString(undefined, { month: "long", day: "numeric" })
+    : "the end of your trial";
+
+  async function doSwitch(target: "monthly" | "annual") {
+    const currentPrice = prices[freq];
+    const targetPrice = prices[target];
+    const targetLabel = `$${(targetPrice / 100).toFixed(2)}`;
+    const message =
+      target === "annual"
+        ? `Switch to annual billing?\n\nYou'll be charged ${targetLabel} on ${nextBillLabel} and annually thereafter.`
+        : `Switch to monthly billing?\n\nYour annual subscription ends on ${nextBillLabel}. From that date you'll be charged $${(prices.monthly / 100).toFixed(2)}/mo.`;
+    if (!window.confirm(message)) return;
+    setBusy(true);
+    try {
+      const res = await switchFreq({
+        data: { target, environment: (getStripeEnvironment() as any) },
+      });
+      if ("error" in res) throw new Error(res.error);
+      toast.success(target === "annual" ? "Switched to annual billing." : "Switch scheduled for end of period.");
+      qc.invalidateQueries({ queryKey: ["me"] });
+      void currentPrice;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not switch billing frequency.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <PanelShell title="Billing" subtitle="Your current plan and payment method." onClose={onClose}>
-      <Row2>
-        <Field label="Current plan"><input readOnly className={inputCls} value={`${tierName[tier] ?? tier} · ${tierPrice[tier] ?? ""}`} /></Field>
-        <Field label="Next billing date"><input readOnly className={inputCls} value={typeof nextBill === "string" ? nextBill : new Date(nextBill).toLocaleDateString()} /></Field>
-      </Row2>
-      <Field label="Payment method"><input readOnly className={inputCls} value={(data?.firm as any)?.payment_method_last4 ? `•••• ${(data?.firm as any).payment_method_last4}` : "No card on file"} /></Field>
-      <div className="mt-3 flex justify-end gap-2">
-        <Link to="/billing" className={ghostBtn}>Manage payment</Link>
-        {tier === "studio" && <Link to="/billing" className={darkBtn}>Upgrade to Practice</Link>}
+      <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: "#2C2C2C" }}>
+        Sightline by Propos'Ability
       </div>
-      {status === "trialing" && <p className="mt-2 text-[10px] text-ch/60">Currently on trial.</p>}
+      <div style={{ fontFamily: "Jost, sans-serif", fontSize: 12, color: "#6B6259", marginTop: 2 }}>
+        {freq === "annual" ? "Annual" : "Monthly"} billing
+      </div>
+      <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: "#2C2C2C", marginTop: 8 }}>
+        {priceLabel}
+      </div>
+      <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#8A7F75", marginTop: 4 }}>
+        {isTrial
+          ? `Trial ends ${nextBillLabel}`
+          : `Next charge: ${nextBillLabel} · $${(priceCents / 100).toFixed(2)}`}
+      </div>
+      {isFounding && (
+        <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#5C8A6E", marginTop: 4 }}>
+          Founding rate — locked permanently.
+        </div>
+      )}
+
+      <div className="mt-4">
+        {isTrial ? (
+          <div style={{ fontFamily: "Jost, sans-serif", fontSize: 12, color: "#8A7F75" }}>
+            You can switch between monthly and annual billing when your trial ends on {trialEndLabel}.
+          </div>
+        ) : freq === "monthly" ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => doSwitch("annual")}
+            style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#B8860B" }}
+            className="hover:underline disabled:opacity-50"
+          >
+            Switch to annual and save ${(prices.save / 100).toFixed(2)}/yr →
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => doSwitch("monthly")}
+            style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#8A7F75" }}
+            className="hover:underline disabled:opacity-50"
+          >
+            Switch to monthly billing →
+          </button>
+        )}
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Link to="/billing" className={ghostBtn}>Manage in Stripe portal</Link>
+      </div>
     </PanelShell>
   );
 }

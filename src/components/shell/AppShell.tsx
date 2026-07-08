@@ -304,7 +304,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
         {data?.firm && !data?.profile?.is_super_admin && (
-          <TrialBanner trialEndsAt={data.firm.trial_ends_at} status={data.firm.subscription_status} />
+          <TrialBanner firm={data.firm as any} />
         )}
         <ViewSwitcherBanner realIsSuper={isSuper} realImpersonating={impersonating} />
         <main className="flex-1">

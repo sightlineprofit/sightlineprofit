@@ -134,6 +134,73 @@ export const markWelcomed = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Mark the firm's onboarding wizard as complete. */
+export const completeOnboarding = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { error } = await supabase
+      .from("firms")
+      .update({
+        onboarding_completed: true,
+        onboarding_completed_at: new Date().toISOString(),
+      })
+      .eq("id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const landingPageEnum = z.enum([
+  "dashboard",
+  "projects",
+  "capacity",
+  "time_calendar",
+  "rate_architecture",
+]);
+
+export const setDefaultLandingPage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ page: landingPageEnum }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { error } = await supabase
+      .from("firms")
+      .update({ default_landing_page: data.page })
+      .eq("id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const dismissWelcomeBanner = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!profile?.firm_id) throw new Error("No firm");
+    const { error } = await supabase
+      .from("firms")
+      .update({ welcome_banner_dismissed: true })
+      .eq("id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 const configSchema = z.object({
   comp_draw_annual: z.number().min(0).max(1e9).nullable().optional(),
   comp_ptax_pct: z.number().min(0).max(100).nullable().optional(),
@@ -656,13 +723,6 @@ export const resendInvitation = createServerFn({ method: "POST" })
       console.warn("[resendInvitation] email send failed:", e);
     }
     return { ok: true, email: inv.email };
-  });
-
-export const completeOnboarding = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    // Reserved for future flag; the dashboard is reachable once a firm exists.
-    return { ok: true, userId: context.userId };
   });
 
 export const backfillStarterSops = createServerFn({ method: "POST" })

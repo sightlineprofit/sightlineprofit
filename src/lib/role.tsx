@@ -85,28 +85,32 @@ export function effectiveRole(profile: {
   return (profile.role as AppRole) ?? null;
 }
 
+const LANDING_PAGE_MAP: Record<string, string> = {
+  dashboard: "/dashboard",
+  projects: "/projects",
+  capacity: "/dashboard?open=capacity",
+  time_calendar: "/time-calendar",
+  rate_architecture: "/rate-architecture",
+};
+
 /** Where this user should land after auth. */
-export function landingPathFor(profile: {
-  role?: string | null;
-  is_super_admin?: boolean | null;
-  preferred_home?: string | null;
-  welcomed_at?: string | null;
-}): string {
+export function landingPathFor(
+  profile: {
+    role?: string | null;
+    is_super_admin?: boolean | null;
+    preferred_home?: string | null;
+    welcomed_at?: string | null;
+  },
+  firm?: { default_landing_page?: string | null; onboarding_completed?: boolean | null } | null,
+): string {
   if (profile.is_super_admin) return "/admin";
   const role = (profile.role as AppRole) ?? "team";
   if (role === "principal" || role === "admin") {
-    switch (profile.preferred_home) {
-      case "calendar":
-        return "/time-calendar";
-      case "sightline":
-        return "/sightline";
-      case "dashboard":
-      default:
-        return "/dashboard";
-    }
+    if (firm && firm.onboarding_completed === false) return "/onboarding";
+    const key = firm?.default_landing_page ?? profile.preferred_home ?? "dashboard";
+    return LANDING_PAGE_MAP[key] ?? "/dashboard";
   }
   if (role === "view_only") return "/sightline";
-  // team
   return profile.welcomed_at ? "/time-calendar" : "/welcome";
 }
 

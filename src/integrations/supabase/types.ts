@@ -571,11 +571,14 @@ export type Database = {
           created_at: string
           current_period_end: string | null
           data_status: string
+          default_landing_page: string | null
           id: string
           is_demo: boolean
           last_demo_loaded_at: string | null
           last_reset_at: string | null
           name: string
+          onboarding_completed: boolean
+          onboarding_completed_at: string | null
           owner_id: string
           past_due_since: string | null
           stripe_customer_id: string | null
@@ -585,17 +588,21 @@ export type Database = {
           subscription_status: Database["public"]["Enums"]["subscription_status"]
           subscription_tier: Database["public"]["Enums"]["subscription_tier"]
           trial_ends_at: string
+          welcome_banner_dismissed: boolean
         }
         Insert: {
           billing_frequency?: string
           created_at?: string
           current_period_end?: string | null
           data_status?: string
+          default_landing_page?: string | null
           id?: string
           is_demo?: boolean
           last_demo_loaded_at?: string | null
           last_reset_at?: string | null
           name: string
+          onboarding_completed?: boolean
+          onboarding_completed_at?: string | null
           owner_id: string
           past_due_since?: string | null
           stripe_customer_id?: string | null
@@ -605,17 +612,21 @@ export type Database = {
           subscription_status?: Database["public"]["Enums"]["subscription_status"]
           subscription_tier?: Database["public"]["Enums"]["subscription_tier"]
           trial_ends_at?: string
+          welcome_banner_dismissed?: boolean
         }
         Update: {
           billing_frequency?: string
           created_at?: string
           current_period_end?: string | null
           data_status?: string
+          default_landing_page?: string | null
           id?: string
           is_demo?: boolean
           last_demo_loaded_at?: string | null
           last_reset_at?: string | null
           name?: string
+          onboarding_completed?: boolean
+          onboarding_completed_at?: string | null
           owner_id?: string
           past_due_since?: string | null
           stripe_customer_id?: string | null
@@ -625,6 +636,7 @@ export type Database = {
           subscription_status?: Database["public"]["Enums"]["subscription_status"]
           subscription_tier?: Database["public"]["Enums"]["subscription_tier"]
           trial_ends_at?: string
+          welcome_banner_dismissed?: boolean
         }
         Relationships: []
       }
