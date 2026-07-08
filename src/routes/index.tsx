@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/")({
@@ -196,9 +196,9 @@ function Nav() {
         <button onClick={() => scrollTo("pricing")} style={navLink}>
           Pricing
         </button>
-        <button onClick={() => scrollTo("cta-form")} style={btnPrimary}>
+        <Link to="/register" style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }}>
           Get early access
-        </button>
+        </Link>
       </div>
     </nav>
   );
@@ -280,9 +280,9 @@ function Hero() {
             firm actually works.
           </p>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <button style={btnPrimary} onClick={() => scrollTo("cta-form")}>
-              Join the waitlist
-            </button>
+            <Link to="/register" style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }}>
+              Start free trial
+            </Link>
             <button style={btnGhost} onClick={() => scrollTo("how-it-works")}>
               See how it works
             </button>
@@ -292,14 +292,11 @@ function Hero() {
               fontFamily: FONT_SANS,
               fontSize: 12,
               fontWeight: 400,
-              color: C.mutedLight,
+              color: "#8A7F75",
               marginTop: 16,
             }}
           >
-            Early access open now ·{" "}
-            <span style={{ fontWeight: 500, color: C.charcoal }}>
-              Founding firm pricing available
-            </span>
+            14-day free trial · $39.99/mo founding rate · No charge until trial ends
           </p>
         </div>
         <div className="sl-hero-right">
@@ -1804,204 +1801,351 @@ function WhoItsFor() {
 
 /* ===================== PRICING ===================== */
 function Pricing() {
-  const plans = [
-    {
-      badge: "Sightline",
-      badgeStyle: "gold" as const,
-      name: "For the solo principal",
-      desc: "Rate architecture, project profitability tracking, capacity planning, and the action engine — everything a solo designer needs to run a financially clear firm.",
-      price: "$69",
-      founding: "Founding firm rate: $39/mo while early access is open",
-      features: [
-        "Aligned rate with full layer breakdown",
-        "Real-time project margin tracking",
-        "Capacity timeline — 16-week pressure chart",
-        "Personalized action engine",
-        "Model a change + commit to action",
-        "Rate history and change tracking",
-        "Knowledge base — 8 in-depth guides",
-      ],
-      cta: "Join the waitlist",
-      ctaStyle: "ghost" as const,
-    },
-    {
-      badge: "Practice — Most complete",
-      badgeStyle: "dark" as const,
-      name: "For the studio with a team",
-      desc: "Everything in Sightline, plus multi-principal support, full team capacity tracking, per-member utilization, budget revenue across all contributors, and the full team cost breakdown.",
-      price: "$129",
-      founding: "Founding firm rate: $79/mo while early access is open",
-      features: [
-        "Everything in Sightline",
-        "Multi-principal compensation support",
-        "Team capacity cards — per-member tracking",
-        "Budget revenue across all billable contributors",
-        "Fully burdened team cost breakdown",
-        "Team hours tile + email reminder",
-        "Per-member utilization table",
-      ],
-      cta: "Join the waitlist",
-      ctaStyle: "primary" as const,
-    },
+  const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
+  const navigate = useNavigate();
+  const founding = true; // early access active
+
+  const priceLarge = founding
+    ? billing === "monthly" ? "$39.99" : "$399.90"
+    : billing === "monthly" ? "$69.99" : "$699.90";
+  const priceSuffix = billing === "monthly" ? "/month" : "/year";
+  const savingsLine = billing === "annual"
+    ? founding
+      ? "$33.33/mo — you save $79.98 per year"
+      : "$58.33/mo — you save $139.98 per year"
+    : null;
+  const futureNote = billing === "monthly"
+    ? "After early access: $69.99/mo for new members."
+    : "After early access: $699.90/yr for new members.";
+
+  const features = [
+    "Aligned rate calculation",
+    "Project profitability tracking",
+    "Capacity timeline — 16 weeks",
+    "Personalized action engine",
+    "Model a change + commit to action",
+    "Rate history and change tracking",
+    "Unlimited team members",
+    "Per-member capacity tracking",
+    "Team utilization table",
+    "Budget revenue — full firm",
+    "Multi-principal compensation",
+    "Knowledge base — 8 in-depth guides",
   ];
+
+  const pillBase: React.CSSProperties = {
+    fontFamily: FONT_SANS,
+    fontSize: 11,
+    fontWeight: 500,
+    padding: "7px 20px",
+    borderRadius: 2,
+    border: "none",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+  };
+  const pillActive: React.CSSProperties = {
+    background: "white",
+    color: C.charcoal,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.10)",
+  };
+  const pillInactive: React.CSSProperties = {
+    background: "transparent",
+    color: C.mutedLight,
+  };
+
   return (
-    <section id="pricing" style={{ ...sectionBase, background: C.linen, borderTop: `0.5px solid ${C.border}` }}>
+    <section id="pricing" style={{ background: C.linen, borderTop: `0.5px solid ${C.border}`, padding: "96px 56px" }}>
       <div style={inner}>
         <div style={eyebrow}>Pricing</div>
-        <h2 style={h2Style}>
-          Simple, transparent,
+        <h2
+          style={{
+            fontFamily: FONT_DISPLAY,
+            fontSize: "clamp(32px, 4vw, 52px)",
+            fontWeight: 400,
+            lineHeight: 1.12,
+            color: C.charcoal,
+            margin: "0 0 14px 0",
+          }}
+        >
+          One plan.
           <br />
-          <em style={{ fontStyle: "italic", color: C.gold }}>built for design firms.</em>
+          <em style={{ fontStyle: "italic", color: C.gold }}>Everything included.</em>
         </h2>
-        <p style={bodyLarge}>
-          Two tiers. No per-seat fees. No feature-gating that makes the product
-          useless until you upgrade. Founding firm pricing available now while
-          early access is open.
+        <p
+          style={{
+            fontFamily: FONT_SANS,
+            fontSize: 15,
+            fontWeight: 400,
+            color: C.muted,
+            lineHeight: 1.9,
+            maxWidth: 560,
+            marginTop: 14,
+          }}
+        >
+          Full access from day one. No tiers, no feature gates, no upgrade path. Every feature Sightline offers — rate architecture, project profitability, capacity planning, team tracking, and the action engine — is included for every firm.
         </p>
+
+        {/* PRICING CARD */}
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 20,
-            marginTop: 52,
+            maxWidth: 520,
+            margin: "52px auto 0",
+            background: C.cream,
+            border: "0.5px solid rgba(184,134,11,0.30)",
+            borderRadius: 6,
+            padding: "40px 36px",
           }}
-          className="sl-2col"
         >
-          {plans.map((p) => (
-            <div
-              key={p.name}
-              style={{
-                background: C.cream,
-                border: `0.5px solid ${C.border}`,
-                borderRadius: 4,
-                padding: "36px 32px",
-              }}
+          <span
+            style={{
+              display: "inline-block",
+              fontFamily: FONT_SANS,
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.16em",
+              color: C.gold,
+              border: "0.5px solid rgba(184,134,11,0.30)",
+              borderRadius: 2,
+              padding: "3px 8px",
+              marginBottom: 20,
+            }}
+          >
+            Early access pricing
+          </span>
+          <div
+            style={{
+              fontFamily: FONT_DISPLAY,
+              fontSize: 26,
+              fontWeight: 400,
+              color: C.charcoal,
+              marginBottom: 8,
+            }}
+          >
+            Sightline by Propos'Ability
+          </div>
+          <div
+            style={{
+              fontFamily: FONT_SANS,
+              fontSize: 13,
+              fontWeight: 400,
+              color: C.muted,
+              lineHeight: 1.7,
+              marginBottom: 24,
+            }}
+          >
+            The complete financial dashboard for interior design firm owners. Know what to charge. Track whether you're hitting your targets. Find out if your projects are profitable. Know when it's time to grow.
+          </div>
+
+          {/* Toggle */}
+          <div
+            style={{
+              background: "rgba(44,44,44,0.06)",
+              borderRadius: 3,
+              padding: 3,
+              display: "inline-flex",
+              marginBottom: 16,
+            }}
+          >
+            <button
+              onClick={() => setBilling("monthly")}
+              style={{ ...pillBase, ...(billing === "monthly" ? pillActive : pillInactive) }}
             >
+              Monthly
+            </button>
+            <button
+              onClick={() => setBilling("annual")}
+              style={{ ...pillBase, ...(billing === "annual" ? pillActive : pillInactive) }}
+            >
+              Annual
               <span
                 style={{
-                  display: "inline-block",
-                  fontSize: 10,
+                  fontSize: 8,
                   fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.16em",
-                  color: p.badgeStyle === "dark" ? C.charcoal : C.gold,
-                  border:
-                    p.badgeStyle === "dark"
-                      ? "0.5px solid rgba(44,44,44,0.2)"
-                      : "0.5px solid rgba(184,134,11,0.3)",
-                  background: p.badgeStyle === "dark" ? "rgba(44,44,44,0.05)" : "transparent",
+                  background: C.sage,
+                  color: "white",
                   borderRadius: 2,
-                  padding: "3px 8px",
-                  marginBottom: 16,
-                  fontFamily: FONT_SANS,
+                  padding: "1px 5px",
+                  marginLeft: 6,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
                 }}
               >
-                {p.badge}
+                2 months free
               </span>
-              <div
-                style={{
-                  fontFamily: FONT_DISPLAY,
-                  fontSize: 26,
-                  fontWeight: 400,
-                  color: C.charcoal,
-                  marginBottom: 6,
-                }}
-              >
-                {p.name}
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 400,
-                  color: C.muted,
-                  lineHeight: 1.7,
-                  marginBottom: 24,
-                  fontFamily: FONT_SANS,
-                }}
-              >
-                {p.desc}
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            </button>
+          </div>
+
+          {/* Price */}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, transition: "opacity 0.15s" }}>
+            <span
+              style={{
+                fontFamily: FONT_DISPLAY,
+                fontSize: 64,
+                fontWeight: 300,
+                color: C.charcoal,
+                lineHeight: 1,
+              }}
+            >
+              {priceLarge}
+            </span>
+            <span
+              style={{
+                fontFamily: FONT_SANS,
+                fontSize: 14,
+                fontWeight: 400,
+                color: C.mutedLight,
+                paddingBottom: 12,
+              }}
+            >
+              {priceSuffix}
+            </span>
+          </div>
+          {savingsLine && (
+            <div
+              style={{
+                fontFamily: FONT_SANS,
+                fontSize: 13,
+                fontWeight: 500,
+                color: C.sage,
+                marginTop: 6,
+              }}
+            >
+              {savingsLine}
+            </div>
+          )}
+          <div
+            style={{
+              fontFamily: FONT_SANS,
+              fontSize: 12,
+              fontWeight: 500,
+              color: C.sage,
+              marginTop: 8,
+            }}
+          >
+            Founding rate — locked permanently for early access members.
+          </div>
+          <div
+            style={{
+              fontFamily: FONT_SANS,
+              fontSize: 11,
+              fontWeight: 400,
+              color: C.mutedLight,
+              marginTop: 3,
+              marginBottom: 24,
+            }}
+          >
+            {futureNote}
+          </div>
+
+          <div style={{ height: 0.5, background: C.border, margin: "0 0 24px" }} />
+
+          <div
+            style={{
+              fontFamily: FONT_SANS,
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.14em",
+              color: C.charcoal,
+              marginBottom: 16,
+            }}
+          >
+            Everything. No exceptions.
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "10px 20px",
+            }}
+            className="sl-features-grid"
+          >
+            {features.map((f) => (
+              <div key={f} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ color: C.sage, fontWeight: 600, fontSize: 12, flexShrink: 0, marginTop: 1 }}>✓</span>
                 <span
                   style={{
-                    fontFamily: FONT_DISPLAY,
-                    fontSize: 54,
-                    fontWeight: 300,
-                    color: C.charcoal,
-                    lineHeight: 1,
+                    fontFamily: FONT_SANS,
+                    fontSize: 13,
+                    fontWeight: 400,
+                    color: C.muted,
+                    lineHeight: 1.5,
                   }}
                 >
-                  {p.price}
-                </span>
-                <span style={{ fontSize: 13, fontWeight: 400, color: C.mutedLight, fontFamily: FONT_SANS }}>
-                  /month
+                  {f}
                 </span>
               </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: C.sage,
-                  marginTop: 12,
-                  marginBottom: 24,
-                  fontFamily: FONT_SANS,
-                }}
-              >
-                {p.founding}
-              </div>
-              <div style={{ height: 0.5, background: C.border, margin: "20px 0" }} />
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {p.features.map((f) => (
-                  <div key={f} style={{ display: "flex", gap: 8 }}>
-                    <span style={{ color: C.sage, fontWeight: 600, flexShrink: 0, marginTop: 1 }}>✓</span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 400,
-                        color: C.muted,
-                        lineHeight: 1.6,
-                        fontFamily: FONT_SANS,
-                      }}
-                    >
-                      {f}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={() => scrollTo("cta-form")}
-                style={{
-                  ...(p.ctaStyle === "primary" ? btnPrimary : btnGhost),
-                  width: "100%",
-                  marginTop: 28,
-                  padding: 13,
-                  fontSize: 11,
-                  letterSpacing: "0.16em",
-                }}
-              >
-                {p.cta}
-              </button>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <button
+            onClick={() =>
+              navigate({
+                to: "/register",
+                search: billing === "annual" ? { billing: "annual" } : undefined,
+              })
+            }
+            style={{
+              width: "100%",
+              marginTop: 28,
+              background: C.charcoal,
+              color: C.cream,
+              padding: 14,
+              borderRadius: 2,
+              border: "none",
+              cursor: "pointer",
+              fontFamily: FONT_SANS,
+              fontSize: 11,
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.16em",
+            }}
+          >
+            Start my 14-day free trial →
+          </button>
+          <div
+            style={{
+              fontFamily: FONT_SANS,
+              fontSize: 11,
+              fontWeight: 400,
+              color: C.mutedLight,
+              textAlign: "center",
+              marginTop: 10,
+            }}
+          >
+            No charge for 14 days. Card required to start trial. Cancel anytime.
+          </div>
         </div>
+
+        {/* Founding note below card */}
         <div
           style={{
-            marginTop: 24,
+            maxWidth: 520,
+            margin: "20px auto 0",
             background: "rgba(92,138,110,0.07)",
-            border: "0.5px solid rgba(92,138,110,0.2)",
+            border: "0.5px solid rgba(92,138,110,0.20)",
             borderRadius: 4,
             padding: "16px 18px",
+            fontFamily: FONT_SANS,
             fontSize: 14,
             fontWeight: 400,
             color: C.charcoal,
             lineHeight: 1.7,
-            fontFamily: FONT_SANS,
           }}
         >
-          <strong style={{ fontWeight: 500 }}>Founding firm</strong> pricing is
-          available during early access. This rate locks permanently — it never
-          increases as long as your subscription is active. Once early access
-          closes, pricing returns to standard rates.
+          <strong style={{ fontWeight: 500 }}>Founding pricing</strong> is available during early access. Your rate locks permanently — it never increases as long as your subscription is active. Once early access closes, new members pay $69.99/mo or $699.90/yr.
+          <div
+            style={{
+              fontFamily: FONT_SANS,
+              fontSize: 12,
+              color: C.mutedLight,
+              marginTop: 6,
+            }}
+          >
+            Annual plan saves $79.98/yr at founding rate · $139.98/yr at standard rate.
+          </div>
         </div>
       </div>
     </section>
@@ -2051,9 +2195,23 @@ function ClosingCTA() {
   return (
     <section style={{ background: C.charcoal, padding: "100px 56px" }}>
       <div style={{ maxWidth: 680, margin: "0 auto", textAlign: "center" }}>
-        <div style={{ ...eyebrow, letterSpacing: "0.22em", marginBottom: 20 }}>
-          Early access
+        <div style={{ ...eyebrow, letterSpacing: "0.22em", marginBottom: 10 }}>
+          Not ready to sign up yet?
         </div>
+        <Link
+          to="/register"
+          style={{
+            fontFamily: FONT_SANS,
+            fontSize: 13,
+            color: C.gold,
+            display: "block",
+            textAlign: "center",
+            marginBottom: 16,
+            textDecoration: "none",
+          }}
+        >
+          Ready to start your free trial? →
+        </Link>
         <h2
           style={{
             fontFamily: FONT_DISPLAY,
@@ -2079,8 +2237,8 @@ function ClosingCTA() {
           }}
         >
           If you've ever finished a fully booked year wondering where the money
-          went — Sightline was built for you. Join the waitlist for early access
-          and founding firm pricing while early access is open.
+          went — Sightline was built for you. Join the waitlist and we'll be in
+          touch when we open fully to the public.
         </p>
         {!submitted ? (
           <>
