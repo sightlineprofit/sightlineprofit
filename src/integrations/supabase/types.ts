@@ -46,6 +46,53 @@ export type Database = {
           },
         ]
       }
+      activity_types: {
+        Row: {
+          color: string | null
+          created_at: string
+          firm_id: string
+          id: string
+          is_billable: boolean
+          is_default: boolean
+          is_system: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          firm_id: string
+          id?: string
+          is_billable?: boolean
+          is_default?: boolean
+          is_system?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          firm_id?: string
+          id?: string
+          is_billable?: boolean
+          is_default?: boolean
+          is_system?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_types_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       aligned_rate_history: {
         Row: {
           change_reason: string | null
@@ -659,6 +706,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "founding_access_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      internal_projects: {
+        Row: {
+          created_at: string
+          firm_id: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          firm_id: string
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          firm_id?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "internal_projects_firm_id_fkey"
             columns: ["firm_id"]
             isOneToOne: true
             referencedRelation: "firms"
@@ -1583,10 +1662,15 @@ export type Database = {
       time_entries: {
         Row: {
           activity_group_id: string | null
+          activity_reassigned: boolean
+          activity_reassigned_at: string | null
+          activity_reassigned_from: string | null
+          activity_type_id: string | null
           billable: boolean
           cost_rate_at_time: number | null
           created_at: string
           date: string
+          description: string | null
           end_time: string | null
           firm_id: string
           hrs: number
@@ -1599,10 +1683,15 @@ export type Database = {
         }
         Insert: {
           activity_group_id?: string | null
+          activity_reassigned?: boolean
+          activity_reassigned_at?: string | null
+          activity_reassigned_from?: string | null
+          activity_type_id?: string | null
           billable?: boolean
           cost_rate_at_time?: number | null
           created_at?: string
           date: string
+          description?: string | null
           end_time?: string | null
           firm_id: string
           hrs?: number
@@ -1615,10 +1704,15 @@ export type Database = {
         }
         Update: {
           activity_group_id?: string | null
+          activity_reassigned?: boolean
+          activity_reassigned_at?: string | null
+          activity_reassigned_from?: string | null
+          activity_type_id?: string | null
           billable?: boolean
           cost_rate_at_time?: number | null
           created_at?: string
           date?: string
+          description?: string | null
           end_time?: string | null
           firm_id?: string
           hrs?: number
@@ -1635,6 +1729,13 @@ export type Database = {
             columns: ["activity_group_id"]
             isOneToOne: false
             referencedRelation: "activity_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_activity_type_id_fkey"
+            columns: ["activity_type_id"]
+            isOneToOne: false
+            referencedRelation: "activity_types"
             referencedColumns: ["id"]
           },
           {
@@ -1771,6 +1872,10 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      ensure_firm_internal_project: {
+        Args: { p_firm_id: string }
+        Returns: string
+      }
       founding_slots_remaining: { Args: never; Returns: number }
       get_user_firm_id: { Args: never; Returns: string }
       get_user_role: {
@@ -1801,10 +1906,15 @@ export type Database = {
         Args: { p_entry: Json }
         Returns: {
           activity_group_id: string | null
+          activity_reassigned: boolean
+          activity_reassigned_at: string | null
+          activity_reassigned_from: string | null
+          activity_type_id: string | null
           billable: boolean
           cost_rate_at_time: number | null
           created_at: string
           date: string
+          description: string | null
           end_time: string | null
           firm_id: string
           hrs: number
@@ -1821,6 +1931,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      seed_firm_activity_types: {
+        Args: { p_firm_id: string }
+        Returns: undefined
       }
     }
     Enums: {
