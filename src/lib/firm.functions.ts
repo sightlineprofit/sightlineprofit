@@ -7,19 +7,21 @@ import { seedDefaultSops } from "@/lib/sop-seed.server";
 import { recordAlignedRate } from "@/lib/rate-history.server";
 import { logChange, diffFields, type ChangedField } from "@/lib/change-log.server";
 
-const tierEnum = z.enum(["studio", "practice"]);
+// Single-plan model: no tier parameter. All new firms are Practice-access
+// with a 14-day trial. Optional Stripe billing fields (billing_frequency,
+// stripe_price_id) may be captured up-front from /register.
+const createFirmSchema = z.object({
+  firmName: z.string().trim().min(1).max(120),
+  ownerName: z.string().trim().min(1).max(120),
+  billingFrequency: z.enum(["monthly", "annual"]).optional(),
+  stripePriceId: z.string().trim().max(120).optional().nullable(),
+  stripeCustomerId: z.string().trim().max(120).optional().nullable(),
+  paymentMethodId: z.string().trim().max(120).optional().nullable(),
+});
 
 export const createFirmForCurrentUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) =>
-    z
-      .object({
-        firmName: z.string().trim().min(1).max(120),
-        ownerName: z.string().trim().min(1).max(120),
-        tier: tierEnum,
-      })
-      .parse(d),
-  )
+  .inputValidator((d) => createFirmSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -34,6 +36,8 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       return { firmId: profile.firm_id, alreadyExists: true };
     }
 
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
     // Bootstrap uses admin client: the firms_select policy requires
     // current_firm_id() to match, but the user's profile.firm_id is still
     // null at this point — so RETURNING via the user-scoped client fails.
@@ -42,9 +46,14 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       .insert({
         name: data.firmName,
         owner_id: userId,
-        subscription_tier: data.tier,
+        subscription_tier: "practice",
         subscription_status: "trialing",
-      })
+        trial_ends_at: trialEndsAt,
+        billing_frequency: data.billingFrequency ?? "monthly",
+        stripe_price_id: data.stripePriceId ?? null,
+        stripe_customer_id: data.stripeCustomerId ?? null,
+        stripe_payment_method_id: data.paymentMethodId ?? null,
+      } as any)
       .select("id")
       .single();
     if (firmErr || !firm) throw new Error(firmErr?.message ?? "Failed to create firm");
@@ -61,6 +70,14 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
     if (profErr) throw new Error(profErr.message);
 
     await supabaseAdmin.from("firm_config").insert({ firm_id: firm.id });
+
+    // If this signup claimed a founding-rate price, record it against the
+    // founding_access counter so the next visitor sees the correct slot count.
+    if (data.stripePriceId === "sightline_founding_monthly" || data.stripePriceId === "sightline_founding_annual") {
+      await supabaseAdmin
+        .from("founding_access" as any)
+        .upsert({ firm_id: firm.id, stripe_price_id: data.stripePriceId }, { onConflict: "firm_id" });
+    }
 
     // Seed the 10 starter SOP templates for this firm (idempotent by name).
     try {
