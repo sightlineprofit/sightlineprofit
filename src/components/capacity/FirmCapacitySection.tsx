@@ -49,6 +49,23 @@ export function FirmCapacitySection({
   const active = data.inputs.projects.filter((p) => (p.status || "").toLowerCase() === "active");
   const withDates = active.filter((p) => p.start_date && p.end_date);
   const rows = buildTeamRows(data);
+  const trackedCount = Math.max(1, rows.filter((r) => r.tracks).length);
+  const weeksPerYear = data.inputs.weeksPerYear || 48;
+
+  // Non-billable envelope — hours already accounted for in the rate architecture
+  // (ideation, admin, learning). Budget is the trailing 4-wk avg annualized;
+  // usage is YTD non-billable across the firm.
+  const nonBillableBudgetAnnual = Math.max(0, data.inputs.avgWeeklyNonBillable * weeksPerYear);
+  const nonBillableUsedYtd = Object.values(data.ytdHoursByUser ?? {}).reduce(
+    (s, v) => s + Number(v?.nonBillable || 0),
+    0,
+  );
+  const nonBillablePct =
+    nonBillableBudgetAnnual > 0 ? (nonBillableUsedYtd / nonBillableBudgetAnnual) * 100 : 0;
+  const nonBillablePerMemberWeekly =
+    data.inputs.avgWeeklyNonBillable > 0
+      ? data.inputs.avgWeeklyNonBillable / trackedCount
+      : 0;
 
   return (
     <section
@@ -87,17 +104,59 @@ export function FirmCapacitySection({
       {/* Summary — hours only, no dollar figures */}
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <SummaryRow
-          label="Committed"
+          label="Billable committed"
           hrs={summary.committed}
           pct={summary.committedPct}
           color="#B8860B"
         />
         <SummaryRow
-          label="Available"
+          label="Billable available"
           hrs={summary.available}
           pct={summary.availablePct}
           color="#5C8A6E"
         />
+      </div>
+
+      {/* Non-billable capacity gauge — the envelope already priced into the rate.
+          Hours spent here (ideation, admin, learning) don't erode margin because
+          they were accounted for when the aligned rate was set. */}
+      <div className="mt-4">
+        <div className="flex items-baseline justify-between">
+          <div>
+            <span className="text-[10px] uppercase tracking-[0.14em] text-ch/50">
+              Non-billable capacity
+            </span>
+            <p className="mt-0.5 text-[11px] font-light" style={{ color: "#8A8578" }}>
+              Room for ideation, admin, learning — already priced into your rate.
+            </p>
+          </div>
+          <span
+            className="num"
+            style={{ fontFamily: "Cormorant Garamond, serif", fontSize: 20, color: "#2C2C2C" }}
+          >
+            {fmtHrs(nonBillableUsedYtd)} / {fmtHrs(nonBillableBudgetAnnual)} hrs{" "}
+            <span style={{ fontSize: 12, color: "#8A8578" }}>
+              ({Math.round(nonBillablePct)}%)
+            </span>
+          </span>
+        </div>
+        <div
+          className="mt-2 h-1 w-full overflow-hidden rounded-sm"
+          style={{ background: "rgba(44,44,44,0.08)" }}
+        >
+          <div
+            style={{
+              width: `${Math.max(0, Math.min(100, nonBillablePct))}%`,
+              height: "100%",
+              background: nonBillablePct > 110 ? "#C4714A" : "#8A7CB8",
+            }}
+          />
+        </div>
+        {nonBillableBudgetAnnual === 0 && (
+          <p className="mt-1 text-[10px] italic" style={{ color: "#aaa" }}>
+            No non-billable time logged yet — budget will appear once trailing data exists.
+          </p>
+        )}
       </div>
 
       {/* Weekly pressure chart */}
@@ -155,6 +214,15 @@ export function FirmCapacitySection({
             key={r.key}
             row={r}
             logged={r.tracks ? data.weeklyHoursByUser.get(r.lookupId) ?? 0 : 0}
+            loggedBillable={
+              r.tracks
+                ? data.weeklyBillableByUser?.get(r.lookupId) ??
+                  data.weeklyHoursByUser.get(r.lookupId) ??
+                  0
+                : 0
+            }
+            loggedNonBillable={r.tracks ? data.weeklyNonBillableByUser?.get(r.lookupId) ?? 0 : 0}
+            nonBillableWeeklyBudget={nonBillablePerMemberWeekly}
             lastEntry={(data.lastEntryByUser ?? {})[r.lookupId] ?? null}
             ytd={(data.ytdHoursByUser ?? {})[r.lookupId] ?? { billable: 0, nonBillable: 0 }}
             weeksElapsed={Math.max(1, data.weeksElapsed ?? 1)}
