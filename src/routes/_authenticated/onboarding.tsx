@@ -477,6 +477,26 @@ function Onboarding() {
                   }}
                   helper="Your aligned rate is calculated so that billing at exactly that rate hits this target. Start with 30% if you are unsure — you can adjust this at any time and your rate updates immediately."
                 />
+                <Field
+                  label="Working weeks per year"
+                  value={weeksPerYear}
+                  onChange={setWeeksPerYear}
+                  helper="Most design firms work 46–48 weeks after accounting for holidays and time off."
+                />
+              </Row>
+              <Row>
+                <Field
+                  label="Your current billed rate"
+                  prefix="$"
+                  value={rateBilled}
+                  onChange={setRateBilled}
+                  tip={{
+                    term: "Billed rate",
+                    definition:
+                      "The hourly rate you currently charge clients. Sightline compares this against your aligned rate — the rate math says you need to charge to hit your margin target — so you can see whether you're pricing above or below your floor. Leave blank if you don't have one yet; you can add it in Settings later.",
+                  }}
+                  helper="Leave blank if you don't charge hourly yet. You can set it later in Settings."
+                />
                 <div />
               </Row>
             </div>
