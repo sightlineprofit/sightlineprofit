@@ -23,6 +23,8 @@ import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
 import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdown";
 import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricBreakdown";
 import { listChangeLog } from "@/lib/change-log.functions";
+import { switchBillingFrequency } from "@/lib/billing.functions";
+import { getStripeEnvironment } from "@/lib/stripe";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
