@@ -34,6 +34,9 @@ export type CapacityExpandedData = {
     burdened_hourly_rate?: number | null;
   }>;
   weeklyHoursByUser: Map<string, number>;
+  /** Weekly hours split by billable state (optional; falls back to weeklyHoursByUser as billable-only when absent). */
+  weeklyBillableByUser?: Map<string, number>;
+  weeklyNonBillableByUser?: Map<string, number>;
   sopTemplates: Array<{ id: string; name: string; total_hrs: number }>;
   configSetup: boolean;
   annualRevenue: number;
