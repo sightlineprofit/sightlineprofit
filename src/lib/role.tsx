@@ -143,10 +143,10 @@ export function effectiveTier(
     | null
     | undefined,
 ): AppTier {
-  const isSuper = !!profile?.is_super_admin;
-  const isImpersonating = !!profile?.impersonated_firm_id;
-  if (isSuper && !isImpersonating) return "practice";
-  return ((firm?.subscription_tier as AppTier) ?? "studio");
+  // Single-plan model: every firm has full access. `AppTier` is retained for
+  // back-compat with existing call sites and always resolves to "practice".
+  void profile; void firm;
+  return "practice";
 }
 
 /**
@@ -174,22 +174,30 @@ export function accessState(
 ): AccessState {
   if (profile?.is_super_admin && !profile?.impersonated_firm_id) return "full";
   if (!firm) return "none";
+  // Single-plan model. Access is a function of subscription_status only,
+  // with a shared 7-day grace after the trial or cancellation lapses.
   const now = Date.now();
+  const GRACE_MS = 7 * 24 * 60 * 60 * 1000;
   const status = firm.subscription_status ?? null;
-  const periodEnd = firm.current_period_end ? new Date(firm.current_period_end).getTime() : null;
   const trialEnd = firm.trial_ends_at ? new Date(firm.trial_ends_at).getTime() : null;
-  const pastDueSince = firm.past_due_since ? new Date(firm.past_due_since).getTime() : null;
+  const periodEnd = firm.current_period_end ? new Date(firm.current_period_end).getTime() : null;
   switch (status) {
     case "trialing":
-      return trialEnd && trialEnd > now ? "full" : "none";
     case "active":
       return "full";
-    case "past_due":
-      if (pastDueSince && now - pastDueSince > 7 * 24 * 60 * 60 * 1000) return "read_only";
-      return "full";
-    case "canceled":
-      return periodEnd && periodEnd > now ? "full" : "none";
+    case "past_due": {
+      const anchor = trialEnd ?? periodEnd ?? now;
+      return now - anchor > GRACE_MS ? "none" : "full";
+    }
+    case "canceled": {
+      const anchor = periodEnd ?? trialEnd ?? now;
+      return now - anchor > GRACE_MS ? "none" : "full";
+    }
+    case "expired":
+      return "none";
     default:
+      // Unknown / null status. If a trial deadline is still ahead, honor it.
+      if (trialEnd && trialEnd > now) return "full";
       return "none";
   }
 }

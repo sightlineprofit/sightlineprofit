@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type StripeEnv, verifyWebhook, PRICE_TO_TIER } from "@/lib/stripe.server";
+import { type StripeEnv, verifyWebhook, PRICE_TO_TIER, FOUNDING_PRICE_KEYS } from "@/lib/stripe.server";
 
 async function getAdmin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -15,16 +15,27 @@ function normalizeStatus(s: string): SubStatus {
   return "incomplete";
 }
 
-function tierFromSubscription(sub: any): "studio" | "practice" | null {
+function tierFromSubscription(_sub: any): "studio" | "practice" | null {
+  // Single-plan model: every subscription grants "practice" access. Tier is
+  // no longer sourced from lookup keys or metadata.
+  void PRICE_TO_TIER;
+  return "practice";
+}
+
+function priceLookupFromSubscription(sub: any): string | null {
   const item = sub?.items?.data?.[0];
-  const lookup = item?.price?.lookup_key
-    || item?.price?.metadata?.lovable_external_id
-    || null;
-  if (lookup && PRICE_TO_TIER[lookup]) return PRICE_TO_TIER[lookup];
-  const metaTier = sub?.metadata?.tier;
-  // Legacy metadata may say "foundation" — coerce to "studio".
-  if (metaTier === "foundation") return "studio";
-  if (metaTier === "studio" || metaTier === "practice") return metaTier;
+  return (
+    item?.price?.lookup_key ||
+    item?.price?.metadata?.lovable_external_id ||
+    null
+  );
+}
+
+function billingFrequencyFromSubscription(sub: any): "monthly" | "annual" | null {
+  const item = sub?.items?.data?.[0];
+  const interval = item?.price?.recurring?.interval;
+  if (interval === "month") return "monthly";
+  if (interval === "year") return "annual";
   return null;
 }
 
@@ -54,6 +65,8 @@ async function upsertFromSubscription(sub: any) {
   const item = sub?.items?.data?.[0];
   const periodEnd = item?.current_period_end ?? sub?.current_period_end;
   const trialEnd = sub?.trial_end ?? null;
+  const lookup = priceLookupFromSubscription(sub);
+  const freq = billingFrequencyFromSubscription(sub);
   const patch: {
     stripe_customer_id: string | null;
     stripe_subscription_id: string | null;
@@ -62,12 +75,16 @@ async function upsertFromSubscription(sub: any) {
     trial_ends_at?: string | null;
     current_period_end?: string | null;
     past_due_since?: string | null;
+    stripe_price_id?: string | null;
+    billing_frequency?: "monthly" | "annual";
   } = {
     stripe_customer_id: sub.customer ?? null,
     stripe_subscription_id: sub.id ?? null,
     subscription_status: status,
   };
   if (tier) patch.subscription_tier = tier;
+  if (lookup) patch.stripe_price_id = lookup;
+  if (freq) patch.billing_frequency = freq;
   // trial_ends_at reflects an ACTUAL trial from Stripe; clear it otherwise.
   patch.trial_ends_at = trialEnd ? new Date(trialEnd * 1000).toISOString() : null;
   if (periodEnd) patch.current_period_end = new Date(periodEnd * 1000).toISOString();
@@ -86,6 +103,15 @@ async function upsertFromSubscription(sub: any) {
   }
   const { error } = await admin.from("firms").update(patch as any).eq("id", firmId);
   if (error) console.error("[stripe-webhook] firm update failed", error);
+
+  // If this subscription is on a founding price and this firm hasn't been
+  // recorded yet, insert into the founding_access counter (idempotent by PK).
+  if (lookup && FOUNDING_PRICE_KEYS.has(lookup)) {
+    const { error: faErr } = await admin
+      .from("founding_access" as any)
+      .upsert({ firm_id: firmId, stripe_price_id: lookup }, { onConflict: "firm_id" });
+    if (faErr) console.error("[stripe-webhook] founding_access upsert failed", faErr);
+  }
 }
 
 async function markCanceled(sub: any) {
