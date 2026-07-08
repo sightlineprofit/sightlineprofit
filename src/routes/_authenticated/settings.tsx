@@ -10,7 +10,7 @@ import {
 import {
   getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
   upsertFirmConfig, listExpenses, addExpense, deleteExpense,
-  updateTeamMember, setPreferredHome,
+  updateTeamMember, setPreferredHome, setDefaultLandingPage,
   listOwnerCompensations, upsertOwnerCompensation,
   listFirmMembers, saveFirmMember, deleteFirmMember,
 } from "@/lib/firm.functions";
@@ -1802,12 +1802,27 @@ function FirmPanel({ onClose }: { onClose: () => void }) {
   const upd = useServerFn(updateFirm);
   const updCfg = useServerFn(upsertFirmConfig);
   const saveHome = useServerFn(setPreferredHome);
+  const saveLanding = useServerFn(setDefaultLandingPage);
   const [name, setName] = useState(data?.firm?.name ?? "");
   const [structure, setStructure] = useState((data?.config?.business_structure as string) ?? "sole_prop");
   const [basis, setBasis] = useState((data?.config?.accounting_basis as string) ?? "cash");
   const [home, setHome] = useState(((data?.profile as any)?.preferred_home as string) ?? "dashboard");
+  const [landing, setLanding] = useState(((data?.firm as any)?.default_landing_page as string) ?? "dashboard");
+  const [landingSaved, setLandingSaved] = useState(false);
   const [state, setState] = useState((data?.firm as any)?.state ?? "");
   const [saving, setSaving] = useState(false);
+
+  async function onLandingChange(v: string) {
+    setLanding(v);
+    try {
+      await saveLanding({ data: { page: v as any } });
+      setLandingSaved(true);
+      qc.invalidateQueries({ queryKey: ["me"] });
+      setTimeout(() => setLandingSaved(false), 2000);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not save");
+    }
+  }
 
   async function save() {
     setSaving(true);
@@ -1854,6 +1869,26 @@ function FirmPanel({ onClose }: { onClose: () => void }) {
           </select>
         </Field>
       </Row2>
+      <div className="mt-3">
+        <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 500, color: "#2C2C2C", marginBottom: 8 }}>
+          Default landing page
+        </div>
+        <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#6B6259", marginBottom: 10 }}>
+          Choose where Sightline takes you each time you log in.
+        </div>
+        <div className="flex items-center gap-3">
+          <select className={selectCls} value={landing} onChange={(e) => onLandingChange(e.target.value)}>
+            <option value="dashboard">Dashboard</option>
+            <option value="projects">Projects</option>
+            <option value="capacity">Capacity</option>
+            <option value="time_calendar">Time calendar</option>
+            <option value="rate_architecture">Rate architecture</option>
+          </select>
+          {landingSaved && (
+            <span style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#5C8A6E" }}>Saved ✓</span>
+          )}
+        </div>
+      </div>
       <SaveRow onCancel={onClose} onSave={save} saving={saving} />
     </PanelShell>
   );
