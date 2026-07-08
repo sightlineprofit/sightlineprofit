@@ -44,7 +44,13 @@ export type CapacityExpandedData = {
   ytdHoursByUser?: Record<string, { billable: number; nonBillable: number }>;
   lastEntryByUser?: Record<string, string>;
   weeksElapsed?: number;
-  principal?: { id: string; name: string; target: number };
+  principal?: { id: string; name: string; target: number; totalWeekly?: number };
+  /**
+   * Firm default total working hours per week — used as the per-member
+   * baseline for non-billable capacity when a member has no explicit total.
+   * Non-billable weekly = max(0, totalWeekly - billableTarget).
+   */
+  defaultWorkingHrsPerWeek?: number;
 };
 
 
