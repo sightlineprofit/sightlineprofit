@@ -302,7 +302,7 @@ function RegisterPage() {
           />
         ) : (
           <StepPayment
-            firmPriceId={currentFirm.data?.stripe_price_id ?? quote.data?.priceId ?? null}
+            firmPriceId={(currentFirm.data as any)?.stripe_price_id ?? quote.data?.priceId ?? null}
             frequency={frequency}
             setFrequency={setFrequency}
             quote={quote.data}
