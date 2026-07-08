@@ -30,6 +30,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as AuthenticatedSopLibraryNewRouteImport } from './routes/_authenticated/sop-library.new'
 import { Route as AuthenticatedSopLibraryIdRouteImport } from './routes/_authenticated/sop-library.$id'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
@@ -151,6 +152,11 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiPublicStripeWebhookRoute = ApiPublicStripeWebhookRouteImport.update({
+  id: '/api/public/stripe-webhook',
+  path: '/api/public/stripe-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedSopLibraryNewRoute =
   AuthenticatedSopLibraryNewRouteImport.update({
     id: '/new',
@@ -255,6 +261,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesByTo {
@@ -289,6 +296,7 @@ export interface FileRoutesByTo {
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRoutesById {
@@ -325,6 +333,7 @@ export interface FileRoutesById {
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/_authenticated/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/_authenticated/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
 export interface FileRouteTypes {
@@ -361,6 +370,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
+    | '/api/public/stripe-webhook'
     | '/lovable/email/queue/process'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -395,6 +405,7 @@ export interface FileRouteTypes {
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
+    | '/api/public/stripe-webhook'
     | '/lovable/email/queue/process'
   id:
     | '__root__'
@@ -430,6 +441,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects/$id'
     | '/_authenticated/sop-library/$id'
     | '/_authenticated/sop-library/new'
+    | '/api/public/stripe-webhook'
     | '/lovable/email/queue/process'
   fileRoutesById: FileRoutesById
 }
@@ -440,6 +452,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PostAuthRoute: typeof PostAuthRoute
   RegisterRoute: typeof RegisterRoute
+  ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
@@ -591,6 +604,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin'
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/api/public/stripe-webhook': {
+      id: '/api/public/stripe-webhook'
+      path: '/api/public/stripe-webhook'
+      fullPath: '/api/public/stripe-webhook'
+      preLoaderRoute: typeof ApiPublicStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/sop-library/new': {
       id: '/_authenticated/sop-library/new'
@@ -797,6 +817,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PostAuthRoute: PostAuthRoute,
   RegisterRoute: RegisterRoute,
+  ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
 export const routeTree = rootRouteImport

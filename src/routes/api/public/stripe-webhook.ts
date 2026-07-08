@@ -51,7 +51,13 @@ async function upsertFromSubscription(sub: any) {
   const status = normalizeStatus(sub.status);
   const item = sub?.items?.data?.[0];
   const periodEnd = item?.current_period_end ?? sub?.current_period_end;
-  const patch: Record<string, unknown> = {
+  const patch: {
+    stripe_customer_id: string | null;
+    stripe_subscription_id: string | null;
+    subscription_status: SubStatus;
+    subscription_tier?: "foundation" | "studio" | "practice";
+    trial_ends_at?: string;
+  } = {
     stripe_customer_id: sub.customer ?? null,
     stripe_subscription_id: sub.id ?? null,
     subscription_status: status,
