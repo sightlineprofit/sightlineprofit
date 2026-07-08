@@ -280,9 +280,9 @@ function Hero() {
             firm actually works.
           </p>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <button style={btnPrimary} onClick={() => scrollTo("cta-form")}>
-              Join the waitlist
-            </button>
+            <Link to="/register" style={{ ...btnPrimary, textDecoration: "none", display: "inline-block" }}>
+              Start free trial
+            </Link>
             <button style={btnGhost} onClick={() => scrollTo("how-it-works")}>
               See how it works
             </button>
@@ -292,14 +292,11 @@ function Hero() {
               fontFamily: FONT_SANS,
               fontSize: 12,
               fontWeight: 400,
-              color: C.mutedLight,
+              color: "#8A7F75",
               marginTop: 16,
             }}
           >
-            Early access open now ·{" "}
-            <span style={{ fontWeight: 500, color: C.charcoal }}>
-              Founding firm pricing available
-            </span>
+            14-day free trial · $39.99/mo founding rate · No charge until trial ends
           </p>
         </div>
         <div className="sl-hero-right">
