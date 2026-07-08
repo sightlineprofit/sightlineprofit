@@ -1266,7 +1266,10 @@ function MemberCard({
       hourly_wage: !isSalary ? Number(quickInput.hourlyRate) || 0 : null,
       annual_base_salary: isSalary ? Number(quickInput.annualSalary) || 0 : null,
       employer_payroll_tax_pct: BURDEN_EMPLOYER_TAX_PCT,
-      annual_benefits: est.benefitsAmount > 0 ? est.benefitsAmount : null,
+      annual_benefits:
+        est.benefitsAmount + est.retirementAmount > 0
+          ? est.benefitsAmount + est.retirementAmount
+          : null,
       expected_hrs_per_week: Number(quickInput.hoursPerWeek) || 40,
     });
   };

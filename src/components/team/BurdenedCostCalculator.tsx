@@ -62,7 +62,14 @@ export function BurdenedCostCalculator({
     onEstimate?.(est);
     // onEstimate is a caller callback — depend only on the estimate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [est.total, est.base, est.taxAmount, est.benefitsAmount, est.perHour]);
+  }, [
+    est.total,
+    est.base,
+    est.taxAmount,
+    est.benefitsAmount,
+    est.retirementAmount,
+    est.perHour,
+  ]);
 
   const set = (patch: Partial<BurdenedCostValue>) => onChange({ ...value, ...patch });
 
@@ -164,24 +171,44 @@ export function BurdenedCostCalculator({
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-        <label className="inline-flex items-center gap-2 text-[12px] text-ch">
-          <input
-            type="checkbox"
-            checked={value.hasBenefits}
-            onChange={(e) => set({ hasBenefits: e.target.checked })}
+      <fieldset className="mt-4">
+        <legend className={labelCls}>
+          Does the firm contribute to this team member's benefits or retirement?
+        </legend>
+        <div className="mt-1 space-y-1.5">
+          <ContribOption
+            checked={value.hasBenefits && !value.hasRetirement}
+            onChange={() => set({ hasBenefits: true, hasRetirement: false })}
+            label="Health, dental or vision — the firm pays a portion of the premium"
           />
-          Offers health / dental / vision
-        </label>
-        <label className="inline-flex items-center gap-2 text-[12px] text-ch">
-          <input
-            type="checkbox"
-            checked={value.hasRetirement}
-            onChange={(e) => set({ hasRetirement: e.target.checked })}
+          <ContribOption
+            checked={!value.hasBenefits && value.hasRetirement}
+            onChange={() => set({ hasBenefits: false, hasRetirement: true })}
+            label="Retirement contributions — the firm makes contributions to a 401k, SIMPLE IRA, or SEP"
           />
-          Contributes to retirement
-        </label>
-      </div>
+          <ContribOption
+            checked={value.hasBenefits && value.hasRetirement}
+            onChange={() => set({ hasBenefits: true, hasRetirement: true })}
+            label="Both — firm contributes to health/dental/vision premiums and retirement"
+          />
+          <ContribOption
+            checked={!value.hasBenefits && !value.hasRetirement}
+            onChange={() => set({ hasBenefits: false, hasRetirement: false })}
+            label="Neither — the firm has no contribution obligation for this team member"
+          />
+        </div>
+        {(value.hasBenefits || value.hasRetirement) && (
+          <p
+            className="mt-2 text-[11px] italic text-ch/60"
+            style={{ fontFamily: "Jost, sans-serif", lineHeight: 1.5 }}
+          >
+            {BURDEN_BENEFITS_PCT}% of base wages is added per category to
+            estimate the firm's contribution cost. Select both
+            health/dental/vision and retirement and {BURDEN_BENEFITS_PCT * 2}%
+            is added in total — {BURDEN_BENEFITS_PCT}% for each obligation.
+          </p>
+        )}
+      </fieldset>
 
       {/* Locked estimate output */}
       <div
@@ -224,15 +251,21 @@ export function BurdenedCostCalculator({
           className="mt-2 space-y-[3px]"
           style={{ fontFamily: "Jost, sans-serif", fontSize: 10, color: "#2C2C2C" }}
         >
-          <Row label="Annual base" value={est.base} />
+          <Row label="Base wages" value={est.base} />
           <Row
             label={`Employer payroll tax (${BURDEN_EMPLOYER_TAX_PCT}%)`}
             value={est.taxAmount}
           />
           {est.benefitsAmount > 0 && (
             <Row
-              label={`Benefits + retirement (${BURDEN_BENEFITS_PCT}%)`}
+              label={`Firm benefits contribution (est. ${BURDEN_BENEFITS_PCT}%)`}
               value={est.benefitsAmount}
+            />
+          )}
+          {est.retirementAmount > 0 && (
+            <Row
+              label={`Firm retirement contribution (est. ${BURDEN_BENEFITS_PCT}%)`}
+              value={est.retirementAmount}
             />
           )}
         </ul>
@@ -245,11 +278,36 @@ export function BurdenedCostCalculator({
             lineHeight: 1.5,
           }}
         >
-          Calculated from your inputs. To change the estimate, adjust the wage,
-          hours, or benefits above.
+          Fully burdened labor costs typically add 17–40% on top of base wages
+          depending on the firm's contribution obligations — health and dental
+          premiums, retirement matches or contributions, state unemployment
+          insurance, and other employer costs. These figures are estimates.
+          Consult your accountant for precise figures.
         </p>
       </div>
     </div>
+  );
+}
+
+function ContribOption({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <label className="flex items-start gap-2 text-[12px] leading-snug text-ch">
+      <input
+        type="radio"
+        className="mt-[3px]"
+        checked={checked}
+        onChange={onChange}
+      />
+      <span>{label}</span>
+    </label>
   );
 }
 
