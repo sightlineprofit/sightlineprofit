@@ -1808,7 +1808,7 @@ export type Database = {
         | "past_due"
         | "canceled"
         | "incomplete"
-      subscription_tier: "foundation" | "studio" | "practice"
+      subscription_tier: "studio" | "practice"
       user_role: "principal" | "admin" | "team" | "view_only"
     }
     CompositeTypes: {
@@ -1973,7 +1973,7 @@ export const Constants = {
         "canceled",
         "incomplete",
       ],
-      subscription_tier: ["foundation", "studio", "practice"],
+      subscription_tier: ["studio", "practice"],
       user_role: ["principal", "admin", "team", "view_only"],
     },
   },
