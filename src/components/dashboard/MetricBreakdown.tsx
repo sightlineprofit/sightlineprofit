@@ -625,7 +625,8 @@ function CostFloorContent({
             ["Payroll tax", c.ptax],
             ["Health insurance", c.health],
             ["Retirement", c.retire],
-            ...(c.structure === "s_corp" ? [["Distributions", c.distribution] as [string, number], ["Reserve target", c.reserveTarget] as [string, number]] : []),
+            ...(c.distribution > 0 ? [["Distributions", c.distribution] as [string, number]] : []),
+            ...(c.structure === "s_corp" && c.reserveTarget > 0 ? [["Reserve target", c.reserveTarget] as [string, number]] : []),
           ]}
         />
 

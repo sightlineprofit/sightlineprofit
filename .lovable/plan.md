@@ -1,36 +1,60 @@
-## Diagnosis
+## Audit result — distributions are being dropped from the aligned rate
 
-The register flow stores the "needs payment" intent in `sessionStorage` before calling `supabase.auth.signUp`. When the user clicks the confirmation link in their email, it opens in a **new tab / new browser context**, so `sessionStorage` is empty. `/post-auth` then reads `pending?.needsPayment` as `undefined`/false and routes straight to `/onboarding` — skipping Stripe checkout entirely.
+**Confirmed:** the $60k in "Additional distributions" is stored correctly but is silently excluded from the aligned rate whenever the firm's tax structure is anything other than S-Corp.
 
-Two failure paths in `src/routes/post-auth.tsx`:
+### Evidence
 
-1. **New firm branch** (no `firm_id` yet): relies on `pending.needsPayment`. Missing after email click → `/onboarding`.
-2. **Existing firm branch** (firm already created on a prior tab): only checks `onboarding_completed` — never checks whether Stripe checkout was completed → also routes to `/onboarding`.
+1. **Write path is fine.** Onboarding (`onboarding.tsx:237`) and Settings Simple mode (`settings.tsx:837-840`) write the value to `owner_compensation.distribution_annual`. Types + zod schema accept it. No data loss on save.
 
-## Fix
+2. **UI total is fine.** The "Total compensation $141,680" pill in the Owner Compensation drawer (`settings.tsx:830`) adds `dist` whenever `!isAdv || isSCorp` — Simple mode always shows it.
 
-Make payment gating driven by **server state**, not `sessionStorage`. A firm that has not completed checkout has `stripe_subscription_id = null` (and/or `stripe_customer_id = null`) — that is the reliable signal.
+3. **`calc()` gates it on structure.** In `src/lib/finance.ts:118-127` (owner-rows branch) and `:140-141` (fallback branch):
+   ```
+   if (structure === "s_corp") {
+     distribution += Number(r.distribution_annual) || 0;
+     …reserve…
+   }
+   ```
+   For any firm whose `firm.structure` is not `s_corp` (LLC/sole-prop/partnership/other/null), `distribution_annual` is never added to `compTotal`, so it never reaches `totalCost` → `costFloor` → aligned rate.
 
-### 1. `src/routes/post-auth.tsx`
+4. **Matches the screenshots exactly.** Cost floor breakdown shows Owner compensation = **$81,680** = $60k draw + $9,180 payroll tax + $5k health + $7.5k retirement. The $60k distribution is missing. The drawer's "Total compensation" pill correctly shows **$141,680**. The two disagree by exactly the distribution amount, which is the bug's fingerprint.
 
-- After resolving `ctx`, compute `needsPayment = !firm.stripe_subscription_id` for both branches (new firm and existing firm), for non-super-admin users only.
-- Existing-firm branch: if `needsPayment`, redirect to `/register?step=payment` before the onboarding/landing check.
-- New-firm branch: always redirect to `/register?step=payment` after `createFirm` (the pending flag is no longer authoritative — a freshly created firm has no subscription yet by definition). Keep reading `sightline_pending_firm` only to enrich `firmName`/`ownerName`/`billingFrequency`/`stripePriceId` when present.
-- Fall back to `user_metadata` (`firm_name`, `name`) for cross-tab confirmations where sessionStorage was lost — already partially wired; keep and rely on it.
+5. **Impact on aligned rate.** With $60k of comp missing from the cost floor and the firm's billable-hours target unchanged, the aligned rate is understated by roughly `$60,000 / annual_billable_hours`. For the firm in the screenshot (~1,680 hrs/yr implied by $469,764 / $279), that's ~**$36/hr under-priced**.
 
-### 2. `src/routes/register.tsx`
+### Proposed fix — write path only, one file
 
-- Switch the pending-firm stash from `sessionStorage` to `localStorage` so the email-click tab can still read `firmName`, `ownerName`, `billingFrequency`, and `stripePriceId`. Clear it after `/post-auth` consumes it (update the `removeItem` call to match).
-- Keep the current step-1 UX: if `signUp` returns no session, show the "check your email" toast.
+Edit `src/lib/finance.ts` so distributions always count toward `compTotal`, regardless of structure. Distributions are real cash the firm must fund; the S-Corp gate was a legacy assumption from when only Advanced/S-Corp exposed the field, but Simple mode (used by every non-S-Corp firm) has surfaced the input for a while and the UI already includes it in the displayed total.
 
-### 3. Verification
+Two small changes, both in `calc()`:
 
-- Sign up with an email that requires confirmation → click link in a fresh tab → land on `/register?step=payment`, not `/onboarding`.
-- Sign up with a session established immediately (Google or auto-confirm) → still routed to `/register?step=payment`.
-- Existing user whose firm has `stripe_subscription_id` but `onboarding_completed=false` → `/onboarding` (unchanged).
-- Existing user with subscription and completed onboarding → landing page per role (unchanged).
-- Super admin path unchanged.
+```text
+owner-rows branch (~line 118):
+-  if (structure === "s_corp") {
+-    distribution += Number(r.distribution_annual) || 0;
+-    …reserve months / reserve_target…
+-  }
++  distribution += Number(r.distribution_annual) || 0;
++  if (structure === "s_corp") {
++    …reserve months / reserve_target…   // reserve stays S-Corp-only
++  }
 
-### Out of scope
+fallback branch (~line 140):
+-  distribution = structure === "s_corp" ? Number(config?.comp_distribution_annual) || 0 : 0;
++  distribution = Number(config?.comp_distribution_annual) || 0;
+```
 
-No changes to `createFirmForCurrentUser`, Stripe checkout, or the payment UI itself — this is a routing fix only.
+`reserveTarget` stays S-Corp-only (it's a structural planning target, not out-the-door comp). No changes to team-cost, opex, or hours math. No UI changes — the drawer already shows the correct total; only the cost-floor breakdown and aligned rate will change to match it.
+
+### Verification checklist
+
+- [ ] Firm in screenshot: cost floor Owner Compensation rises from $81,680 → $141,680; total cost floor rises by $60k; aligned rate rises accordingly.
+- [ ] Cost floor breakdown gains a "Distributions $60,000" line under Owner compensation.
+- [ ] S-Corp firms with distributions previously included: unchanged.
+- [ ] Firms with `distribution_annual = 0` or null: unchanged.
+- [ ] "Total compensation" pill in the drawer now matches Owner compensation total in the cost-floor popover.
+
+### Not touched
+
+- No changes to `calc()` beyond removing the two structure gates on distributions.
+- No changes to onboarding, Settings UI, team cost, or dashboard components.
+- No schema changes.
