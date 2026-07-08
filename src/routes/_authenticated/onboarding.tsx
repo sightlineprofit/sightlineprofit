@@ -623,22 +623,27 @@ function Onboarding() {
                       <option value="view_only">View only</option>
                     </select>
                   </div>
-                  <Field label="Billable % of hours" suffix="%" value={tPct} onChange={setTPct} />
+                  <Field
+                    label="Expected billable hours / week"
+                    value={tHrsBillable}
+                    onChange={setTHrsBillable}
+                  />
                 </Row>
                 <Row>
                   <Field label="Billable rate" prefix="$" value={tBill} onChange={setTBill} />
-                  <Field label="Cost rate (fully burdened)" prefix="$" value={tCost} onChange={setTCost} />
+                  <div />
                 </Row>
-                <Row>
-                  <Field label="Expected hours / week" value={tHrs} onChange={setTHrs} />
-                  <Field label="Weeks / year" value={tWeeks} onChange={setTWeeks} />
-                </Row>
+
+                <BurdenedCostCalculator
+                  value={tBurdenInput}
+                  onChange={setTBurdenInput}
+                />
 
                 <div className="flex items-center justify-between border-t border-border pt-4">
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-ch/50">Weekly burdened cost</div>
                     <div className="font-display text-3xl tabular-nums text-ch">
-                      ${tBurden.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Math.round(tBurden.perHour * (Number(tHrsBillable) || 0)).toLocaleString()}
                     </div>
                   </div>
                   <button className={`${ghostBtnClass} w-auto`} onClick={addTeamLocal} type="button">Save team member</button>
