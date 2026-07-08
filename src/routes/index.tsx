@@ -588,6 +588,21 @@ function ThreeQuestions() {
         </>
       ),
     },
+    {
+      n: "04",
+      q: "Is it time to grow?",
+      a: (
+        <>
+          Not the feeling that you need help — the{" "}
+          <strong>financial reality of whether the firm can support it</strong>.
+          Adding a team member, taking on a larger engagement, moving to a bigger
+          studio: each one changes your cost floor, your aligned rate, and your
+          capacity picture. Sightline models both sides before you commit —{" "}
+          <strong>what growth adds in revenue potential, and what it adds in cost</strong>{" "}
+          — so the decision comes from numbers, not exhaustion.
+        </>
+      ),
+    },
   ];
 
   return (
@@ -601,7 +616,7 @@ function ThreeQuestions() {
       }}
     >
       <div style={inner}>
-        <div style={eyebrow}>Three questions. One platform.</div>
+        <div style={eyebrow}>Four questions. One platform.</div>
         <h2 style={h2Style}>
           The answers every designer
           <br />
@@ -616,7 +631,7 @@ function ThreeQuestions() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(2, 1fr)",
             marginTop: 52,
             background: C.border,
             gap: 0,
@@ -631,7 +646,7 @@ function ThreeQuestions() {
               style={{
                 background: C.cream,
                 padding: "40px 34px",
-                borderRight: i < 2 ? `0.5px solid ${C.border}` : "none",
+                borderRight: i % 2 === 0 ? `0.5px solid ${C.border}` : "none",
                 position: "relative",
                 overflow: "hidden",
               }}
@@ -683,6 +698,7 @@ function ThreeQuestions() {
     </section>
   );
 }
+
 
 /* ===================== RATE ARCHITECTURE ===================== */
 const LAYERS = [
