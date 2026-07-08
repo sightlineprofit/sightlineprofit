@@ -82,7 +82,7 @@ async function upsertFromSubscription(sub: any) {
   } else {
     patch.past_due_since = null;
   }
-  const { error } = await admin.from("firms").update(patch).eq("id", firmId);
+  const { error } = await admin.from("firms").update(patch as any).eq("id", firmId);
   if (error) console.error("[stripe-webhook] firm update failed", error);
 }
 
@@ -99,7 +99,7 @@ async function markCanceled(sub: any) {
       subscription_status: "canceled",
       past_due_since: null,
       ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
-    })
+    } as any)
     .eq("id", firmId);
   if (error) console.error("[stripe-webhook] cancel failed", error);
 }
@@ -120,7 +120,7 @@ async function markPastDue(invoice: any) {
     .update({
       subscription_status: "past_due",
       past_due_since: existing.past_due_since ?? new Date().toISOString(),
-    })
+    } as any)
     .eq("id", existing.id);
   if (error) console.error("[stripe-webhook] past_due failed", error);
 }
