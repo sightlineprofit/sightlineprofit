@@ -50,6 +50,7 @@ import {
 } from "@/components/dashboard/RateArchitectureHeader";
 
 import { TeamHoursTile } from "@/components/dashboard/TeamHoursTile";
+import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -301,6 +302,7 @@ function Dashboard() {
         <SetupPrompt />
       ) : (
         <>
+          <WelcomeBanner firm={data?.firm as any} firstName={firstName} />
           <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
             <RateArchitecturePanel
               c={c}
