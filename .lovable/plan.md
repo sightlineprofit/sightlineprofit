@@ -1,86 +1,54 @@
-## Goal
-Turn the existing subscription scaffolding into a working billing flow using Lovable's seamless Stripe integration (no Stripe account or key required from you). Foundation / Studio / Practice become real Stripe products; trials convert to paid; `/billing` becomes the plan picker + manage-subscription page; a webhook keeps `firms.subscription_tier` / `subscription_status` in sync.
+## What changes
 
-## What already exists (reuse, don't rebuild)
-- `firms` columns: `subscription_tier`, `subscription_status`, `trial_ends_at`, `stripe_customer_id`, `stripe_subscription_id` + `prevent_firm_billing_changes` trigger (only `service_role` can write these — perfect for the webhook)
-- Tier gating: `effectiveTier`, `TierLocked`, `UpgradeModal`, `RestrictedPreview` — all read `subscription_tier` and link to `/billing`
-- `TrialBanner` already reads `trial_ends_at`
-- `register.tsx` captures the chosen tier at signup
-- `/billing` route stub
+Stripe prices are immutable — a price change means creating a new price with a new lookup key and pointing the app at it. Existing subscribers stay on their old price (that's what "grandfathered" means and what makes the Early Access locked-for-life promise work automatically).
 
-## Steps
+### New Stripe products & prices
 
-### 1. Enable seamless Stripe
-Call `enable_stripe_payments`. This provisions a Lovable-managed Stripe account in **test mode**, no keys needed. Going live later is a separate account-claim step in Lovable — no code change.
+| # | Product | Price (lookup key) | Amount | Notes |
+|---|---|---|---|---|
+| 1 | Sightline Studio (existing product, new price) | `sightline_studio_monthly_v2` | $79/mo | New checkout uses this; old `sightline_studio_monthly` retained so current subs keep paying $89 |
+| 2 | Sightline Practice (existing product, new price) | `sightline_practice_monthly_v2` | $129/mo | Same pattern — old price retained |
+| 3 | Sightline Early Access — Foundation (new product) | `sightline_early_foundation_monthly` | $39/mo | Grants foundation-tier access; locked for life of the subscription |
+| 4 | Sightline Early Access — Practice (new product) | `sightline_early_practice_monthly` | $79/mo | Grants practice-tier access; locked for life |
 
-### 2. Set tax handling: full compliance (`managed_payments`)
-Sightline is digital SaaS → eligible. Stripe handles tax registration, calculation, filing, disputes, and buyer support in ~80 countries for +3.5% per transaction. Change per transaction or turn off anytime in Lovable settings.
+Foundation ($39/mo) stays as-is.
 
-### 3. Create the three products in Stripe (test mode)
-Using `batch_create_product` after Step 1 completes:
-- Foundation — $39/mo recurring, tax code `txcd_10103001` (SaaS)
-- Studio — $89/mo recurring, tax code `txcd_10103001`
-- Practice — $149/mo recurring, tax code `txcd_10103001`
+### App wiring
 
-Store the returned Stripe price IDs in a new `billing_plans` table (tier → price_id) so code stays decoupled from hardcoded IDs and prices can be swapped without a deploy.
+1. **`src/lib/stripe.server.ts`** — extend `PRICE_TO_TIER` so the webhook maps all five active lookup keys to the right tier enum value:
+   - `sightline_foundation_monthly` → `foundation`
+   - `sightline_early_foundation_monthly` → `foundation`
+   - `sightline_studio_monthly` (old) + `sightline_studio_monthly_v2` → `studio`
+   - `sightline_practice_monthly` (old) + `sightline_practice_monthly_v2` → `practice`
+   - `sightline_early_practice_monthly` → `practice`
 
-### 4. Migration: `billing_plans` + webhook_events dedupe
-```
-billing_plans(tier, stripe_price_id, monthly_amount_cents, display_name, active)
-stripe_webhook_events(event_id PK, type, received_at) -- idempotency
-```
-Grants: `authenticated SELECT` on `billing_plans` (public price list), `service_role ALL` on both. No client-side writes.
+   Replace the single `TIER_TO_PRICE` map with `DEFAULT_TIER_PRICE` (Studio v2, Practice v2, Foundation) plus a separate `EARLY_ACCESS_PRICES` list, so checkout knows which price to open for each purchase intent.
 
-### 5. Server function: `createCheckoutSession`
-`src/lib/billing.functions.ts`, `requireSupabaseAuth` middleware.
-- Input: `{ tier: 'foundation'|'studio'|'practice' }`
-- Look up the firm's `stripe_customer_id`; create a Stripe customer if missing (email + firm name), persist via `supabaseAdmin`
-- Create a Stripe Checkout Session:
-  - `mode: 'subscription'`, line item = plan's price_id
-  - `customer: <firm's stripe_customer_id>`
-  - `managed_payments: { enabled: true }` (full-compliance path)
-  - `success_url = /billing?status=success`, `cancel_url = /billing?status=cancelled`
-  - `subscription_data.trial_end` set from firm's remaining `trial_ends_at` if still in trial (no double-charging mid-trial)
-- Return the URL; client redirects
+2. **`src/lib/billing.functions.ts`** — change `createCheckoutSession`'s input from `tier` to `priceKey` so the caller picks a specific Stripe price (needed because Foundation and Early-Access-Foundation share a tier but have different prices). Look up by lookup key exactly as today.
 
-### 6. Server function: `createBillingPortalSession`
-Same file. Opens Stripe's hosted customer portal for cancel / update card / view invoices. Returns the portal URL.
+3. **`src/routes/_authenticated/billing.tsx`** — grow the plan grid from 3 cards to 5:
+   - Foundation $39 · Studio $79 · Practice $129 (three standard cards)
+   - Early Access — Foundation $39 · Early Access — Practice $79 (two accent cards with an "Early Access · price locked for life" badge in gold)
+   Each card's Subscribe button passes the specific `priceKey` to checkout.
 
-### 7. Webhook route: `src/routes/api/public/stripe-webhook.ts`
-`/api/public/*` bypasses auth on published sites; we verify Stripe's signature ourselves.
-- Read raw body, verify `stripe-signature` with timing-safe compare
-- Dedupe on `stripe_webhook_events.event_id`
-- Handle:
-  - `checkout.session.completed` → set `stripe_subscription_id`, `subscription_status='active'`, `subscription_tier` from the plan
-  - `customer.subscription.updated` → sync `subscription_status`, and `subscription_tier` (tier changes / upgrades)
-  - `customer.subscription.deleted` → `subscription_status='canceled'`, drop tier back to `foundation` at period end
-  - `invoice.payment_failed` → `subscription_status='past_due'`
-- All writes use `supabaseAdmin` (bypasses the billing lock trigger by design)
+4. **No database migration** — the `subscription_tier` enum already has `foundation/studio/practice` and that's enough (Early Access is a pricing variant, not a new tier). The webhook writes whichever tier the lookup key maps to.
 
-### 8. Rebuild `/billing` page
-Real UI (matches existing Sightline visual language, reuses `UpgradeModal` copy from `TIER_DETAILS`):
-- Current plan card: shows tier, status (`trialing` / `active` / `past_due` / `canceled`), trial countdown or next-invoice date
-- Three plan cards (Foundation / Studio / Practice) with "Upgrade" / "Downgrade" / "Current plan" buttons
-- If active subscription exists → "Manage billing" button → `createBillingPortalSession`
-- If no subscription (trial or none) → each plan button → `createCheckoutSession` then redirect
-- Success banner when `?status=success`; refetches `useMe` and invalidates queries so `TrialBanner` / `TierLocked` update immediately
+5. **No changes to** the trigger `prevent_firm_billing_changes`, the webhook route, the enum, or existing subscribers' price rows in Stripe.
 
-### 9. Trial-expiration enforcement
-A tiny server fn `checkTrialStatus` called inside `getMyContext` (or a `useMe` post-processor): when `subscription_status='trialing'` and `trial_ends_at < now()` and no `stripe_subscription_id`, treat the firm as "trial expired" — locks all tier-gated modules with a "Trial ended — add billing to continue" state pointing to `/billing`. No cron needed; evaluated on every load.
+## Assumption I need you to confirm
 
-### 10. Route the existing "Upgrade" CTAs
-`UpgradeModal` and `TierLocked` already link to `/billing`. Add `?tier=<target>` so the billing page pre-selects that plan's checkout button when arriving from an upgrade prompt.
+Your free-text listed Studio $79 and Practice $129 as new prices, but the multiple-choice answer said "only add the two Early Access tiers now, standard prices come later." **I'm going with the free-text**: repricing Studio and Practice now AND adding the two Early Access variants. If you actually want Studio to stay at $89 and Practice at $149, tell me before I implement — I'll drop steps 1–2 in the table above.
 
-## Out of scope for this plan
-- Annual pricing / discounts
-- Coupons / promo codes
-- Per-seat pricing (all three tiers are flat firm-level today)
-- Going live (Stripe account claim happens in Lovable UI, not code)
-- Email receipts (Stripe sends its own; can revisit later)
+## Feature mapping
 
-## Verification
-- Test-mode checkout for each tier completes and Stripe redirects to `/billing?status=success`
-- Webhook flips `subscription_tier`, `subscription_status`, `stripe_subscription_id` in `firms` (verify via `supabase--read_query`)
-- `TrialBanner` disappears after successful subscribe; `TierLocked` unlocks the correct modules per tier
-- Billing portal opens, cancel → webhook sets `canceled`, tier drops back to `foundation`
-- Trial-expired firm without a subscription sees the "Trial ended" lock state
+You skipped the feature-mapping question, so I'm assuming:
+- Early Access — Foundation → same features as Foundation
+- Early Access — Practice → same features as Practice
+
+Say so now if the Early Access variants should include different modules.
+
+## Not in scope
+
+- Migrating existing subscribers to new prices (they stay grandfathered by design).
+- Hiding Early Access tiers behind a promo code or expiring them after a launch window — you can prompt me for that later.
+- Annual pricing.
