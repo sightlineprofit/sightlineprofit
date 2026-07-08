@@ -567,6 +567,7 @@ export type Database = {
       }
       firms: {
         Row: {
+          billing_frequency: string
           created_at: string
           current_period_end: string | null
           data_status: string
@@ -578,12 +579,15 @@ export type Database = {
           owner_id: string
           past_due_since: string | null
           stripe_customer_id: string | null
+          stripe_payment_method_id: string | null
+          stripe_price_id: string | null
           stripe_subscription_id: string | null
           subscription_status: Database["public"]["Enums"]["subscription_status"]
           subscription_tier: Database["public"]["Enums"]["subscription_tier"]
           trial_ends_at: string
         }
         Insert: {
+          billing_frequency?: string
           created_at?: string
           current_period_end?: string | null
           data_status?: string
@@ -595,12 +599,15 @@ export type Database = {
           owner_id: string
           past_due_since?: string | null
           stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
+          stripe_price_id?: string | null
           stripe_subscription_id?: string | null
           subscription_status?: Database["public"]["Enums"]["subscription_status"]
           subscription_tier?: Database["public"]["Enums"]["subscription_tier"]
           trial_ends_at?: string
         }
         Update: {
+          billing_frequency?: string
           created_at?: string
           current_period_end?: string | null
           data_status?: string
@@ -612,12 +619,40 @@ export type Database = {
           owner_id?: string
           past_due_since?: string | null
           stripe_customer_id?: string | null
+          stripe_payment_method_id?: string | null
+          stripe_price_id?: string | null
           stripe_subscription_id?: string | null
           subscription_status?: Database["public"]["Enums"]["subscription_status"]
           subscription_tier?: Database["public"]["Enums"]["subscription_tier"]
           trial_ends_at?: string
         }
         Relationships: []
+      }
+      founding_access: {
+        Row: {
+          firm_id: string
+          granted_at: string
+          stripe_price_id: string
+        }
+        Insert: {
+          firm_id: string
+          granted_at?: string
+          stripe_price_id: string
+        }
+        Update: {
+          firm_id?: string
+          granted_at?: string
+          stripe_price_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "founding_access_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       knowledge_articles: {
         Row: {
@@ -1724,6 +1759,7 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      founding_slots_remaining: { Args: never; Returns: number }
       get_user_firm_id: { Args: never; Returns: string }
       get_user_role: {
         Args: never
