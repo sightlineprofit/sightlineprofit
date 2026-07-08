@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   getMyContext,
@@ -42,6 +42,7 @@ type TeamDraft = {
 
 function Onboarding() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const getCtx = useServerFn(getMyContext);
   const saveConfig = useServerFn(upsertFirmConfig);
   const saveExpense = useServerFn(addExpense);
@@ -73,6 +74,8 @@ function Onboarding() {
   const [availHrs, setAvailHrs] = useState<string>("40");
   const [billHrs, setBillHrs] = useState<string>("24");
   const [targetMargin, setTargetMargin] = useState<string>("55");
+  const [rateBilled, setRateBilled] = useState<string>("");
+  const [weeksPerYear, setWeeksPerYear] = useState<string>("48");
 
   // Expenses
   const [expenses, setExpenses] = useState<ExpenseDraft[]>([
@@ -173,6 +176,9 @@ function Onboarding() {
       const drawCombined = (Number(salary) || 0) + (Number(distributions) || 0);
       // 1) Capacity & targets → firm_config
       try {
+        const billHrsN = Number(billHrs);
+        const marginN = Number(targetMargin);
+        const rateN = Number(rateBilled);
         await saveConfig({
           data: {
             comp_draw_annual: drawCombined || null,
@@ -180,8 +186,9 @@ function Onboarding() {
             comp_health_annual: Number(health) || null,
             comp_retire_annual: Number(retire) || null,
             available_hrs_per_week: Number(availHrs) || null,
-            target_billable_hrs_per_week: Number(billHrs) || null,
-            target_gross_margin_pct: Number(targetMargin) || null,
+            target_billable_hrs_per_week: Number.isFinite(billHrsN) ? billHrsN : 0,
+            target_gross_margin_pct: Number.isFinite(marginN) && marginN > 0 ? marginN : 42,
+            rate_billed: Number.isFinite(rateN) ? rateN : 0,
           },
         });
       } catch (e) {
@@ -264,6 +271,10 @@ function Onboarding() {
       } catch (e) {
         console.warn("[completeOnboarding] failed", e);
       }
+      // Ensure the dashboard's first read fetches the freshly-written firm_config
+      // rather than any cached response from earlier `getMyContext` calls.
+      await qc.invalidateQueries({ queryKey: ["dashboard"] });
+      await qc.invalidateQueries({ queryKey: ["me-onboarding"] });
       nav({ to: "/dashboard" });
     } catch (e) {
       console.error("[onboarding.finish] unexpected error", e);
@@ -470,6 +481,26 @@ function Onboarding() {
                   }}
                   helper="Your aligned rate is calculated so that billing at exactly that rate hits this target. Start with 30% if you are unsure — you can adjust this at any time and your rate updates immediately."
                 />
+                <Field
+                  label="Working weeks per year"
+                  value={weeksPerYear}
+                  onChange={setWeeksPerYear}
+                  helper="Most design firms work 46–48 weeks after accounting for holidays and time off."
+                />
+              </Row>
+              <Row>
+                <Field
+                  label="Your current billed rate"
+                  prefix="$"
+                  value={rateBilled}
+                  onChange={setRateBilled}
+                  tip={{
+                    term: "Billed rate",
+                    definition:
+                      "The hourly rate you currently charge clients. Sightline compares this against your aligned rate — the rate math says you need to charge to hit your margin target — so you can see whether you're pricing above or below your floor. Leave blank if you don't have one yet; you can add it in Settings later.",
+                  }}
+                  helper="Leave blank if you don't charge hourly yet. You can set it later in Settings."
+                />
                 <div />
               </Row>
             </div>
@@ -634,6 +665,8 @@ function Onboarding() {
                   ["Available hrs/wk", availHrs],
                   ["Billable target hrs/wk", billHrs],
                   ["Target gross margin", `${targetMargin}%`],
+                  ["Working weeks/yr", weeksPerYear || "48"],
+                  ["Current billed rate", rateBilled ? `$${Number(rateBilled).toLocaleString()}/hr` : "Not set"],
                 ]} />
                 <Summary title={`Expenses (${expenses.length})`} rows={expenses.map((e) => [e.name, `$${e.amount.toLocaleString()} ${e.frequency}`])} />
                 <Summary title={`Team (${team.length})`} rows={team.length ? team.map((t) => [t.name, t.role]) : [["No team members", "—"]]} />
