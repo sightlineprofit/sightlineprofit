@@ -40,7 +40,9 @@ function PostAuth() {
           return;
         }
         if (!ctx?.profile?.firm_id) {
-          const pendingRaw = sessionStorage.getItem("sightline_pending_firm");
+          const pendingRaw =
+            localStorage.getItem("sightline_pending_firm") ??
+            sessionStorage.getItem("sightline_pending_firm");
           const pending = pendingRaw ? JSON.parse(pendingRaw) : null;
           const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
           const firmName = pending?.firmName || meta.firm_name || (meta.name ? `${meta.name}'s Studio` : "My Studio");
@@ -51,18 +53,20 @@ function PostAuth() {
           await createFirm({
             data: { firmName, ownerName, billingFrequency, stripePriceId },
           });
+          localStorage.removeItem("sightline_pending_firm");
           sessionStorage.removeItem("sightline_pending_firm");
-          // If registration passed us a payment intent, send them back to
-          // /register to complete card capture. Otherwise straight to onboarding.
-          if (pending?.needsPayment) {
-            nav({ to: "/register", search: { step: "payment" } as any });
-          } else {
-            nav({ to: "/onboarding" });
-          }
+          // A freshly created firm has no Stripe subscription yet — always
+          // route to payment. Server state is the source of truth here, not
+          // sessionStorage (which is lost when the confirmation email is
+          // opened in a new tab).
+          nav({ to: "/register", search: { step: "payment" } as any });
         } else {
-          // Existing firm: honour onboarding status + default landing page.
+          // Existing firm: gate on Stripe subscription first, then onboarding.
           const firm = ctx.firm as any;
-          if (firm && firm.onboarding_completed !== true) {
+          const needsPayment = !firm?.stripe_subscription_id;
+          if (needsPayment) {
+            nav({ to: "/register", search: { step: "payment" } as any });
+          } else if (firm && firm.onboarding_completed !== true) {
             nav({ to: "/onboarding" });
           } else {
             const target = landingPathFor(ctx.profile, firm);

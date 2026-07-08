@@ -1,62 +1,36 @@
-## What's happening
+## Diagnosis
 
-Lemonade Interiors (firm `Lemonade Interiors`, principal Remy Lemon, `caprice.gossett@gmail.com`) is stuck on the onboarding Review step. The toast shows only **"Not found"** with no context, and the DB confirms the finish flow is partially failing:
+The register flow stores the "needs payment" intent in `sessionStorage` before calling `supabase.auth.signUp`. When the user clicks the confirmation link in their email, it opens in a **new tab / new browser context**, so `sessionStorage` is empty. `/post-auth` then reads `pending?.needsPayment` as `undefined`/false and routes straight to `/onboarding` — skipping Stripe checkout entirely.
 
-| Table | Rows for Lemonade |
-| --- | --- |
-| `firm_config` | 1 ✅ (saveConfig succeeds) |
-| `owner_compensation` | 0 ❌ |
-| `expenses` | 0 ❌ |
-| `firm_members` | 3 (saved live during step 4, not from finish) |
-| `firms.onboarding_completed` | `false` |
+Two failure paths in `src/routes/post-auth.tsx`:
 
-So the very first save after `saveConfig` is throwing — almost certainly `upsertOwnerCompensation` (server fn `saveOwnerComp`) — and after that the finish() try/catch bails, leaving expenses unwritten and onboarding never marked complete.
-
-## Why we can't yet tell exactly which call failed
-
-`onboarding.tsx` wraps the entire finish sequence in one try/catch (line 170–227) and surfaces whatever `error.message` bubbles up. The server side raises errors from many places (auth middleware, Zod validator, Supabase upsert, RLS violation), and today they all land in the same toast with no label. "Not found" isn't a string thrown anywhere in our own code, so it's either:
-
-- a PostgREST/RLS response whose message was truncated,
-- the HTTP status text of a 404 from a stale server-fn hash, or
-- a network middleware failure.
-
-Without per-step labelling we can't distinguish these. The published worker logs only show `→ 200` for other users because Lemonade's session wasn't captured in the recent window.
+1. **New firm branch** (no `firm_id` yet): relies on `pending.needsPayment`. Missing after email click → `/onboarding`.
+2. **Existing firm branch** (firm already created on a prior tab): only checks `onboarding_completed` — never checks whether Stripe checkout was completed → also routes to `/onboarding`.
 
 ## Fix
 
-Ship a small, safe instrumentation + hardening change to `src/routes/_authenticated/onboarding.tsx` so the next Finish attempt tells us (and the user) exactly which step failed, and doesn't lose progress in between. Then Remy can retry Finish and either succeed or send us a labelled error we can act on immediately.
+Make payment gating driven by **server state**, not `sessionStorage`. A firm that has not completed checkout has `stripe_subscription_id = null` (and/or `stripe_customer_id = null`) — that is the reliable signal.
 
-### Edits
+### 1. `src/routes/post-auth.tsx`
 
-1. **Refactor `finish()` in `src/routes/_authenticated/onboarding.tsx`** so every server-fn call has its own labelled try/catch:
-   - `saveConfig` → toast "Couldn't save capacity & targets — <reason>"
-   - `saveOwnerComp` → toast "Couldn't save your compensation — <reason>"
-   - Each `saveExpense` → collect failures, continue the loop, and at the end toast "Saved X of Y expenses. The following failed: …"
-   - `finishOnboarding` stays best-effort as today.
-   Return early only if `saveConfig` or `saveOwnerComp` fails; expenses failures should not block completion.
+- After resolving `ctx`, compute `needsPayment = !firm.stripe_subscription_id` for both branches (new firm and existing firm), for non-super-admin users only.
+- Existing-firm branch: if `needsPayment`, redirect to `/register?step=payment` before the onboarding/landing check.
+- New-firm branch: always redirect to `/register?step=payment` after `createFirm` (the pending flag is no longer authoritative — a freshly created firm has no subscription yet by definition). Keep reading `sightline_pending_firm` only to enrich `firmName`/`ownerName`/`billingFrequency`/`stripePriceId` when present.
+- Fall back to `user_metadata` (`firm_name`, `name`) for cross-tab confirmations where sessionStorage was lost — already partially wired; keep and rely on it.
 
-2. **Log the raw error to `console.error` before toasting** so future sessions get captured in the runtime-errors panel with a proper stack.
+### 2. `src/routes/register.tsx`
 
-3. **Skip `saveOwnerComp` when compensation is entirely zero** (defensive — a totally blank comp row currently still hits RLS and Stripe/rate history). Not the root cause here, but avoids a spurious call.
+- Switch the pending-firm stash from `sessionStorage` to `localStorage` so the email-click tab can still read `firmName`, `ownerName`, `billingFrequency`, and `stripePriceId`. Clear it after `/post-auth` consumes it (update the `removeItem` call to match).
+- Keep the current step-1 UX: if `signUp` returns no session, show the "check your email" toast.
 
-4. No DB / schema / RLS changes. No changes to other routes.
+### 3. Verification
 
-### Verification
-
-- Ask Remy to click **Finish** once more.
-- Watch:
-  - the labelled toast message (tells us which call),
-  - `stack_modern--server-function-logs` for the matching POST + non-200,
-  - `supabase--read_query` to see whether `owner_compensation` and `expenses` are now populated.
-- Based on the labelled error, apply the real fix (most likely candidates, in order):
-  a. `owner_compensation` upsert RLS/onConflict issue → adjust `upsertOwnerCompensation` to `.insert()` when no prior row exists (or drop the read-first pattern).
-  b. Stale serverFn bundle hash → have the user hard-reload; if reproducible, rebuild.
-  c. Zod validation on an edge-case value → widen the schema.
-
-### Files touched
-
-- `src/routes/_authenticated/onboarding.tsx` (only `finish()` and its immediate helpers)
+- Sign up with an email that requires confirmation → click link in a fresh tab → land on `/register?step=payment`, not `/onboarding`.
+- Sign up with a session established immediately (Google or auto-confirm) → still routed to `/register?step=payment`.
+- Existing user whose firm has `stripe_subscription_id` but `onboarding_completed=false` → `/onboarding` (unchanged).
+- Existing user with subscription and completed onboarding → landing page per role (unchanged).
+- Super admin path unchanged.
 
 ### Out of scope
 
-- No changes to `/billing`, `/register`, `TrialBanner`, settings, or any server function files in this pass. Those come only after the labelled error identifies the real culprit.
+No changes to `createFirmForCurrentUser`, Stripe checkout, or the payment UI itself — this is a routing fix only.
