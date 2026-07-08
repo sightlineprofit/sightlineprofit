@@ -14,6 +14,12 @@ import {
 } from "@/lib/firm.functions";
 import { FieldLabel, inputClass, primaryBtnClass, ghostBtnClass } from "@/components/auth/AuthShell";
 import { InfoTip } from "@/components/dashboard/InfoTip";
+import {
+  BurdenedCostCalculator,
+  emptyBurdenedCostValue,
+  type BurdenedCostValue,
+} from "@/components/team/BurdenedCostCalculator";
+import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({ meta: [{ title: "Set up your studio — Sightline" }] }),
@@ -92,18 +98,20 @@ function Onboarding() {
   const [tEmail, setTEmail] = useState("");
   const [tRole, setTRole] = useState<TeamDraft["role"]>("team");
   const [tBill, setTBill] = useState("125");
-  const [tCost, setTCost] = useState("45");
-  const [tHrs, setTHrs] = useState("40");
-  const [tWeeks, setTWeeks] = useState("48");
-  const [tPct, setTPct] = useState("75");
+  const [tHrsBillable, setTHrsBillable] = useState("30");
+  const [tBurdenInput, setTBurdenInput] = useState<BurdenedCostValue>(emptyBurdenedCostValue());
   const [tInviteNow, setTInviteNow] = useState(false);
 
   const tBurden = useMemo(() => {
-    const cost = Number(tCost) || 0;
-    const hrs = Number(tHrs) || 0;
-    // Weekly fully burdened cost = cost rate * expected hrs (cost rate already includes burden)
-    return cost * hrs;
-  }, [tCost, tHrs]);
+    return estimateBurdenedCost({
+      basis: tBurdenInput.basis,
+      hourlyRate: Number(tBurdenInput.hourlyRate) || 0,
+      annualSalary: Number(tBurdenInput.annualSalary) || 0,
+      hoursPerWeek: Number(tBurdenInput.hoursPerWeek) || 0,
+      hasBenefits: tBurdenInput.hasBenefits,
+      hasRetirement: tBurdenInput.hasRetirement,
+    });
+  }, [tBurdenInput]);
 
   const [saving, setSaving] = useState(false);
   const [sentInvites, setSentInvites] = useState<string[]>([]);
@@ -127,15 +135,23 @@ function Onboarding() {
       toast.error("Name required.");
       return;
     }
+    const workingHrs = Number(tBurdenInput.hoursPerWeek) || 40;
+    const billableHrs = Number(tHrsBillable) || 0;
+    const isSalary = tBurdenInput.basis === "salary";
+    const compType: "hourly" | "salaried" = isSalary ? "salaried" : "hourly";
+    const hourlyWage = !isSalary ? Number(tBurdenInput.hourlyRate) || 0 : 0;
+    const annualSalary = isSalary ? Number(tBurdenInput.annualSalary) || 0 : 0;
+    const benefitsOn = tBurdenInput.hasBenefits || tBurdenInput.hasRetirement;
+    const benefitsAnnual = benefitsOn ? tBurden.benefitsAmount : 0;
     const member: TeamDraft = {
       name: tName.trim(),
       email: tEmail.trim().toLowerCase(),
       role: tRole,
       billable_rate: Number(tBill) || 0,
-      cost_rate: Number(tCost) || 0,
-      expected_hrs_per_week: Number(tHrs) || 0,
-      weeks_per_year: Number(tWeeks) || 0,
-      billable_pct: Number(tPct) || 0,
+      cost_rate: tBurden.perHour,
+      expected_hrs_per_week: billableHrs,
+      weeks_per_year: 52,
+      billable_pct: workingHrs > 0 ? Math.round((billableHrs / workingHrs) * 100) : 0,
     };
     setTeam((arr) => [...arr, member]);
     // Save an internal firm_members record (no invite by default).
@@ -146,10 +162,14 @@ function Onboarding() {
           email: member.email || null,
           role_type: tRole,
           employment_type: "employee",
-          compensation_type: "hourly",
-          hourly_wage: member.cost_rate,
-          expected_hrs_per_week: member.expected_hrs_per_week,
-          weeks_per_year: member.weeks_per_year,
+          compensation_type: compType,
+          hourly_wage: !isSalary ? hourlyWage : null,
+          annual_base_salary: isSalary ? annualSalary : null,
+          employer_payroll_tax_pct: BURDEN_EMPLOYER_TAX_PCT,
+          annual_benefits: benefitsAnnual || null,
+          expected_hrs_per_week: billableHrs || workingHrs,
+          weeks_per_year: 52,
+          billed_rate: member.billable_rate || null,
         },
       });
     } catch (e) {
@@ -166,7 +186,11 @@ function Onboarding() {
     } else {
       toast.success(`Saved ${member.name}. Invite them later from Settings → Team.`);
     }
-    setTName(""); setTEmail(""); setTBill("125"); setTCost("45"); setTHrs("40"); setTWeeks("48"); setTPct("75");
+    setTName("");
+    setTEmail("");
+    setTBill("125");
+    setTHrsBillable("30");
+    setTBurdenInput(emptyBurdenedCostValue());
     setTInviteNow(false);
   };
 
@@ -599,22 +623,27 @@ function Onboarding() {
                       <option value="view_only">View only</option>
                     </select>
                   </div>
-                  <Field label="Billable % of hours" suffix="%" value={tPct} onChange={setTPct} />
+                  <Field
+                    label="Expected billable hours / week"
+                    value={tHrsBillable}
+                    onChange={setTHrsBillable}
+                  />
                 </Row>
                 <Row>
                   <Field label="Billable rate" prefix="$" value={tBill} onChange={setTBill} />
-                  <Field label="Cost rate (fully burdened)" prefix="$" value={tCost} onChange={setTCost} />
+                  <div />
                 </Row>
-                <Row>
-                  <Field label="Expected hours / week" value={tHrs} onChange={setTHrs} />
-                  <Field label="Weeks / year" value={tWeeks} onChange={setTWeeks} />
-                </Row>
+
+                <BurdenedCostCalculator
+                  value={tBurdenInput}
+                  onChange={setTBurdenInput}
+                />
 
                 <div className="flex items-center justify-between border-t border-border pt-4">
                   <div>
                     <div className="text-xs uppercase tracking-[0.18em] text-ch/50">Weekly burdened cost</div>
                     <div className="font-display text-3xl tabular-nums text-ch">
-                      ${tBurden.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      ${Math.round(tBurden.perHour * (Number(tHrsBillable) || 0)).toLocaleString()}
                     </div>
                   </div>
                   <button className={`${ghostBtnClass} w-auto`} onClick={addTeamLocal} type="button">Save team member</button>

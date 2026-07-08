@@ -25,6 +25,11 @@ import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricB
 import { listChangeLog } from "@/lib/change-log.functions";
 import { switchBillingFrequency } from "@/lib/billing.functions";
 import { getStripeEnvironment } from "@/lib/stripe";
+import {
+  BurdenedCostCalculator,
+  type BurdenedCostValue,
+} from "@/components/team/BurdenedCostCalculator";
+import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
@@ -1234,6 +1239,38 @@ function MemberCard({
     billed_rate: m.billed_rate ?? null,
   }));
 
+  // Quick-estimate calculator (locked-formula shared component). Independent
+  // UI state that writes back to the draft `d` via an explicit Apply button.
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickInput, setQuickInput] = useState<BurdenedCostValue>(() => ({
+    basis: m.compensation_type === "salaried" ? "salary" : "hourly",
+    hourlyRate: m.hourly_wage != null ? String(m.hourly_wage) : "",
+    annualSalary: m.annual_base_salary != null ? String(m.annual_base_salary) : "",
+    hoursPerWeek: m.expected_hrs_per_week != null ? String(m.expected_hrs_per_week) : "40",
+    hasBenefits: Number(m.annual_benefits) > 0,
+    hasRetirement: false,
+  }));
+  const applyQuickEstimate = () => {
+    const est = estimateBurdenedCost({
+      basis: quickInput.basis,
+      hourlyRate: Number(quickInput.hourlyRate) || 0,
+      annualSalary: Number(quickInput.annualSalary) || 0,
+      hoursPerWeek: Number(quickInput.hoursPerWeek) || 0,
+      hasBenefits: quickInput.hasBenefits,
+      hasRetirement: quickInput.hasRetirement,
+    });
+    const isSalary = quickInput.basis === "salary";
+    setD({
+      ...d,
+      compensation_type: isSalary ? "salaried" : "hourly",
+      hourly_wage: !isSalary ? Number(quickInput.hourlyRate) || 0 : null,
+      annual_base_salary: isSalary ? Number(quickInput.annualSalary) || 0 : null,
+      employer_payroll_tax_pct: BURDEN_EMPLOYER_TAX_PCT,
+      annual_benefits: est.benefitsAmount > 0 ? est.benefitsAmount : null,
+      expected_hrs_per_week: Number(quickInput.hoursPerWeek) || 40,
+    });
+  };
+
   // Debounced auto-save + "Saved" flash. billable-capacity fields (expected_hrs_per_week
   // and billed_rate) are preserved in state but never edited here — Capacity & Rate owns them.
   const initial = useRef(JSON.stringify(d));
@@ -1322,6 +1359,46 @@ function MemberCard({
 
           <div className="mt-1 mb-2 text-[9px] font-medium uppercase tracking-[0.12em] text-ch/50">
             Compensation
+          </div>
+
+          {/* Quick-estimate calculator (shared with onboarding) — locked formula
+              output. Users who need precise figures use the advanced fields below. */}
+          <div className="mb-3 rounded-md border border-border/70 bg-cream/40">
+            <button
+              type="button"
+              onClick={() => setQuickOpen((v) => !v)}
+              className="flex w-full items-center justify-between px-3 py-2 text-left"
+            >
+              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ch/70">
+                Quick estimate
+              </span>
+              <span className="text-[10px] text-ch/45">{quickOpen ? "Hide ▲" : "Show ▼"}</span>
+            </button>
+            {quickOpen && (
+              <div className="border-t border-border/60 p-3">
+                <BurdenedCostCalculator
+                  value={quickInput}
+                  onChange={setQuickInput}
+                  showHeader={false}
+                />
+                <div className="mt-3 flex items-center justify-between">
+                  <p
+                    className="text-[10px] italic text-ch/55"
+                    style={{ fontFamily: "Jost, sans-serif" }}
+                  >
+                    Applying overwrites wage, payroll tax, and benefits below.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={applyQuickEstimate}
+                    className="rounded border border-gold/50 bg-gold/10 px-3 py-1 text-[11px] text-ch hover:bg-gold/20"
+                    style={{ fontFamily: "Jost, sans-serif" }}
+                  >
+                    Apply estimate
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {contract ? (

@@ -85,3 +85,57 @@ export function buildTeamCostBreakdown(
     })
     .sort((a, b) => b.total - a.total);
 }
+
+// ─── Simplified burdened-cost estimator ──────────────────────────────────
+// Used by the BurdenedCostCalculator UI in both onboarding and Settings.
+// Encodes the "designer doesn't know their real burden" simplifications:
+//   employer payroll tax  → flat 11% of base (SS 6.2 + Medicare 1.45 + FUTA 0.6 + avg SUTA 2.7)
+//   benefits + retirement → flat 13.5% of base when either is opted in
+// Output is locked to formula — never manually overridden here. Advanced
+// users override in Settings via the existing granular fields.
+
+export const BURDEN_EMPLOYER_TAX_PCT = 11;
+export const BURDEN_BENEFITS_PCT = 13.5;
+
+export type BurdenBasis = "hourly" | "salary";
+
+export type BurdenEstimateInput = {
+  basis: BurdenBasis;
+  hourlyRate?: number | null;
+  hoursPerWeek?: number | null;
+  annualSalary?: number | null;
+  hasBenefits?: boolean;
+  hasRetirement?: boolean;
+};
+
+export type BurdenEstimate = {
+  base: number;
+  taxPct: number;
+  taxAmount: number;
+  benefitsPct: number;
+  benefitsAmount: number;
+  total: number;
+  perHour: number; // burdened hourly (total / (hours/wk × 52))
+};
+
+const HOURS_ANNUAL_WEEKS = 52;
+
+export function estimateBurdenedCost(input: BurdenEstimateInput): BurdenEstimate {
+  const hpw = Math.max(0, Number(input.hoursPerWeek) || 0);
+  let base = 0;
+  if (input.basis === "hourly") {
+    const rate = Math.max(0, Number(input.hourlyRate) || 0);
+    base = rate * hpw * HOURS_ANNUAL_WEEKS;
+  } else {
+    base = Math.max(0, Number(input.annualSalary) || 0);
+  }
+  const taxPct = BURDEN_EMPLOYER_TAX_PCT;
+  const taxAmount = base * (taxPct / 100);
+  const benefitsPct = input.hasBenefits || input.hasRetirement ? BURDEN_BENEFITS_PCT : 0;
+  const benefitsAmount = base * (benefitsPct / 100);
+  const total = base + taxAmount + benefitsAmount;
+  const denomHours =
+    input.basis === "hourly" ? hpw * HOURS_ANNUAL_WEEKS : hpw > 0 ? hpw * HOURS_ANNUAL_WEEKS : 0;
+  const perHour = denomHours > 0 ? total / denomHours : 0;
+  return { base, taxPct, taxAmount, benefitsPct, benefitsAmount, total, perHour };
+}
