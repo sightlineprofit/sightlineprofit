@@ -21,20 +21,12 @@ type Plan = {
 
 const PLANS: Plan[] = [
   {
-    priceKey: "sightline_foundation_monthly",
-    tier: "foundation",
-    name: "Foundation",
-    price: "$39/mo",
-    blurb: "Financial fundamentals.",
-    features: ["Firm financial dashboard", "Aligned hourly rate", "Budget vs actual", "Scenario planning"],
-  },
-  {
     priceKey: "sightline_studio_monthly_v2",
     tier: "studio",
     name: "Studio",
     price: "$79/mo",
-    blurb: "Foundation plus time & utilization.",
-    features: ["Mon–Sun time calendar", "Per-user & combined views", "Live utilization", "Everything in Foundation"],
+    blurb: "Financials, time & utilization — the full studio picture.",
+    features: ["Firm financial dashboard", "Aligned hourly rate & scenarios", "Mon–Sun time calendar", "Per-user & combined views", "Live utilization"],
   },
   {
     priceKey: "sightline_practice_monthly_v2",
@@ -46,11 +38,11 @@ const PLANS: Plan[] = [
   },
   {
     priceKey: "sightline_early_foundation_monthly",
-    tier: "foundation",
-    name: "Early Access — Foundation",
+    tier: "studio",
+    name: "Early Access — Studio",
     price: "$39/mo",
-    blurb: "Foundation features, price locked for life.",
-    features: ["Everything in Foundation", "Rate locked for the life of your subscription"],
+    blurb: "Full Studio at a founding-customer rate, locked for life.",
+    features: ["Everything in Studio", "Rate locked for the life of your subscription"],
     earlyAccess: true,
   },
   {
@@ -227,7 +219,7 @@ function BillingPage() {
         )}
 
         {/* Plan cards */}
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {PLANS.map((p) => {
             const isCurrent = currentTier === p.tier && hasSubscription;
             const cta = !hasSubscription

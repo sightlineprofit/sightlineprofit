@@ -170,8 +170,8 @@ export const getAnnualSummary = createServerFn({ method: "GET" })
     const annualRevImpact = gapClosed * fc.annualBillableHrs;
 
     // Subscription cost (simple by tier)
-    const tier = (firm?.subscription_tier as string) ?? "foundation";
-    const tierMonthly: Record<string, number> = { foundation: 49, studio: 99, practice: 199 };
+    const tier = (firm?.subscription_tier as string) ?? "studio";
+    const tierMonthly: Record<string, number> = { studio: 99, practice: 199 };
     const subAnnual = (tierMonthly[tier] ?? 0) * 12;
 
     const conservativeValue = (fc.gapToFloor * fc.annualBillableHrs) + creepValueTotal;

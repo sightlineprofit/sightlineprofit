@@ -1,54 +1,93 @@
-## What changes
+# Catalog cleanup: remove Foundation tier
 
-Stripe prices are immutable — a price change means creating a new price with a new lookup key and pointing the app at it. Existing subscribers stay on their old price (that's what "grandfathered" means and what makes the Early Access locked-for-life promise work automatically).
+## Goal
 
-### New Stripe products & prices
+Reduce the catalog to exactly 4 sellable products and eliminate the "foundation" tier from the app entirely:
 
-| # | Product | Price (lookup key) | Amount | Notes |
-|---|---|---|---|---|
-| 1 | Sightline Studio (existing product, new price) | `sightline_studio_monthly_v2` | $79/mo | New checkout uses this; old `sightline_studio_monthly` retained so current subs keep paying $89 |
-| 2 | Sightline Practice (existing product, new price) | `sightline_practice_monthly_v2` | $129/mo | Same pattern — old price retained |
-| 3 | Sightline Early Access — Foundation (new product) | `sightline_early_foundation_monthly` | $39/mo | Grants foundation-tier access; locked for life of the subscription |
-| 4 | Sightline Early Access — Practice (new product) | `sightline_early_practice_monthly` | $79/mo | Grants practice-tier access; locked for life |
+1. **Studio** — `sightline_studio_monthly_v2`
+2. **Practice** — `sightline_practice_monthly_v2`
+3. **Early Access — Studio** — renamed from "Early Access — Foundation", price stays **$39/mo locked-for-life**
+4. **Early Access — Practice** — `sightline_early_practice_monthly`
 
-Foundation ($39/mo) stays as-is.
+New trial/no-subscription users default to `studio` instead of `foundation`.
 
-### App wiring
+## Part 1 — Stripe (you do this in More → Payments)
 
-1. **`src/lib/stripe.server.ts`** — extend `PRICE_TO_TIER` so the webhook maps all five active lookup keys to the right tier enum value:
-   - `sightline_foundation_monthly` → `foundation`
-   - `sightline_early_foundation_monthly` → `foundation`
-   - `sightline_studio_monthly` (old) + `sightline_studio_monthly_v2` → `studio`
-   - `sightline_practice_monthly` (old) + `sightline_practice_monthly_v2` → `practice`
-   - `sightline_early_practice_monthly` → `practice`
+Since this is catalog-only cleanup with no live foundation subscribers, in the Payments dashboard:
 
-   Replace the single `TIER_TO_PRICE` map with `DEFAULT_TIER_PRICE` (Studio v2, Practice v2, Foundation) plus a separate `EARLY_ACCESS_PRICES` list, so checkout knows which price to open for each purchase intent.
+1. **Rename** product "Sightline Early Access — Foundation" → **"Sightline Early Access — Studio"**. Keep its existing $39/mo price and its `sightline_early_foundation_monthly` lookup key (the lookup key is a stable ID; renaming the display name is safe and does not require a code change to the key itself — but we will remap it to tier `studio` in code, see Part 2).
+2. **Archive** the standalone "Foundation $39/mo" product/price (`sightline_foundation_monthly`). Archiving hides it from checkout without deleting historical records.
 
-2. **`src/lib/billing.functions.ts`** — change `createCheckoutSession`'s input from `tier` to `priceKey` so the caller picks a specific Stripe price (needed because Foundation and Early-Access-Foundation share a tier but have different prices). Look up by lookup key exactly as today.
+After this, the Payments dashboard should show 4 active products.
 
-3. **`src/routes/_authenticated/billing.tsx`** — grow the plan grid from 3 cards to 5:
-   - Foundation $39 · Studio $79 · Practice $129 (three standard cards)
-   - Early Access — Foundation $39 · Early Access — Practice $79 (two accent cards with an "Early Access · price locked for life" badge in gold)
-   Each card's Subscribe button passes the specific `priceKey` to checkout.
+## Part 2 — Code changes
 
-4. **No database migration** — the `subscription_tier` enum already has `foundation/studio/practice` and that's enough (Early Access is a pricing variant, not a new tier). The webhook writes whichever tier the lookup key maps to.
+### `src/lib/stripe.server.ts`
+- `Tier` type: drop `"foundation"` → `"studio" | "practice"`.
+- `PRICE_TO_TIER`: remove `sightline_foundation_monthly`; remap `sightline_early_foundation_monthly` → `"studio"`.
+- `DEFAULT_TIER_PRICE`: remove foundation entry.
+- `CHECKOUT_PRICE_KEYS`: remove `sightline_foundation_monthly`. Final 4 keys: `sightline_studio_monthly_v2`, `sightline_practice_monthly_v2`, `sightline_early_foundation_monthly` (Early Access — Studio), `sightline_early_practice_monthly`.
 
-5. **No changes to** the trigger `prevent_firm_billing_changes`, the webhook route, the enum, or existing subscribers' price rows in Stripe.
+### Database migration
+- Change enum `subscription_tier`: add nothing new, but update code paths. Actual Postgres enum change: `ALTER TYPE ... RENAME VALUE 'foundation' TO 'studio'` won't work because studio already exists. Instead: `UPDATE firms SET subscription_tier = 'studio' WHERE subscription_tier = 'foundation'`, then create a new enum without `foundation`, swap column type, drop old enum.
+- Update `firms.subscription_tier` default from `'foundation'` to `'studio'`.
+- All existing trialing/no-sub firms migrate to `studio`.
 
-## Assumption I need you to confirm
+### `src/routes/_authenticated/billing.tsx`
+- Remove the Foundation plan card (`sightline_foundation_monthly`).
+- Rename Early Access — Foundation card display to **"Early Access — Studio"**; update blurb/features to reference Studio features (time calendar, utilization) at the locked $39 rate. Keep price key `sightline_early_foundation_monthly`.
+- Final grid: Studio, Practice, Early Access — Studio, Early Access — Practice.
 
-Your free-text listed Studio $79 and Practice $129 as new prices, but the multiple-choice answer said "only add the two Early Access tiers now, standard prices come later." **I'm going with the free-text**: repricing Studio and Practice now AND adding the two Early Access variants. If you actually want Studio to stay at $89 and Practice at $149, tell me before I implement — I'll drop steps 1–2 in the table above.
+### `src/lib/role.tsx`
+- `AppTier`: `"studio" | "practice"`.
+- Default tier fallback: `"studio"` instead of `"foundation"`.
 
-## Feature mapping
+### `src/routes/register.tsx`
+- Remove Foundation option; default `tier` to `"studio"`.
 
-You skipped the feature-mapping question, so I'm assuming:
-- Early Access — Foundation → same features as Foundation
-- Early Access — Practice → same features as Practice
+### `src/routes/post-auth.tsx`
+- Default tier `"foundation"` → `"studio"`.
 
-Say so now if the Early Access variants should include different modules.
+### `src/routes/_authenticated/settings.tsx`
+- `tierName` maps: drop foundation; if a legacy row still says "foundation", coerce display to "Studio".
+- Default tier fallback → `"studio"`.
 
-## Not in scope
+### `src/routes/_authenticated/dashboard.tsx`
+- Remove foundation-specific branching: `tier === "foundation"` blocks (UpgradeBridge, ManualHoursPanel gating, etc.) either delete or promote to studio behavior. Studio users already get time calendar + utilization; drop the upgrade nudges that assumed foundation.
+- Default `tier` prop → `"studio"`.
 
-- Migrating existing subscribers to new prices (they stay grandfathered by design).
-- Hiding Early Access tiers behind a promo code or expiring them after a launch window — you can prompt me for that later.
-- Annual pricing.
+### `src/routes/_authenticated/time-calendar.tsx`
+- `locked = tier === "foundation"` → always unlocked (studio is base). Remove `UpgradeModal` block.
+
+### `src/routes/_authenticated/admin.tsx`
+- Remove foundation from tier `<option>` and `tier_visibility` defaults. Only `studio`, `practice`.
+
+### `src/routes/_authenticated/rate-architecture.tsx`
+- The "Layer 01 — Foundation" tag is architectural naming, not tier-related. **Leave unchanged.**
+
+### `src/routes/index.tsx`
+- Marketing "Foundation" plan card (line 707) — remove or replace with Studio-forward messaging. Confirm the landing pricing section shows Studio + Practice + Early Access options.
+
+### `src/lib/view-as.tsx`, `src/components/shell/ViewSwitcher.tsx`, `src/components/shell/UpgradeModal.tsx`, `src/components/shell/AppShell.tsx`, `src/lib/firm.functions.ts`, `src/lib/admin.functions.ts`, `src/lib/value-moments.functions.ts`
+- Drop `"foundation"` from union types, enums, tier lists, `TIER_RANK`, nav item `tier` filters, upgrade modal copy, and pricing tables (`tierMonthly`).
+- `AppShell` nav items with `tier: "foundation"` → set to `"studio"` (they'll be visible to all subscribed users since studio is now the base).
+
+### `src/routes/api/public/stripe-webhook.ts`
+- Tier type narrows to `"studio" | "practice"`. Any incoming metadata that says `"foundation"` is coerced to `"studio"` before writing (safety net during transition).
+
+## Testing in preview
+
+1. **Verify catalog** — Open `/billing` while signed in. You should see exactly 4 cards: Studio, Practice, Early Access — Studio ($39/mo), Early Access — Practice. No Foundation card.
+2. **New signup** — Register a fresh account. In Settings, plan should show "Studio (Trial)" with `trial_ends_at` 14 days out.
+3. **Checkout — Early Access — Studio** — Click that card. Embedded checkout opens. Use **`4242 4242 4242 4242`**, any future expiry, any CVC, any ZIP. On success you should be redirected back with a toast; plan card refreshes to "Early Access — Studio".
+4. **Checkout — Studio** — Same with the Studio card at its regular price.
+5. **Verify entitlement** — After Studio purchase, `/dashboard` and `/time-calendar` should be fully unlocked (no upgrade modal, no foundation gates). Only Practice-only features should still show upgrade prompts.
+6. **Test 3-D Secure** — `4000 0025 0000 3155` triggers authentication step.
+7. **Test decline** — `4000 0000 0000 0002` — checkout should surface the decline error and no subscription row is created.
+8. **Portal** — From `/billing`, click Manage Subscription. Portal opens in new tab. Cancel; on return, plan card should show "cancels on {current_period_end}".
+
+## Technical notes (for reference)
+
+- The lookup key `sightline_early_foundation_monthly` stays put in Stripe and code. Only its human display name (Stripe dashboard) and its tier mapping (code) change. This avoids breaking any historical Stripe references.
+- The webhook's `tierFromSubscription` reads `PRICE_TO_TIER[lookup_key]`. After the remap, that key resolves to `studio`, so an early-access subscriber automatically gets studio entitlement without any data migration.
+- Enum migration is destructive on the Postgres side; the migration must (1) update all rows, (2) create a new enum type, (3) alter the column to the new type with a `USING` cast, (4) drop the old enum. This runs as one transaction so nothing is left half-migrated.

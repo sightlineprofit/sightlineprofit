@@ -7,7 +7,7 @@ import { useViewAs } from "@/lib/view-as";
 import { supabase } from "@/integrations/supabase/client";
 
 export type AppRole = "principal" | "admin" | "team" | "view_only";
-export type AppTier = "foundation" | "studio" | "practice";
+export type AppTier = "studio" | "practice";
 
 export function useMe() {
   const getCtx = useServerFn(getMyContext);
@@ -58,7 +58,7 @@ export function useMe() {
       } as any,
       firm:
         data.firm && va.tier
-          ? { ...data.firm, subscription_tier: va.tier }
+          ? { ...data.firm, subscription_tier: va.tier as any }
           : data.firm,
     };
   }
@@ -146,7 +146,7 @@ export function effectiveTier(
   const isSuper = !!profile?.is_super_admin;
   const isImpersonating = !!profile?.impersonated_firm_id;
   if (isSuper && !isImpersonating) return "practice";
-  return ((firm?.subscription_tier as AppTier) ?? "foundation");
+  return ((firm?.subscription_tier as AppTier) ?? "studio");
 }
 
 /**

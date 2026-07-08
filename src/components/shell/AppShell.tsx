@@ -30,8 +30,8 @@ import { ViewSwitcher, ViewSwitcherBanner } from "@/components/shell/ViewSwitche
 import { RestrictedPreview } from "@/components/shell/RestrictedPreview";
 import { cn } from "@/lib/utils";
 
-type Tier = "foundation" | "studio" | "practice";
-const TIER_RANK: Record<Tier, number> = { foundation: 0, studio: 1, practice: 2 };
+type Tier = "studio" | "practice";
+const TIER_RANK: Record<Tier, number> = { studio: 0, practice: 1 };
 type Role = "principal" | "admin" | "team" | "view_only";
 
 type NavItem = {
@@ -39,23 +39,22 @@ type NavItem = {
   label: string;
   icon: typeof LayoutDashboard;
   tier: Tier;
-  group: "foundation" | "studio" | "practice" | "general";
+  group: "studio" | "practice" | "general";
   allowRoles?: Role[];
   search?: Record<string, string>;
 };
 
 const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "foundation", group: "foundation", allowRoles: ["principal", "admin"] },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, tier: "studio", group: "studio", allowRoles: ["principal", "admin"] },
   { to: "/time-calendar", label: "Time Calendar", icon: Calendar, tier: "studio", group: "studio" },
   { to: "/sightline", label: "Sightline", icon: LineChart, tier: "practice", group: "practice" },
   { to: "/sop-library", label: "SOP Library", icon: BookOpen, tier: "practice", group: "practice" },
-  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, tier: "foundation", group: "general", allowRoles: ["principal", "admin"] },
-  { to: "/settings", label: "Settings", icon: Settings, tier: "foundation", group: "general" },
-  { to: "/knowledge-base", label: "Knowledge Base", icon: HelpCircle, tier: "foundation", group: "general" },
+  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, tier: "studio", group: "general", allowRoles: ["principal", "admin"] },
+  { to: "/settings", label: "Settings", icon: Settings, tier: "studio", group: "general" },
+  { to: "/knowledge-base", label: "Knowledge Base", icon: HelpCircle, tier: "studio", group: "general" },
 ];
 
 const GROUP_LABELS: Record<NavItem["group"], string> = {
-  foundation: "Foundation",
   studio: "Studio",
   practice: "Practice",
   general: "",
@@ -133,7 +132,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? simulatedRouteRestriction(currentRole, pathname)
     : null;
 
-  const groups: NavItem["group"][] = ["foundation", "studio", "practice", "general"];
+  const groups: NavItem["group"][] = ["studio", "practice", "general"];
 
   async function signOut() {
     await queryClient.cancelQueries();

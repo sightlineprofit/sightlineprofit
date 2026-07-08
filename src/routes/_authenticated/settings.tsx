@@ -365,7 +365,7 @@ function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id:
   const trialEnds = ctx?.firm?.trial_ends_at;
   const trialDays = trialEnds ? Math.max(0, Math.ceil((new Date(trialEnds).getTime() - Date.now()) / 86400000)) : 0;
   const tierPrice: Record<string, string> = { studio: "$69", practice: "$129" };
-  const tierName: Record<string, string> = { foundation: "Foundation", studio: "Sightline", practice: "Practice" };
+  const tierName: Record<string, string> = { studio: "Studio", practice: "Practice" };
 
   const billingStatus: Status =
     status === "trialing" ? { tone: "warn", text: `Trial · ${trialDays} days remaining` }
@@ -2060,10 +2060,10 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
 
 function BillingPanel({ onClose }: { onClose: () => void }) {
   const { data } = useMe();
-  const tier = (data?.firm?.subscription_tier as string) ?? "foundation";
+  const tier = (data?.firm?.subscription_tier as string) ?? "studio";
   const status = data?.firm?.subscription_status;
-  const tierPrice: Record<string, string> = { studio: "$69/mo", practice: "$129/mo" };
-  const tierName: Record<string, string> = { foundation: "Foundation (Trial)", studio: "Sightline", practice: "Practice" };
+  const tierPrice: Record<string, string> = { studio: "$79/mo", practice: "$129/mo" };
+  const tierName: Record<string, string> = { studio: status === "trialing" ? "Studio (Trial)" : "Studio", practice: "Practice" };
   const nextBill = (data?.firm as any)?.current_period_end ?? "—";
   return (
     <PanelShell title="Billing" subtitle="Your current plan and payment method." onClose={onClose}>

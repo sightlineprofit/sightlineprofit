@@ -5,28 +5,25 @@ import { supabase } from "@/integrations/supabase/client";
 import { AuthShell, FieldLabel, inputClass, primaryBtnClass } from "@/components/auth/AuthShell";
 import { GoogleButton } from "@/components/auth/GoogleButton";
 
-type Tier = "foundation" | "studio" | "practice";
+type Tier = "studio" | "practice";
 
 const TIERS: { id: Tier; name: string; price: string; tagline: string; features: string[]; includesBelow?: boolean }[] = [
   {
-    id: "foundation",
-    name: "Foundation",
-    price: "$39/mo",
-    tagline: "Know your number.",
-    features: ["Firm financial dashboard", "Aligned hourly rate calculator", "Budget vs actual", "Scenario planning"],
-  },
-  {
     id: "studio",
     name: "Studio",
-    price: "$89/mo",
+    price: "$79/mo",
     tagline: "Track the team.",
-    features: ["Mon–Sun time calendar", "Per-user & combined views", "Live utilization & revenue"],
-    includesBelow: true,
+    features: [
+      "Firm financial dashboard",
+      "Aligned hourly rate & scenario planning",
+      "Mon–Sun time calendar",
+      "Live utilization & revenue",
+    ],
   },
   {
     id: "practice",
     name: "Practice",
-    price: "$149/mo",
+    price: "$129/mo",
     tagline: "Defend the margin.",
     features: ["Project profitability", "SOP template library", "Scope creep in dollar terms"],
     includesBelow: true,
@@ -44,7 +41,7 @@ function RegisterPage() {
   const [ownerName, setOwnerName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tier, setTier] = useState<Tier>("foundation");
+  const [tier, setTier] = useState<Tier>("studio");
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
