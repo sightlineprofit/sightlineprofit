@@ -10,6 +10,7 @@ import {
   inviteTeamMember,
   upsertOwnerCompensation,
   saveFirmMember,
+  completeOnboarding,
 } from "@/lib/firm.functions";
 import { FieldLabel, inputClass, primaryBtnClass, ghostBtnClass } from "@/components/auth/AuthShell";
 import { InfoTip } from "@/components/dashboard/InfoTip";
@@ -47,6 +48,7 @@ function Onboarding() {
   const sendInvite = useServerFn(inviteTeamMember);
   const saveOwnerComp = useServerFn(upsertOwnerCompensation);
   const saveMember = useServerFn(saveFirmMember);
+  const finishOnboarding = useServerFn(completeOnboarding);
   const { data: ctx } = useQuery({ queryKey: ["me-onboarding"], queryFn: () => getCtx() });
 
   const [step, setStep] = useState(0);
@@ -211,6 +213,11 @@ function Onboarding() {
         }
       }
       toast.success("Studio set up. Welcome to Sightline.");
+      try {
+        await finishOnboarding();
+      } catch (e) {
+        console.warn("[completeOnboarding] failed", e);
+      }
       nav({ to: "/dashboard" });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save.");
