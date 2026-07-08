@@ -226,14 +226,57 @@ function Onboarding() {
     }
   };
 
+  const trialEnd = (ctx?.firm as any)?.trial_ends_at
+    ? new Date((ctx.firm as any).trial_ends_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    : null;
+  const pct = ((step + 1) / STEPS.length) * 100;
+  const STEP_LABELS = ["Compensation", "Capacity", "Expenses", "Team", "Review"];
+
   return (
     <div className="min-h-screen bg-cream text-ch">
-      <header className="border-b border-border bg-white">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-5">
-          <div className="font-display text-xl tracking-tight">Sightline</div>
-          <button className="text-xs uppercase tracking-[0.18em] text-ch/50 hover:text-ch" onClick={() => nav({ to: "/dashboard" })}>
-            Skip for now
-          </button>
+      <header
+        className="sticky top-0 z-40"
+        style={{ background: "#FAF7F2", borderBottom: "0.5px solid rgba(44,44,44,0.10)" }}
+      >
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-6" style={{ padding: "12px 24px" }}>
+          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 16, color: "#2C2C2C" }}>
+            Sightline
+          </div>
+          <div className="text-right">
+            <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#8A7F75" }}>
+              Step {step + 1} of {STEPS.length}
+            </div>
+            {trialEnd && (
+              <div style={{ fontFamily: "Jost, sans-serif", fontSize: 10, color: "#5C8A6E" }}>
+                Free trial active · No charge until {trialEnd}
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ height: 3, background: "rgba(44,44,44,0.08)" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: "#B8860B", transition: "width 0.3s ease" }} />
+        </div>
+        <div className="mx-auto max-w-3xl px-6 py-2 flex justify-between">
+          {STEP_LABELS.map((label, i) => {
+            const state = i === step ? "active" : i < step ? "done" : "upcoming";
+            const color = state === "active" ? "#B8860B" : state === "done" ? "#2C2C2C" : "#8A7F75";
+            const weight = state === "active" ? 500 : state === "upcoming" ? 300 : 400;
+            return (
+              <span
+                key={label}
+                style={{
+                  fontFamily: "Jost, sans-serif",
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.10em",
+                  color,
+                  fontWeight: weight,
+                }}
+              >
+                {label}
+              </span>
+            );
+          })}
         </div>
       </header>
 
@@ -245,14 +288,6 @@ function Onboarding() {
         <p className="mt-2 max-w-xl text-ch/70">
           A few questions so Sightline can tell you what your rate needs to be and whether you're hitting it.
         </p>
-
-        <ol className="mt-10 flex flex-wrap gap-x-6 gap-y-2 text-xs uppercase tracking-[0.18em]">
-          {STEPS.map((s, i) => (
-            <li key={s} className={i === step ? "text-gold" : i < step ? "text-ch/70" : "text-ch/30"}>
-              {String(i + 1).padStart(2, "0")} · {s}
-            </li>
-          ))}
-        </ol>
 
         <section className="mt-8 rounded-lg border border-border bg-white p-8">
           {step === 0 && (
