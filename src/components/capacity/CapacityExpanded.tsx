@@ -982,6 +982,9 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
 export function MemberCard({
   row,
   logged,
+  loggedBillable,
+  loggedNonBillable,
+  nonBillableWeeklyBudget,
   lastEntry,
   ytd,
   weeksElapsed,
@@ -989,6 +992,12 @@ export function MemberCard({
 }: {
   row: TeamMemberRow;
   logged: number;
+  /** Billable hours logged this week (defaults to `logged` if omitted). */
+  loggedBillable?: number;
+  /** Non-billable hours logged this week. */
+  loggedNonBillable?: number;
+  /** Firm-wide per-member non-billable weekly envelope for the gauge. */
+  nonBillableWeeklyBudget?: number;
   lastEntry: string | null;
   ytd: { billable: number; nonBillable: number };
   weeksElapsed: number;
@@ -997,6 +1006,10 @@ export function MemberCard({
   const [showAnnual, setShowAnnual] = useState(false);
   const target = row.target;
   const needsSetup = row.isPrincipal && target <= 0;
+  const billableLogged = loggedBillable ?? logged;
+  const nbLogged = loggedNonBillable ?? 0;
+  const nbBudget = nonBillableWeeklyBudget ?? 0;
+  const nbPct = nbBudget > 0 ? (nbLogged / nbBudget) * 100 : 0;
 
   // Freshness pill
   const today = new Date();
@@ -1032,11 +1045,11 @@ export function MemberCard({
     freshLabel = "Not tracked";
   }
 
-  // Value colors
-  const pct = target > 0 ? (logged / target) * 100 : 0;
+  // Value colors — measured against BILLABLE target vs BILLABLE logged.
+  const pct = target > 0 ? (billableLogged / target) * 100 : 0;
   let valueColor = "#777";
-  if (target > 0 && logged > 0) {
-    if (logged >= target) valueColor = "#5C8A6E";
+  if (target > 0 && billableLogged > 0) {
+    if (billableLogged >= target) valueColor = "#5C8A6E";
     else if (pct >= 50) valueColor = "#B8860B";
     else valueColor = "#C4714A";
   }
@@ -1069,10 +1082,10 @@ export function MemberCard({
   // Progress bar
   const barPct = target > 0 ? Math.min(100, pct) : 0;
   let barColor = "#C4714A";
-  if (target > 0 && logged >= target) barColor = "#5C8A6E";
+  if (target > 0 && billableLogged >= target) barColor = "#5C8A6E";
   else if (pct >= 80) barColor = "#5C8A6E";
   else if (pct >= 30) barColor = "#B8860B";
-  const overHrs = target > 0 && logged > target ? logged - target : 0;
+  const overHrs = target > 0 && billableLogged > target ? billableLogged - target : 0;
 
   // Annual projection
   const ytdLogged = ytd.billable + ytd.nonBillable;
@@ -1154,7 +1167,7 @@ export function MemberCard({
             style={{ borderRadius: 4 }}
           >
             <StatCol
-              label="TARGET"
+              label="BILLABLE TARGET"
               value={target > 0 ? `${target.toFixed(0)} hrs/wk` : "—"}
               sub={target > 0 ? `${(target * weeksPerYear).toFixed(0)} hrs/yr` : ""}
             />
@@ -1163,17 +1176,17 @@ export function MemberCard({
               style={{ borderLeft: "0.5px solid var(--border)", borderRight: "0.5px solid var(--border)" }}
             >
               <StatCol
-                label="THIS WEEK"
-                value={row.tracks ? `${logged.toFixed(1)} hrs logged` : "—"}
+                label="BILLABLE THIS WEEK"
+                value={row.tracks ? `${billableLogged.toFixed(1)} hrs logged` : "—"}
                 valueColor={valueColor}
                 sub={
                   !row.tracks
                     ? ""
-                    : logged === 0
+                    : billableLogged === 0
                       ? "Nothing logged yet this week"
-                      : logged >= target
+                      : billableLogged >= target
                         ? "Target reached"
-                        : `${(target - logged).toFixed(1)} hrs to target`
+                        : `${(target - billableLogged).toFixed(1)} hrs to target`
                 }
                 subColor={valueColor}
                 inline
@@ -1205,6 +1218,54 @@ export function MemberCard({
               </div>
             </div>
           </div>
+
+          {/* Non-billable gauge — capacity already priced into the rate. */}
+          {row.tracks && (
+            <div className="mt-4">
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <div
+                    style={{
+                      fontSize: 8,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: "#8A8578",
+                    }}
+                  >
+                    NON-BILLABLE THIS WEEK
+                  </div>
+                  <div style={{ fontSize: 10, color: "#8A8578" }}>
+                    Ideation, admin, learning — already in your rate.
+                  </div>
+                </div>
+                <div
+                  className="num text-right"
+                  style={{ fontFamily: "Cormorant Garamond, serif", fontSize: 16, color: "#2C2C2C" }}
+                >
+                  {nbLogged.toFixed(1)}
+                  {nbBudget > 0 && (
+                    <span style={{ fontSize: 11, color: "#8A8578" }}>
+                      {" "}
+                      / {nbBudget.toFixed(1)} hrs
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div
+                className="mt-1 w-full overflow-hidden"
+                style={{ height: 3, background: "var(--border)", borderRadius: 2 }}
+              >
+                <div
+                  style={{
+                    width: `${Math.max(0, Math.min(100, nbPct))}%`,
+                    height: "100%",
+                    background: nbPct > 110 ? "#C4714A" : "#8A7CB8",
+                    borderRadius: 2,
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Progress bar */}
           <div className="mt-4">
