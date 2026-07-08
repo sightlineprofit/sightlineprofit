@@ -5,11 +5,12 @@ import {
   type StripeEnv,
   createStripeClient,
   getStripeErrorMessage,
-  TIER_TO_PRICE,
+  CHECKOUT_PRICE_KEYS,
+  PRICE_TO_TIER,
 } from "@/lib/stripe.server";
 
 const envSchema = z.enum(["sandbox", "live"]);
-const tierSchema = z.enum(["foundation", "studio", "practice"]);
+const priceKeySchema = z.enum(CHECKOUT_PRICE_KEYS);
 
 type CheckoutResult = { clientSecret: string } | { error: string };
 type PortalResult = { url: string } | { error: string };
@@ -50,7 +51,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
       .object({
-        tier: tierSchema,
+        priceKey: priceKeySchema,
         returnUrl: z.string().url(),
         environment: envSchema,
       })
@@ -75,9 +76,10 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       if (!firm) return { error: "Firm not found" };
 
       const stripe = createStripeClient(data.environment);
-      const priceLookup = TIER_TO_PRICE[data.tier];
+      const priceLookup = data.priceKey;
+      const tier = PRICE_TO_TIER[priceLookup];
       const prices = await stripe.prices.list({ lookup_keys: [priceLookup] });
-      if (!prices.data.length) return { error: `Price not found for tier ${data.tier}` };
+      if (!prices.data.length) return { error: `Price not found: ${priceLookup}` };
       const price = prices.data[0];
 
       let customerId = firm.stripe_customer_id ?? undefined;
@@ -104,9 +106,9 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         return_url: data.returnUrl,
         customer: customerId,
         customer_update: { name: "auto", address: "auto" },
-        metadata: { firmId: firm.id, userId, tier: data.tier },
+        metadata: { firmId: firm.id, userId, tier, priceKey: priceLookup },
         subscription_data: {
-          metadata: { firmId: firm.id, userId, tier: data.tier },
+          metadata: { firmId: firm.id, userId, tier, priceKey: priceLookup },
           ...trialParam,
         },
         ...({ managed_payments: { enabled: true } } as any),
