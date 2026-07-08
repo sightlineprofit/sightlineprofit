@@ -6,11 +6,21 @@ import { toast } from "sonner";
 import { getBillingSummary, createBillingPortalSession } from "@/lib/billing.functions";
 import { getStripeEnvironment, paymentsConfigured } from "@/lib/stripe";
 import { StripeEmbeddedCheckoutPane } from "@/components/billing/StripeEmbeddedCheckout";
+import { CHECKOUT_PRICE_KEYS, type CheckoutPriceKey, type Tier } from "@/lib/stripe.server";
 
-type Tier = "foundation" | "studio" | "practice";
+type Plan = {
+  priceKey: CheckoutPriceKey;
+  tier: Tier;
+  name: string;
+  price: string;
+  blurb: string;
+  features: string[];
+  earlyAccess?: boolean;
+};
 
-const PLANS: { tier: Tier; name: string; price: string; blurb: string; features: string[] }[] = [
+const PLANS: Plan[] = [
   {
+    priceKey: "sightline_foundation_monthly",
     tier: "foundation",
     name: "Foundation",
     price: "$39/mo",
@@ -18,31 +28,55 @@ const PLANS: { tier: Tier; name: string; price: string; blurb: string; features:
     features: ["Firm financial dashboard", "Aligned hourly rate", "Budget vs actual", "Scenario planning"],
   },
   {
+    priceKey: "sightline_studio_monthly_v2",
     tier: "studio",
     name: "Studio",
-    price: "$89/mo",
+    price: "$79/mo",
     blurb: "Foundation plus time & utilization.",
     features: ["Mon–Sun time calendar", "Per-user & combined views", "Live utilization", "Everything in Foundation"],
   },
   {
+    priceKey: "sightline_practice_monthly_v2",
     tier: "practice",
     name: "Practice",
-    price: "$149/mo",
+    price: "$129/mo",
     blurb: "The full operating picture.",
     features: ["Project profitability", "SOP library", "Scope-creep in dollars", "Everything in Studio"],
   },
+  {
+    priceKey: "sightline_early_foundation_monthly",
+    tier: "foundation",
+    name: "Early Access — Foundation",
+    price: "$39/mo",
+    blurb: "Foundation features, price locked for life.",
+    features: ["Everything in Foundation", "Rate locked for the life of your subscription"],
+    earlyAccess: true,
+  },
+  {
+    priceKey: "sightline_early_practice_monthly",
+    tier: "practice",
+    name: "Early Access — Practice",
+    price: "$79/mo",
+    blurb: "Practice features at a founding-customer rate, locked for life.",
+    features: ["Everything in Practice", "Rate locked for the life of your subscription"],
+    earlyAccess: true,
+  },
 ];
+
+function isCheckoutPriceKey(v: unknown): v is CheckoutPriceKey {
+  return typeof v === "string" && (CHECKOUT_PRICE_KEYS as readonly string[]).includes(v);
+}
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Billing — Sightline" }] }),
-  validateSearch: (s: Record<string, unknown>) => ({
-    tier: (s.tier as Tier | undefined) ?? undefined,
+  validateSearch: (s: Record<string, unknown>): { priceKey?: CheckoutPriceKey } => ({
+    priceKey: isCheckoutPriceKey(s.priceKey) ? s.priceKey : undefined,
   }),
   component: BillingPage,
 });
 
 function BillingPage() {
-  const { tier: initialTier } = Route.useSearch();
+  const { priceKey: initialPriceKey } = Route.useSearch();
   const fetchSummary = useServerFn(getBillingSummary);
   const openPortal = useServerFn(createBillingPortalSession);
 
@@ -51,8 +85,14 @@ function BillingPage() {
     queryFn: () => fetchSummary(),
   });
 
-  const [checkoutTier, setCheckoutTier] = useState<Tier | null>(initialTier ?? null);
+  const [checkoutPriceKey, setCheckoutPriceKey] = useState<CheckoutPriceKey | null>(
+    initialPriceKey ?? null,
+  );
   const [portalPending, setPortalPending] = useState(false);
+
+  const checkoutPlan = checkoutPriceKey
+    ? PLANS.find((p) => p.priceKey === checkoutPriceKey) ?? null
+    : null;
 
   const configured = paymentsConfigured();
   const firm = summaryQ.data ?? null;
@@ -138,26 +178,26 @@ function BillingPage() {
         </div>
 
         {/* Checkout pane */}
-        {checkoutTier && configured && (
+        {checkoutPlan && configured && (
           <div className="mb-8 rounded-lg border border-border bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="font-display text-lg capitalize">Subscribe to {checkoutTier}</div>
+              <div className="font-display text-lg">Subscribe to {checkoutPlan.name}</div>
               <button
-                onClick={() => setCheckoutTier(null)}
+                onClick={() => setCheckoutPriceKey(null)}
                 className="text-sm text-ch/60 hover:text-ch"
               >
                 Cancel
               </button>
             </div>
             <StripeEmbeddedCheckoutPane
-              tier={checkoutTier}
+              priceKey={checkoutPlan.priceKey}
               returnUrl={`${window.location.origin}/billing?checkout=success`}
             />
           </div>
         )}
 
         {/* Plan cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-5">
           {PLANS.map((p) => {
             const isCurrent = currentTier === p.tier && hasSubscription;
             const cta = !hasSubscription
@@ -169,11 +209,20 @@ function BillingPage() {
                 : "Switch to this plan";
             return (
               <div
-                key={p.tier}
-                className={`flex flex-col rounded-lg border bg-white p-5 ${
-                  isCurrent ? "border-gold ring-1 ring-gold/30" : "border-border"
+                key={p.priceKey}
+                className={`relative flex flex-col rounded-lg border bg-white p-5 ${
+                  isCurrent
+                    ? "border-gold ring-1 ring-gold/30"
+                    : p.earlyAccess
+                      ? "border-gold/50"
+                      : "border-border"
                 }`}
               >
+                {p.earlyAccess && (
+                  <div className="mb-2 inline-flex w-fit items-center rounded-full bg-gold/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-gold">
+                    Early Access · locked for life
+                  </div>
+                )}
                 <div className="font-display text-xl">{p.name}</div>
                 <div className="mt-1 text-2xl">{p.price}</div>
                 <p className="mt-2 text-sm text-ch/70">{p.blurb}</p>
@@ -200,9 +249,11 @@ function BillingPage() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => setCheckoutTier(p.tier)}
+                    onClick={() => setCheckoutPriceKey(p.priceKey)}
                     disabled={!configured}
-                    className="mt-5 rounded-[4px] bg-gold px-4 py-2 text-[12px] font-medium text-white hover:bg-goldl disabled:opacity-50"
+                    className={`mt-5 rounded-[4px] px-4 py-2 text-[12px] font-medium text-white disabled:opacity-50 ${
+                      p.earlyAccess ? "bg-ch hover:opacity-90" : "bg-gold hover:bg-goldl"
+                    }`}
                   >
                     {cta}
                   </button>
