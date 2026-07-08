@@ -568,6 +568,7 @@ export type Database = {
       firms: {
         Row: {
           created_at: string
+          current_period_end: string | null
           data_status: string
           id: string
           is_demo: boolean
@@ -575,6 +576,7 @@ export type Database = {
           last_reset_at: string | null
           name: string
           owner_id: string
+          past_due_since: string | null
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
           subscription_status: Database["public"]["Enums"]["subscription_status"]
@@ -583,6 +585,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          current_period_end?: string | null
           data_status?: string
           id?: string
           is_demo?: boolean
@@ -590,6 +593,7 @@ export type Database = {
           last_reset_at?: string | null
           name: string
           owner_id: string
+          past_due_since?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           subscription_status?: Database["public"]["Enums"]["subscription_status"]
@@ -598,6 +602,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          current_period_end?: string | null
           data_status?: string
           id?: string
           is_demo?: boolean
@@ -605,6 +610,7 @@ export type Database = {
           last_reset_at?: string | null
           name?: string
           owner_id?: string
+          past_due_since?: string | null
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
           subscription_status?: Database["public"]["Enums"]["subscription_status"]
