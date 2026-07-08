@@ -89,6 +89,17 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
           email: profile.email ?? undefined,
           firmName: firm.name,
         });
+        // Persist immediately so we don't re-search Stripe on every retry
+        // while the webhook is still in flight.
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin
+            .from("firms")
+            .update({ stripe_customer_id: customerId })
+            .eq("id", firm.id);
+        } catch (e) {
+          console.warn("[createCheckoutSession] failed to cache customer id", e);
+        }
       }
 
       // Honour remaining trial time on new subscriptions.
@@ -105,7 +116,6 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         ui_mode: "embedded_page",
         return_url: data.returnUrl,
         customer: customerId,
-        customer_update: { name: "auto", address: "auto" },
         metadata: { firmId: firm.id, userId, tier, priceKey: priceLookup },
         subscription_data: {
           metadata: { firmId: firm.id, userId, tier, priceKey: priceLookup },
@@ -167,7 +177,7 @@ export const getBillingSummary = createServerFn({ method: "GET" })
     if (!profile?.firm_id) return null;
     const { data: firm } = await supabase
       .from("firms")
-      .select("id, name, subscription_tier, subscription_status, trial_ends_at, stripe_customer_id, stripe_subscription_id")
+      .select("id, name, subscription_tier, subscription_status, trial_ends_at, current_period_end, past_due_since, stripe_customer_id, stripe_subscription_id")
       .eq("id", profile.firm_id)
       .maybeSingle();
     return firm ?? null;

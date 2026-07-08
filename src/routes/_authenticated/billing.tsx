@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { getBillingSummary, createBillingPortalSession } from "@/lib/billing.functions";
 import { getStripeEnvironment, paymentsConfigured } from "@/lib/stripe";
 import { StripeEmbeddedCheckoutPane } from "@/components/billing/StripeEmbeddedCheckout";
@@ -79,11 +80,40 @@ function BillingPage() {
   const { priceKey: initialPriceKey } = Route.useSearch();
   const fetchSummary = useServerFn(getBillingSummary);
   const openPortal = useServerFn(createBillingPortalSession);
+  const queryClient = useQueryClient();
 
   const summaryQ = useQuery({
     queryKey: ["billing-summary"],
     queryFn: () => fetchSummary(),
   });
+
+  // After Stripe redirects back with ?checkout=success, poll for the webhook
+  // to catch up (usually <2s). Clean the URL when done.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") !== "success") return;
+    toast.success("Payment received — finalising your subscription…");
+    let tries = 0;
+    const maxTries = 8;
+    const interval = window.setInterval(async () => {
+      tries++;
+      const fresh = await queryClient.fetchQuery({
+        queryKey: ["billing-summary"],
+        queryFn: () => fetchSummary(),
+        staleTime: 0,
+      });
+      if (fresh?.stripe_subscription_id || tries >= maxTries) {
+        window.clearInterval(interval);
+        if (fresh?.stripe_subscription_id) toast.success("Subscription active.");
+        params.delete("checkout");
+        const q = params.toString();
+        window.history.replaceState({}, "", `/billing${q ? `?${q}` : ""}`);
+      }
+    }, 1500);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [checkoutPriceKey, setCheckoutPriceKey] = useState<CheckoutPriceKey | null>(
     initialPriceKey ?? null,

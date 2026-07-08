@@ -51,20 +51,38 @@ async function upsertFromSubscription(sub: any) {
   const status = normalizeStatus(sub.status);
   const item = sub?.items?.data?.[0];
   const periodEnd = item?.current_period_end ?? sub?.current_period_end;
+  const trialEnd = sub?.trial_end ?? null;
   const patch: {
     stripe_customer_id: string | null;
     stripe_subscription_id: string | null;
     subscription_status: SubStatus;
     subscription_tier?: "foundation" | "studio" | "practice";
-    trial_ends_at?: string;
+    trial_ends_at?: string | null;
+    current_period_end?: string | null;
+    past_due_since?: string | null;
   } = {
     stripe_customer_id: sub.customer ?? null,
     stripe_subscription_id: sub.id ?? null,
     subscription_status: status,
   };
   if (tier) patch.subscription_tier = tier;
-  if (periodEnd) patch.trial_ends_at = new Date(periodEnd * 1000).toISOString();
-  const { error } = await admin.from("firms").update(patch).eq("id", firmId);
+  // trial_ends_at reflects an ACTUAL trial from Stripe; clear it otherwise.
+  patch.trial_ends_at = trialEnd ? new Date(trialEnd * 1000).toISOString() : null;
+  if (periodEnd) patch.current_period_end = new Date(periodEnd * 1000).toISOString();
+  // Track when past_due started so the app can flip to read-only after 7 days.
+  if (status === "past_due") {
+    const { data: existing } = await admin
+      .from("firms")
+      .select("past_due_since, subscription_status")
+      .eq("id", firmId)
+      .maybeSingle();
+    if (!existing?.past_due_since || existing.subscription_status !== "past_due") {
+      patch.past_due_since = new Date().toISOString();
+    }
+  } else {
+    patch.past_due_since = null;
+  }
+  const { error } = await admin.from("firms").update(patch as any).eq("id", firmId);
   if (error) console.error("[stripe-webhook] firm update failed", error);
 }
 
@@ -72,9 +90,16 @@ async function markCanceled(sub: any) {
   const admin = await getAdmin();
   const firmId = await firmIdForSubscription(sub);
   if (!firmId) return;
+  // Keep current_period_end so the user retains grace access until it lapses.
+  const item = sub?.items?.data?.[0];
+  const periodEnd = item?.current_period_end ?? sub?.current_period_end;
   const { error } = await admin
     .from("firms")
-    .update({ subscription_status: "canceled" })
+    .update({
+      subscription_status: "canceled",
+      past_due_since: null,
+      ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
+    } as any)
     .eq("id", firmId);
   if (error) console.error("[stripe-webhook] cancel failed", error);
 }
@@ -83,10 +108,20 @@ async function markPastDue(invoice: any) {
   const subId = invoice?.subscription;
   if (!subId) return;
   const admin = await getAdmin();
+  // Only set past_due_since if not already set (first failure timestamp).
+  const { data: existing } = await admin
+    .from("firms")
+    .select("id, past_due_since")
+    .eq("stripe_subscription_id", subId)
+    .maybeSingle();
+  if (!existing) return;
   const { error } = await admin
     .from("firms")
-    .update({ subscription_status: "past_due" })
-    .eq("stripe_subscription_id", subId);
+    .update({
+      subscription_status: "past_due",
+      past_due_since: existing.past_due_since ?? new Date().toISOString(),
+    } as any)
+    .eq("id", existing.id);
   if (error) console.error("[stripe-webhook] past_due failed", error);
 }
 
