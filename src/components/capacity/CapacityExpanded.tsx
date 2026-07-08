@@ -47,6 +47,7 @@ export type CapacityExpandedData = {
   principal?: { id: string; name: string; target: number };
 };
 
+
 const TAB_KEY = "sightline:capacity-tab";
 
 export function CapacityExpanded({ data }: { data: CapacityExpandedData }) {
