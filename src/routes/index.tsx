@@ -782,7 +782,7 @@ function ActionTile() {
 /* ============ SOCIAL PROOF ============ */
 function SocialProof() {
   const stats = [
-    { n: "$611", l: "avg aligned rate revealed" },
+    { n: "$311", l: "avg aligned rate revealed" },
     { n: "$72k", l: "avg annual gap at $100/hr" },
     { n: "14 days", l: "free trial, full access" },
     { n: "5 min", l: "to see your aligned rate" },
