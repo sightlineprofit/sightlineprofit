@@ -389,7 +389,7 @@ function GrowthRoadmap() {
   const projection = useMemo(() => {
     return Array.from({ length: 8 }, (_, y) => ({
       year: y,
-      ...projectYear(y, proj, config, expenses, team),
+      ...projectYear(y, proj, config, expenses, team, ownerComp, teamBurdens),
     }));
   }, [proj, config, expenses, team]);
 
@@ -822,7 +822,7 @@ function GrowthRoadmap() {
             {growthScenarios.slice(0, 3).map((s) => {
               const rows = [0, 1, 2, 3].map((y) => ({
                 year: y,
-                ...projectYear(y, s.payload, config, expenses, team),
+                ...projectYear(y, s.payload, config, expenses, team, ownerComp, teamBurdens),
               }));
               return (
                 <div key={s.id} className="rounded-lg border border-border bg-white p-5">
