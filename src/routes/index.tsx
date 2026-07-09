@@ -708,7 +708,7 @@ function ActionTile() {
       bg: "#C4714A",
       color: "#E08060",
       n: "1",
-      text: "Raise your rate to $360/hr on your next new client proposal",
+      text: "Raise your rate to $311/hr on your next new client proposal",
     },
     {
       bg: C.gold,
