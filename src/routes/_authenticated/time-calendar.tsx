@@ -764,10 +764,10 @@ function DayFooters({ days, entries, myId }: { days: Date[]; entries: Entry[]; m
 
 // ───────── day view ─────────
 function DayView({
-  day, weekDays, setDay, entries, projects, ags, onCellClick, onEntryClick, onDuplicate,
+  day, weekDays, setDay, entries, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
 }: {
   day: Date; weekDays: Date[]; setDay: (d: Date) => void;
-  entries: Entry[]; projects: Project[]; ags: Ag[];
+  entries: Entry[]; projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (hour: number) => void;
   onEntryClick: (e: Entry) => void;
   onDuplicate: (e: Entry) => void;
@@ -801,6 +801,7 @@ function DayView({
           myId={entries[0]?.user_id || ""}
           projects={projects}
           ags={ags}
+          activityTypes={activityTypes}
           onCellClick={(_d, h) => onCellClick(h)}
           onEntryClick={onEntryClick}
           onDuplicate={onDuplicate}
@@ -814,10 +815,10 @@ function DayView({
 type TeamMode = "overview" | "calendar";
 
 function TeamView({
-  days, entries, team, projects, ags, onEntryClick,
+  days, entries, team, projects, ags, activityTypes, onEntryClick,
 }: {
   days: Date[]; entries: Entry[]; team: Member[];
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onEntryClick: (e: Entry) => void;
 }) {
   const [mode, setMode] = useState<TeamMode>("overview");
@@ -921,6 +922,7 @@ function TeamView({
           team={team}
           projects={projects}
           ags={ags}
+          activityTypes={activityTypes}
           memberFilter={memberFilter}
           onEntryClick={onEntryClick}
         />
@@ -967,15 +969,16 @@ function TeamView({
 
 // ───────── team calendar grid ─────────
 function TeamCalendarGrid({
-  days, entries, team, projects, ags, memberFilter, onEntryClick,
+  days, entries, team, projects, ags, activityTypes, memberFilter, onEntryClick,
 }: {
   days: Date[]; entries: Entry[]; team: Member[];
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   memberFilter: string;
   onEntryClick: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const atName = (id: string | null) => activityTypes.find((a) => a.id === id)?.name;
   const memberOf = (id: string) => team.find((m) => m.id === id);
 
   const visibleMembers = memberFilter === "all" ? team : team.filter((m) => m.id === memberFilter);
@@ -1021,7 +1024,7 @@ function TeamCalendarGrid({
                 const widthPct = 100 / subCount;
                 const leftPct = idx * widthPct;
                 const proj = project(e.project_id);
-                const activity = agName(e.activity_group_id);
+                const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
                 const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
                 const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
                 const memberName = (member?.name || member?.email || "").split(" ")[0];
