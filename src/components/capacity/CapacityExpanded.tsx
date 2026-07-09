@@ -466,10 +466,42 @@ function ProspectsSection({
   );
 }
 
-export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
+export function WeeklyPressureChart({
+  weeks, target, milestones = [],
+}: {
+  weeks: CapacitySummary["weeks"];
+  target: number;
+  milestones?: MilestoneRow[];
+}) {
   const maxH = Math.max(target * 1.6, 1);
+  const windowStart = weeks[0]?.weekStart.getTime() ?? 0;
+  const windowEnd = weeks.length ? weeks[weeks.length - 1].weekStart.getTime() + 7 * 86400000 : 0;
+  const totalSpan = windowEnd - windowStart;
+  const inWindow = milestones.filter((m) => {
+    const t = new Date(m.milestone_date + "T00:00:00").getTime();
+    return t >= windowStart && t <= windowEnd;
+  });
   return (
     <div className="mt-3">
+      {/* Milestone markers row (above bars) */}
+      {inWindow.length > 0 && totalSpan > 0 && (
+        <div className="relative mb-1 h-4">
+          {inWindow.map((m, i) => {
+            const t = new Date(m.milestone_date + "T00:00:00").getTime();
+            const leftPct = ((t - windowStart) / totalSpan) * 100;
+            return (
+              <div
+                key={m.id + i}
+                className="absolute -translate-x-1/2"
+                style={{ left: `${leftPct}%`, top: 0 }}
+                title={`${m.label} · ${m.milestone_date}`}
+              >
+                <div className="whitespace-nowrap text-[8px]" style={{ color: "#777" }}>{m.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div
         className="relative w-full"
         style={{ height: 88, background: "#F0EBE1", borderRadius: 3, overflow: "hidden" }}
@@ -484,6 +516,22 @@ export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary[
             }}
           />
         )}
+        {/* milestone diamonds anchored to chart top */}
+        {inWindow.map((m, i) => {
+          const t = new Date(m.milestone_date + "T00:00:00").getTime();
+          const leftPct = ((t - windowStart) / totalSpan) * 100;
+          return (
+            <div
+              key={"d" + m.id + i}
+              className="absolute"
+              style={{
+                left: `${leftPct}%`, top: 2,
+                transform: "translateX(-50%) rotate(45deg)",
+                width: 8, height: 8, background: "#B8860B",
+              }}
+            />
+          );
+        })}
         <div className="flex items-end gap-[2px] px-[6px] pb-[6px] h-full">
           {weeks.map((w, i) => {
             const cHeight = (Math.min(w.committed, maxH) / maxH) * 82;
@@ -495,7 +543,10 @@ export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary[
                   : "#5C8A6E";
             return (
               <div key={i} className="flex flex-1 flex-col justify-end">
-                <div style={{ height: cHeight, background: color }} />
+                <div
+                  style={{ height: cHeight, background: color, opacity: w.fromActual ? 1 : 0.85 }}
+                  title={`${w.committed.toFixed(1)} hrs${w.fromActual ? " (logged)" : " (est.)"}`}
+                />
               </div>
             );
           })}
