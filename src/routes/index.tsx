@@ -597,7 +597,7 @@ function RatePanel() {
             position: "absolute",
             left: 0,
             top: 0,
-            width: "41%",
+            width: "56%",
             height: 6,
             background: "rgba(196,113,74,0.4)",
             borderRadius: 3,
@@ -606,7 +606,7 @@ function RatePanel() {
         <div
           style={{
             position: "absolute",
-            left: "41%",
+            left: "56%",
             top: -3,
             width: 2,
             height: 12,
