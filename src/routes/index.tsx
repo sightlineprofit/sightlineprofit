@@ -998,9 +998,10 @@ function Problem({ isMobile }: { isMobile: boolean }) {
               iconBg="rgba(44,44,44,0.06)"
               icon={
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3,14 8,9 11,12 17,5" />
-                  <polyline points="12,5 17,5 17,10" />
-                  <line x1="2.5" y1="17.5" x2="17.5" y2="17.5" />
+                  <circle cx="8" cy="7" r="2.5" />
+                  <path d="M3 16.5c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5" />
+                  <line x1="15.5" y1="6" x2="15.5" y2="11" />
+                  <line x1="13" y1="8.5" x2="18" y2="8.5" />
                 </svg>
               }
               title="Growth decisions made without the numbers"
