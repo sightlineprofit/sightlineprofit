@@ -1140,6 +1140,24 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
 
         {/* ============ OVERVIEW ============ */}
         <TabsContent value="overview" className="mt-6 space-y-6">
+          {showOnboardHint && !hintDismissed && (
+            <div
+              className="flex items-start justify-between gap-3 rounded-md border-l-2 border-l-[#5C8A6E] py-2 pl-3 pr-2"
+              style={{ backgroundColor: "rgba(92,138,110,0.07)" }}
+            >
+              <p className="text-[13px] font-body" style={{ color: "#6B6259" }}>
+                Your project is set up. Start logging time to track margin in real time.
+              </p>
+              <button
+                type="button"
+                onClick={dismissHint}
+                aria-label="Dismiss"
+                className="shrink-0 rounded p-1 text-ch/50 hover:text-ch"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {!hasExplicitRate && (
             <div className="rounded-lg border border-gold/40 bg-goldp/40 p-4 text-sm text-ch/80">
               Add a project rate to see profitability figures. This is the hourly rate agreed with this client.
