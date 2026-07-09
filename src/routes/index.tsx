@@ -720,7 +720,7 @@ function ActionTile() {
       bg: "rgba(255,255,255,0.07)",
       color: "rgba(255,255,255,0.5)",
       n: "3",
-      text: "Calculate what last 3 projects earned at $360/hr",
+      text: "Calculate what last 3 projects earned at $311/hr",
     },
   ];
   return (
