@@ -514,12 +514,59 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
       fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
       start_date: z.string().optional().nullable(),
       end_date: z.string().optional().nullable(),
+      est_weekly_hrs: z.number().min(0).max(200).optional().nullable(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { id, ...patch } = data;
     const { error } = await supabase.from("projects").update(patch).eq("id", id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---- Milestones ------------------------------------------------------------
+
+export const saveProjectMilestone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid().optional(),
+      project_id: z.string().uuid(),
+      label: z.string().trim().min(1).max(120),
+      milestone_date: z.string().min(4),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (data.id) {
+      const { error } = await supabase.from("project_milestones")
+        .update({ label: data.label, milestone_date: data.milestone_date })
+        .eq("id", data.id);
+      if (error) throw new Error(error.message);
+      return { id: data.id };
+    }
+    const { data: row, error } = await supabase.from("project_milestones")
+      .insert({
+        project_id: data.project_id,
+        firm_id: profile.firm_id,
+        label: data.label,
+        milestone_date: data.milestone_date,
+      })
+      .select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: row.id };
+  });
+
+export const deleteProjectMilestone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("project_milestones").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
