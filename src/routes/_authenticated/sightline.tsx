@@ -105,36 +105,11 @@ function SightlinePage() {
 function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const getList = useServerFn(getProjectList);
   const qc = useQueryClient();
-  const createFn = useServerFn(createProject);
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"health" | "margin_desc" | "margin_asc" | "recent" | "name">("health");
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
-
-  async function submitCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft.name.trim()) return;
-    try {
-      const res = await createFn({
-        data: {
-          name: draft.name.trim(),
-          client_name: draft.client_name.trim() || null,
-          status: "active",
-          scoped_rate: draft.scoped_rate ? Number(draft.scoped_rate) : null,
-          fixed_fee: draft.fixed_fee ? Number(draft.fixed_fee) : null,
-        },
-      });
-      toast.success("Project created");
-      setDraft({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
-      setCreating(false);
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-      onOpen(res.id);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    }
-  }
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -161,37 +136,11 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       title="Sightline"
       description="Project profitability, finally answered."
       actions={
-        <Button onClick={() => setCreating((v) => !v)} className="bg-gold text-white hover:bg-goldl">
-          {creating ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New project</>}
+        <Button onClick={() => setWizardOpen(true)} className="bg-gold text-white hover:bg-goldl">
+          <Plus className="mr-1.5 h-4 w-4" /> New project
         </Button>
       }
     >
-      {creating && (
-        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-start gap-3 rounded-lg border border-border bg-white p-4">
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
-            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus required />
-          </div>
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
-            <Input value={draft.client_name} onChange={(e) => setDraft({ ...draft, client_name: e.target.value })} />
-          </div>
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Hourly project rate</label>
-            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder="$250" />
-            <p className="mt-1 text-[11px] text-ch/50">The rate per hour agreed with this client — not the total project fee.</p>
-          </div>
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Fixed project fee $ (optional)</label>
-            <Input type="number" min={0} step="any" value={draft.fixed_fee} onChange={(e) => setDraft({ ...draft, fixed_fee: e.target.value })} placeholder="$25,000" />
-            <p className="mt-1 text-[11px] text-ch/50">If this is a fixed-fee project, enter the total. Leave blank if billing hourly.</p>
-          </div>
-          <div className="col-span-12 flex justify-end">
-            <Button type="submit" className="bg-ch text-cream hover:bg-ch/90">Create project</Button>
-          </div>
-        </form>
-      )}
-
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Input
           value={search}
@@ -237,11 +186,9 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
             Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library.
           </p>
-          {!creating && (
-            <Button onClick={() => setCreating(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
-              <Plus className="mr-1.5 h-4 w-4" /> Create project
-            </Button>
-          )}
+          <Button onClick={() => setWizardOpen(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
+            <Plus className="mr-1.5 h-4 w-4" /> Create project
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -250,6 +197,14 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           })}
         </div>
       )}
+      <ProjectSetupWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onCreated={(projectId) => {
+          qc.invalidateQueries({ queryKey: ["sightline-list"] });
+          onOpen(projectId);
+        }}
+      />
     </ModulePage>
   );
 }
