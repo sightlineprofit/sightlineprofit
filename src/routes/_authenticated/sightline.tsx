@@ -1247,6 +1247,119 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             </dl>
           </div>
 
+          {/* ESTIMATED TIMELINE CARD */}
+          <div className="rounded-lg border border-border bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-xl tracking-tight text-ch">Estimated timeline</h3>
+                <p className="mt-1 text-[13px] font-medium" style={{ fontFamily: "Jost, sans-serif", color: "#2C2C2C", fontWeight: 500 }}>
+                  When is the bulk of work happening on this project?
+                </p>
+              </div>
+              {isAdmin && (
+                <Button variant="outline" size="sm" onClick={openMetaEdit}>Edit dates</Button>
+              )}
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Work begins</dt>
+                <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Work wraps</dt>
+                <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Est. weekly hrs</dt>
+                <dd className="mt-0.5 text-ch">
+                  {project.est_weekly_hrs != null
+                    ? `${Number(project.est_weekly_hrs).toFixed(1)} / wk`
+                    : (project.start_date && project.end_date && scopedHrs
+                        ? (() => {
+                            const w = Math.max(1, Math.round((new Date(project.end_date).getTime() - new Date(project.start_date).getTime()) / (7 * 86400000)) + 1);
+                            return `${(scopedHrs / w).toFixed(1)} / wk (auto)`;
+                          })()
+                        : "—")}
+                </dd>
+              </div>
+            </dl>
+
+            {/* Milestones */}
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Milestones</h4>
+              </div>
+              {milestones.length === 0 ? (
+                <p className="mt-2 text-[12px] text-ch/50">No milestones yet. Add one below (e.g. Install, Reveal).</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-border">
+                  {milestones.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <div>
+                        <div className="text-ch">{m.label}</div>
+                        <div className="text-[11px] text-ch/50">{m.milestone_date}</div>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-ch/50 hover:text-terra"
+                          onClick={async () => {
+                            try {
+                              await deleteMilestoneFn({ data: { id: m.id } });
+                              toast.success("Milestone removed");
+                              invalidate();
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : "Failed");
+                            }
+                          }}
+                        >Remove</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {isAdmin && (
+                <form
+                  className="mt-3 grid grid-cols-12 gap-2"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!msLabel.trim() || !msDate) return;
+                    try {
+                      await saveMilestoneFn({
+                        data: { project_id: id, label: msLabel.trim(), milestone_date: msDate },
+                      });
+                      setMsLabel(""); setMsDate("");
+                      toast.success("Milestone added");
+                      invalidate();
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed");
+                    }
+                  }}
+                >
+                  <Input
+                    className="col-span-6"
+                    placeholder="Label (e.g. Install, Reveal)"
+                    value={msLabel}
+                    onChange={(e) => setMsLabel(e.target.value)}
+                  />
+                  <Input
+                    className="col-span-4"
+                    type="date"
+                    value={msDate}
+                    onChange={(e) => setMsDate(e.target.value)}
+                  />
+                  <Button
+                    type="submit"
+                    className="col-span-2 bg-ch text-cream hover:bg-ch/90"
+                    disabled={!msLabel.trim() || !msDate}
+                  >
+                    + Add
+                  </Button>
+                </form>
+              )}
+            </div>
+          </div>
+
           {/* FINANCIAL CHANGE HISTORY (principal-only, hidden if empty) */}
           {isPrincipal && audit.length > 0 && (
             <Collapsible>
