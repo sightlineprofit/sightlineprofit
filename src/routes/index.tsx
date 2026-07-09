@@ -1183,11 +1183,11 @@ function FeatureBlock({
 
 function BuildingStackVisual() {
   const blocks = [
-    { h: 44, bg: "#8B6914", label: "Margin", amt: "+$257/hr" },
-    { h: 50, bg: "#C4714A", label: "Billable hours", amt: "730/yr" },
-    { h: 44, bg: "#3D4A3F", label: "Team cost", amt: "$74k/yr" },
-    { h: 40, bg: "#4A3F35", label: "Operating expenses", amt: "$53k/yr" },
-    { h: 52, bg: "#2C2C2C", label: "Owner compensation", amt: "$137k/yr" },
+    { h: 44, bg: "#8B6914", label: "Margin", amt: "+$69/hr" },
+    { h: 50, bg: "#C4714A", label: "Billable hours", amt: "720/yr" },
+    { h: 44, bg: "#3D4A3F", label: "Team cost", amt: "$64k/yr" },
+    { h: 40, bg: "#4A3F35", label: "Operating expenses", amt: "$28k/yr" },
+    { h: 52, bg: "#2C2C2C", label: "Owner compensation", amt: "$82k/yr" },
   ];
   return (
     <VisualShell>
