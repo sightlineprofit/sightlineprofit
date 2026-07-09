@@ -234,6 +234,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         ytdHoursByUser,
         lastEntryByUser,
         weeksElapsed,
+        milestones: projectMilestones ?? [],
       },
     };
   });
