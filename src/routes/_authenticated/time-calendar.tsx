@@ -217,7 +217,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
             <p className="text-ch/55">Loading…</p>
           ) : view === "week" ? (
             <WeekView
-              days={days} entries={entries} myId={me?.id || ""} projects={projects} ags={ags}
+              days={days} entries={entries} myId={me?.id || ""} projects={projects} ags={ags} activityTypes={activityTypes}
               onCellClick={(date, hour) => setModal({
                 date: isoDate(date), start_time: hourToTime(hour), end_time: hourToTime(hour + 1),
                 billable: true,
@@ -230,16 +230,18 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
                 billable: e.billable,
                 notes: e.notes,
+                description: e.description,
                 project_id: e.project_id,
                 project_phase_id: e.project_phase_id,
                 activity_group_id: e.activity_group_id,
+                activity_type_id: e.activity_type_id,
               })}
             />
           ) : view === "day" ? (
             <DayView
               day={activeDay} weekDays={days} setDay={setActiveDay}
               entries={entries.filter((e) => e.date === isoDate(activeDay))}
-              projects={projects} ags={ags}
+              projects={projects} ags={ags} activityTypes={activityTypes}
               onCellClick={(hour) => setModal({
                 date: isoDate(activeDay), start_time: hourToTime(hour), end_time: hourToTime(hour + 1),
                 billable: true,
@@ -252,9 +254,11 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
                 billable: e.billable,
                 notes: e.notes,
+                description: e.description,
                 project_id: e.project_id,
                 project_phase_id: e.project_phase_id,
                 activity_group_id: e.activity_group_id,
+                activity_type_id: e.activity_type_id,
               })}
             />
           ) : (
@@ -264,6 +268,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               team={team}
               projects={projects}
               ags={ags}
+              activityTypes={activityTypes}
               onEntryClick={(e) => setModal(e)}
             />
           )}
@@ -289,6 +294,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
             projects={projects}
             phases={phases}
             ags={ags}
+            activityTypes={activityTypes}
             team={team}
             isAdmin={isAdmin}
             meId={me?.id || ""}
@@ -316,6 +322,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               projects={projects}
               phases={phases}
               ags={ags}
+              activityTypes={activityTypes}
               team={team}
               isAdmin={isAdmin}
               meId={me?.id || ""}
