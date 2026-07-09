@@ -172,12 +172,11 @@ function Nav({ isMobile }: { isMobile: boolean }) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
           textDecoration: "none",
           color: C.charcoal,
         }}
       >
-        <LogoMark />
         <span
           style={{
             fontFamily: FONT_DISPLAY,
@@ -187,6 +186,18 @@ function Nav({ isMobile }: { isMobile: boolean }) {
           }}
         >
           Sightline
+        </span>
+        <span
+          style={{
+            fontFamily: FONT_SANS,
+            fontSize: 10,
+            fontWeight: 500,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: C.mutedLight,
+          }}
+        >
+          by Propos'Ability
         </span>
       </Link>
 
