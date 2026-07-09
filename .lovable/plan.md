@@ -1,35 +1,30 @@
-## What's actually built vs. what's missing
+## Root cause
 
-The database migration ran — `activity_types` has 30 seeded rows across firms (Internal Admin, Business Development, Client Meeting Prep, Onsite Visit, Team Meeting, Uncategorized), and `time_entries` has `activity_type_id` + `description` columns. **But none of the app code was wired to any of it.** The quick-log form and calendar still use the older per-firm `activity_groups` picker and have no description input.
+The initial migration `20260708233522_...sql` defines `seed_firm_activity_types(firm_id)` and runs it once inside a `DO` block against every firm that existed at migration time. Nothing runs it for firms created afterwards:
 
-## Fix — Phase A only (the two items you asked about)
+- No `AFTER INSERT` trigger on `public.firms`.
+- No call inside `handle_new_user()` or any signup / firm-creation server function.
 
-Scope: wire the seeded defaults into the picker and add the description field. Settings CRUD, Uncategorized-reassignment banner, and annual-breakdown visualizations from the earlier spec are **not** part of this plan — flag as follow-ups.
+Lofty Designs, LLC was created on 2026-07-09 (migration ran 2026-07-08), so its `activity_types` row count is 0 and the quick-log picker shows nothing. A DB check confirms Lofty is currently the only affected firm, but the same gap will hit every future firm.
 
-### 1. `src/lib/time.functions.ts`
-- `getTimeCalendarData`: also fetch `activity_types` for the firm (ordered by `sort_order`, name), return as `activityTypes`.
-- `saveTimeEntry` schema: accept `activity_type_id: z.string().uuid().nullable().optional()` and `description: z.string().max(500).nullable().optional()`; pass both to the insert/update (the DB columns already exist).
+## Fix (one migration)
 
-### 2. `src/routes/_authenticated/time-calendar.tsx`
-- Type: add `activity_type_id: string | null` and `description: string | null` to the local `Entry` type; add an `ActivityType` type list alongside `Ag`.
-- `EntryForm`:
-  - Replace the "Activity" `<Select>` options source from `ags` → `activityTypes`, using `activity_type_id` state (`atId`).
-  - Auto-set `billable` to the picked activity's `is_billable` when the user changes activity (don't override manual toggles after that).
-  - Add a **Description** single-line input above/below Notes (`maxLength=500`, placeholder like "What did you work on?"), shown in both compact quick-log and full dialog modes.
-  - Send `activity_type_id` + `description` in the `saveFn` call; drop `activity_group_id`.
-- Calendar tooltips / list rows (`agName(e.activity_group_id)` at ~423 and ~1011): resolve the label from `activityTypes` by `activity_type_id`, fall back to legacy `activity_group_id` for the two existing rows so nothing disappears.
+1. Backfill any firm missing seeded activities:
+   ```sql
+   DO $$
+   DECLARE r record;
+   BEGIN
+     FOR r IN SELECT id FROM public.firms f
+              WHERE NOT EXISTS (SELECT 1 FROM public.activity_types a WHERE a.firm_id = f.id)
+     LOOP PERFORM public.seed_firm_activity_types(r.id); END LOOP;
+   END $$;
+   ```
+2. Add an `AFTER INSERT` trigger on `public.firms` that calls `seed_firm_activity_types(NEW.id)` so every future firm gets the six defaults automatically (Internal Admin, Business Development, Client Meeting Prep, Onsite Visit, Team Meeting, Uncategorized).
 
-### 3. Legacy `activity_groups` picker
-Leave the table + 5 rows in place (2 legacy entries reference them). Only the picker source changes. No migration needed.
+No app code changes needed — the picker in `time-calendar.tsx` and `getCalendarData` in `time.functions.ts` already read from `activity_types` scoped by `firm_id`; they just had nothing to return for Lofty.
 
-### Verification
-- Quick-log form shows the six seeded activities by default with a colored dot.
-- Selecting "Business Development" flips billable off automatically; "Client Meeting Prep" flips it on.
-- Description text saves and re-renders on the entry after page reload; visible in the full edit dialog.
-- Existing legacy entries with `activity_group_id` still show their old label in the calendar list.
+## Verification
 
-## Not in this plan (still outstanding from the earlier spec)
-- Settings → Activity types CRUD (reorder, edit, delete-with-reassign, Uncategorized banner).
-- Firm-as-project auto-assignment for non-billable entries.
-- Annual-picture per-member + firm-wide activity breakdown bars.
-Call these out separately once Phase A is verified.
+- Re-query `activity_types` for Lofty's firm id → 6 rows.
+- Open Time Calendar as a Lofty user → activity picker lists the six defaults with color dots and billable flags.
+- Create a throwaway new firm → confirm the trigger seeds it immediately.
