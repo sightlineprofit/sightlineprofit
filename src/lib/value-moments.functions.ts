@@ -34,16 +34,29 @@ export const getProjectCloseSummary = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
-    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: expenses }] =
-      await Promise.all([
-        supabase.from("projects").select("*").eq("id", data.projectId).eq("firm_id", profile.firm_id).single(),
-        supabase.from("project_phases").select("*").eq("project_id", data.projectId),
-        supabase.from("time_entries").select("hrs, billable").eq("project_id", data.projectId),
-        supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
-        supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
-      ]);
+    const [
+      { data: project }, { data: phases }, { data: entries },
+      { data: config }, { data: expenses },
+      { data: ownerComp }, { data: teamBurdens },
+    ] = await Promise.all([
+      supabase.from("projects").select("*").eq("id", data.projectId).eq("firm_id", profile.firm_id).single(),
+      supabase.from("project_phases").select("*").eq("project_id", data.projectId),
+      supabase.from("time_entries").select("hrs, billable").eq("project_id", data.projectId),
+      supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+      supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
+      supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
+      supabase
+        .from("firm_members")
+        .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+        .eq("firm_id", profile.firm_id)
+        .eq("is_active", true)
+        .neq("role_type", "principal"),
+    ]);
     if (!project) throw new Error("Project not found");
-    const fc = calc((config as any) ?? null, (expenses as any[]) ?? []);
+    const fc = calc((config as any) ?? null, (expenses as any[]) ?? [], {
+      ownerComp: (ownerComp as any) ?? [],
+      teamProfiles: (teamBurdens as any) ?? [],
+    });
     const scopedHrs = (phases ?? []).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
     const actualHrs = (entries ?? []).reduce((s, e) => s + Number(e.hrs || 0), 0);
     const isFixedFee = Number(project.fixed_fee || 0) > 0;
@@ -88,16 +101,29 @@ export const getAnnualSummary = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
-    const [{ data: firm }, { data: config }, { data: expenses }, { data: projects }, { data: phases }, { data: entries }] =
-      await Promise.all([
-        supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
-        supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
-        supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
-        supabase.from("projects").select("*").eq("firm_id", profile.firm_id),
-        supabase.from("project_phases").select("*"),
-        supabase.from("time_entries").select("hrs, billable, date, project_id").eq("firm_id", profile.firm_id),
-      ]);
-    const fc = calc((config as any) ?? null, (expenses as any[]) ?? []);
+    const [
+      { data: firm }, { data: config }, { data: expenses },
+      { data: projects }, { data: phases }, { data: entries },
+      { data: ownerComp }, { data: teamBurdens },
+    ] = await Promise.all([
+      supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
+      supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+      supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
+      supabase.from("projects").select("*").eq("firm_id", profile.firm_id),
+      supabase.from("project_phases").select("*"),
+      supabase.from("time_entries").select("hrs, billable, date, project_id").eq("firm_id", profile.firm_id),
+      supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
+      supabase
+        .from("firm_members")
+        .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+        .eq("firm_id", profile.firm_id)
+        .eq("is_active", true)
+        .neq("role_type", "principal"),
+    ]);
+    const fc = calc((config as any) ?? null, (expenses as any[]) ?? [], {
+      ownerComp: (ownerComp as any) ?? [],
+      teamProfiles: (teamBurdens as any) ?? [],
+    });
 
     // Capture aligned_rate_at_signup lazily if not yet set.
     const cfg = (config as any) ?? {};

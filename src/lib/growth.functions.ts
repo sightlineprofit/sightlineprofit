@@ -17,6 +17,7 @@ export const getGrowthData = createServerFn({ method: "GET" })
         scenarios: [], windowWeeks: 12, weeklyBuckets: [],
         completedProjects: [], completedPhases: [],
         projectStartLag: [], projectFlow: { started: 0, completed: 0 },
+        ownerComp: [], teamBurdens: [],
       };
     }
     const windowWeeks = 12;
@@ -41,6 +42,7 @@ export const getGrowthData = createServerFn({ method: "GET" })
       { data: entries }, { data: scenarios },
       { data: completedProjectsRaw }, { data: completedPhasesRaw },
       { data: projectsAllRecent }, { data: firstEntriesRaw },
+      { data: ownerComp }, { data: teamBurdens },
     ] =
       await Promise.all([
         supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -84,6 +86,13 @@ export const getGrowthData = createServerFn({ method: "GET" })
           .eq("firm_id", profile.firm_id)
           .not("project_id", "is", null)
           .gte("date", since6moIso),
+        supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
+        supabase
+          .from("firm_members")
+          .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+          .eq("firm_id", profile.firm_id)
+          .eq("is_active", true)
+          .neq("role_type", "principal"),
       ]);
 
     const usageByUser: Record<string, { billable: number; total: number }> = {};
@@ -200,6 +209,7 @@ export const getGrowthData = createServerFn({ method: "GET" })
       config, expenses: expenses ?? [], team: team ?? [], pipeline: pipeline ?? [],
       usageByUser, scenarios: scenarios ?? [], windowWeeks, weeklyBuckets,
       completedProjects, completedPhases, projectStartLag, projectFlow: flow,
+      ownerComp: ownerComp ?? [], teamBurdens: teamBurdens ?? [],
     };
   });
 

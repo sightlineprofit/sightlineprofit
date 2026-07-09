@@ -16,7 +16,14 @@ export const Route = createFileRoute("/_authenticated/dashboard/bva")({
 function Page() {
   const fn = useServerFn(getDashboardData);
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fn() });
-  const c = useMemo(() => calc(data?.config ?? null, data?.expenses ?? []), [data]);
+  const c = useMemo(
+    () =>
+      calc(data?.config ?? null, data?.expenses ?? [], {
+        ownerComp: (data as any)?.ownerComp ?? [],
+        teamProfiles: (data as any)?.teamBurdens ?? [],
+      }),
+    [data],
+  );
   const firmId = data?.firm?.id as string | undefined;
   useRealtimeInvalidate(
     `dashboard-bva-${firmId ?? "none"}`,

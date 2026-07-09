@@ -154,6 +154,8 @@ function projectYear(
   baseConfig: FirmConfig | null,
   expenses: Expense[],
   baseTeam: TeamMember[],
+  ownerComp: unknown[] = [],
+  teamBurdens: unknown[] = [],
 ) {
   const billedRate = inputs.billedRate * Math.pow(1 + inputs.rateIncreasePct / 100, year);
   // capacity = sum(expected_hrs_per_week * utilization%) * weeks
@@ -182,7 +184,10 @@ function projectYear(
   const annualRevenue = billedRate * annualBillableHrs;
 
   // Cost floor: scale base + add hire cost
-  const baseCalc = calc(baseConfig, expenses, {});
+  const baseCalc = calc(baseConfig, expenses, {
+    ownerComp: ownerComp as any,
+    teamProfiles: teamBurdens as any,
+  });
   const baseAnnualCost = baseCalc.totalCost * Math.pow(1 + inputs.expenseGrowthPct / 100, year);
   const annualCost = baseAnnualCost + extraHireAnnualCost;
   const grossMargin = annualRevenue - annualCost;
@@ -258,15 +263,29 @@ function GrowthRoadmap() {
     rampWeeks: 12,
   });
 
-  const baseCalc = useMemo(() => calc(config, expenses, {}), [config, expenses]);
+  const ownerComp = ((data as any)?.ownerComp ?? []) as unknown[];
+  const teamBurdens = ((data as any)?.teamBurdens ?? []) as unknown[];
+  const baseCalc = useMemo(
+    () =>
+      calc(config, expenses, {
+        ownerComp: ownerComp as any,
+        teamProfiles: teamBurdens as any,
+      }),
+    [config, expenses, ownerComp, teamBurdens],
+  );
   const hireAnnualCost = hire.salary * (1 + hire.benefitsPct / 100);
   const hireWeeklyCost = hireAnnualCost / WEEKS_DEFAULT;
   const hireBillableHrsAnnual = hire.expectedHrsPerWeek * (hire.billablePct / 100) * WEEKS_DEFAULT;
 
   // Aligned rate after hire (recompute base calc treating hire cost as extra recurring)
   const calcAfterHire = useMemo(
-    () => calc(config, expenses, { extraRecurringAnnual: hireAnnualCost }),
-    [config, expenses, hireAnnualCost],
+    () =>
+      calc(config, expenses, {
+        extraRecurringAnnual: hireAnnualCost,
+        ownerComp: ownerComp as any,
+        teamProfiles: teamBurdens as any,
+      }),
+    [config, expenses, hireAnnualCost, ownerComp, teamBurdens],
   );
   const monthsRunway = baseCalc.grossProfit > 0 ? (baseCalc.grossProfit / hireAnnualCost) * 12 : 0;
   const revenueNeeded = hireAnnualCost / Math.max(0.0001, (Number(config?.target_gross_margin_pct) || 50) / 100);
@@ -370,7 +389,7 @@ function GrowthRoadmap() {
   const projection = useMemo(() => {
     return Array.from({ length: 8 }, (_, y) => ({
       year: y,
-      ...projectYear(y, proj, config, expenses, team),
+      ...projectYear(y, proj, config, expenses, team, ownerComp, teamBurdens),
     }));
   }, [proj, config, expenses, team]);
 
@@ -803,7 +822,7 @@ function GrowthRoadmap() {
             {growthScenarios.slice(0, 3).map((s) => {
               const rows = [0, 1, 2, 3].map((y) => ({
                 year: y,
-                ...projectYear(y, s.payload, config, expenses, team),
+                ...projectYear(y, s.payload, config, expenses, team, ownerComp, teamBurdens),
               }));
               return (
                 <div key={s.id} className="rounded-lg border border-border bg-white p-5">
