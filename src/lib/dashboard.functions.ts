@@ -58,6 +58,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: teamBurdens },
       { data: ytdEntries },
       { data: memberLastEntries },
+      { data: projectMilestones },
     ] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -134,7 +135,6 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .select("id, project_id, label, milestone_date")
         .eq("firm_id", profile.firm_id),
     ]);
-    const milestones = (arguments[0] as any); // placeholder — actual destructure below
 
     const isBD = (status: string | null | undefined) =>
       status === "pursuit" || status === "pipeline";
