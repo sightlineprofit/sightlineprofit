@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { useNavigate } from "@tanstack/react-router";
+import { X as XIcon } from "lucide-react";
 import {
   ArrowLeft, AlertTriangle, Filter, Plus, Trash2, Info, ChevronDown, Lock, History,
 } from "lucide-react";
@@ -36,11 +39,17 @@ import {
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
+import { ProjectSetupWizard } from "@/components/projects/ProjectSetupWizard";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
 export const Route = createFileRoute("/_authenticated/sightline")({
   head: () => ({ meta: [{ title: "Sightline — Project Profitability" }] }),
+  validateSearch: (s: Record<string, unknown>) =>
+    z.object({
+      openProject: z.string().uuid().optional(),
+      onboarded: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
+    }).parse(s),
   component: SightlinePage,
 });
 
@@ -50,6 +59,15 @@ function SightlinePage() {
   const tier = effectiveTier(ctx?.profile, ctx?.firm);
 
   const [openProject, setOpenProject] = useState<string | null>(null);
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (search.openProject && search.openProject !== openProject) {
+      setOpenProject(search.openProject);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.openProject]);
+  const showOnboardHint = String(search.onboarded ?? "") === "1";
 
   if (tier !== "practice") {
     return (
@@ -70,7 +88,16 @@ function SightlinePage() {
   }
 
   if (openProject) {
-    return <ProjectDetail id={openProject} onBack={() => setOpenProject(null)} />;
+    return (
+      <ProjectDetail
+        id={openProject}
+        onBack={() => {
+          setOpenProject(null);
+          navigate({ to: "/sightline", search: {} });
+        }}
+        showOnboardHint={showOnboardHint}
+      />
+    );
   }
   return <ProjectList onOpen={setOpenProject} />;
 }
