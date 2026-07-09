@@ -154,6 +154,8 @@ function projectYear(
   baseConfig: FirmConfig | null,
   expenses: Expense[],
   baseTeam: TeamMember[],
+  ownerComp: unknown[] = [],
+  teamBurdens: unknown[] = [],
 ) {
   const billedRate = inputs.billedRate * Math.pow(1 + inputs.rateIncreasePct / 100, year);
   // capacity = sum(expected_hrs_per_week * utilization%) * weeks
@@ -183,8 +185,8 @@ function projectYear(
 
   // Cost floor: scale base + add hire cost
   const baseCalc = calc(baseConfig, expenses, {
-    ownerComp: (inputs as any).ownerComp ?? [],
-    teamProfiles: (inputs as any).teamBurdens ?? [],
+    ownerComp: ownerComp as any,
+    teamProfiles: teamBurdens as any,
   });
   const baseAnnualCost = baseCalc.totalCost * Math.pow(1 + inputs.expenseGrowthPct / 100, year);
   const annualCost = baseAnnualCost + extraHireAnnualCost;
