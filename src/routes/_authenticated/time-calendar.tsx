@@ -134,6 +134,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
   const projects: Project[] = (data?.projects ?? []) as Project[];
   const phases: Phase[] = (data?.phases ?? []) as Phase[];
   const ags: Ag[] = (data?.activityGroups ?? []) as Ag[];
+  const activityTypes: ActivityType[] = (data?.activityTypes ?? []) as ActivityType[];
   const team: Member[] = (data?.team ?? []) as Member[];
   const config = data?.config ?? null;
   const me = data?.profile ?? null;
