@@ -639,8 +639,8 @@ function RatePanel() {
           lineHeight: 1.6,
         }}
       >
-        At $250/hr you're leaving $263,430/yr in potential revenue on the table — based on
-        730 billable hours annually.
+        At $175/hr you're leaving $97,920/yr in potential revenue on the table — based on
+        720 billable hours annually.
       </div>
     </div>
   );
