@@ -79,6 +79,13 @@ function HomePage() {
       <Hero isMobile={isMobile} />
       <SocialProof />
       <Problem isMobile={isMobile} />
+      <Features isMobile={isMobile} />
+      <HowItWorks isMobile={isMobile} />
+      <Testimonials isMobile={isMobile} />
+      <Pricing isMobile={isMobile} />
+      <FAQ />
+      <FinalCTA isMobile={isMobile} />
+      <Footer isMobile={isMobile} />
     </div>
   );
 }
