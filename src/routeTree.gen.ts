@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PostAuthRouteImport } from './routes/post-auth'
@@ -45,6 +46,11 @@ import { Route as AuthenticatedDashboardBvaRouteImport } from './routes/_authent
 import { Route as AuthenticatedDashboardAnnualSummaryRouteImport } from './routes/_authenticated/dashboard.annual-summary'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -242,6 +248,7 @@ export interface FileRoutesByFullPath {
   '/post-auth': typeof PostAuthRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
+  '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/calendar': typeof AuthenticatedCalendarRoute
@@ -278,6 +285,7 @@ export interface FileRoutesByTo {
   '/post-auth': typeof PostAuthRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
+  '/terms': typeof TermsRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/calendar': typeof AuthenticatedCalendarRoute
@@ -316,6 +324,7 @@ export interface FileRoutesById {
   '/post-auth': typeof PostAuthRoute
   '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
+  '/terms': typeof TermsRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
@@ -354,6 +363,7 @@ export interface FileRouteTypes {
     | '/post-auth'
     | '/privacy'
     | '/register'
+    | '/terms'
     | '/admin'
     | '/billing'
     | '/calendar'
@@ -390,6 +400,7 @@ export interface FileRouteTypes {
     | '/post-auth'
     | '/privacy'
     | '/register'
+    | '/terms'
     | '/admin'
     | '/billing'
     | '/calendar'
@@ -427,6 +438,7 @@ export interface FileRouteTypes {
     | '/post-auth'
     | '/privacy'
     | '/register'
+    | '/terms'
     | '/_authenticated/admin'
     | '/_authenticated/billing'
     | '/_authenticated/calendar'
@@ -465,12 +477,20 @@ export interface RootRouteChildren {
   PostAuthRoute: typeof PostAuthRoute
   PrivacyRoute: typeof PrivacyRoute
   RegisterRoute: typeof RegisterRoute
+  TermsRoute: typeof TermsRoute
   ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -838,6 +858,7 @@ const rootRouteChildren: RootRouteChildren = {
   PostAuthRoute: PostAuthRoute,
   PrivacyRoute: PrivacyRoute,
   RegisterRoute: RegisterRoute,
+  TermsRoute: TermsRoute,
   ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }
