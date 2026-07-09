@@ -324,6 +324,17 @@ const createProjectSchema = z.object({
   start_date: z.string().optional().nullable(),
   end_date: z.string().optional().nullable(),
   sop_template_id: z.string().uuid().optional().nullable(),
+  phases: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(160),
+        expected_hrs: z.number().min(0).max(10000),
+        billable: z.boolean().default(true),
+      }),
+    )
+    .max(200)
+    .optional()
+    .nullable(),
 });
 
 export const createProject = createServerFn({ method: "POST" })
@@ -339,10 +350,14 @@ export const createProject = createServerFn({ method: "POST" })
     if (!profile?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
 
-    // If a template is attached, snapshot its phases (independent copy).
+    // If explicit phases are provided (wizard), use them. Otherwise, if a
+    // template is attached, snapshot its phases (independent copy).
     let scopedHrs = 0;
     let tplPhases: { name: string; expected_hrs: number; billable: boolean; sort_order: number; id: string }[] = [];
-    if (data.sop_template_id) {
+    const customPhases = data.phases ?? null;
+    if (customPhases && customPhases.length) {
+      scopedHrs = customPhases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
+    } else if (data.sop_template_id) {
       const { data: phases } = await supabase
         .from("sop_phases")
         .select("id, name, expected_hrs, billable, sort_order")
@@ -370,7 +385,21 @@ export const createProject = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
 
-    if (tplPhases.length) {
+    if (customPhases && customPhases.length) {
+      // Insert wizard-provided phases as a plain snapshot (no template link
+      // per-phase). The project keeps its sop_template_id association if the
+      // wizard was launched from a template.
+      const rows = customPhases.map((p, i) => ({
+        project_id: project.id,
+        name: p.name,
+        expected_hrs: Number(p.expected_hrs) || 0,
+        billable: p.billable,
+        sort_order: i,
+        actual_hrs: 0,
+      }));
+      const { error: phErr } = await supabase.from("project_phases").insert(rows);
+      if (phErr) throw new Error(phErr.message);
+    } else if (tplPhases.length) {
       const phaseIds = tplPhases.map((p) => p.id);
       const { data: allSteps } = await supabase
         .from("sop_steps")
