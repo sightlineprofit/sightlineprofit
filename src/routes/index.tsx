@@ -553,9 +553,9 @@ function RatePanel() {
         }}
       >
         {[
-          { label: "YOUR RATE", val: "$250", valColor: "#C4714A", sub: "−$361/hr below floor", subColor: C.terra },
-          { label: "BREAK-EVEN", val: "$354", valColor: "rgba(255,255,255,0.7)", sub: "Cost-only floor", subColor: "rgba(255,255,255,0.35)" },
-          { label: "MARGIN TARGET", val: "42%", valColor: "rgba(255,255,255,0.7)", sub: "$257/hr per hour", subColor: "rgba(255,255,255,0.35)" },
+          { label: "YOUR RATE", val: "$175", valColor: "#C4714A", sub: "−$136/hr below floor", subColor: C.terra },
+          { label: "BREAK-EVEN", val: "$242", valColor: "rgba(255,255,255,0.7)", sub: "Cost-only floor", subColor: "rgba(255,255,255,0.35)" },
+          { label: "MARGIN TARGET", val: "22%", valColor: "rgba(255,255,255,0.7)", sub: "$69/hr margin", subColor: "rgba(255,255,255,0.35)" },
         ].map((s, i) => (
           <div
             key={s.label}
