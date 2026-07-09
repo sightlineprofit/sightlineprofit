@@ -75,7 +75,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id),
       supabase
         .from("projects")
-        .select("id, name, status, start_date, end_date, scoped_hrs, scoped_rate, fixed_fee, sop_template_id")
+        .select("id, name, status, start_date, end_date, scoped_hrs, scoped_rate, fixed_fee, sop_template_id, est_weekly_hrs")
         .eq("firm_id", profile.firm_id),
       supabase
         .from("project_phases")
