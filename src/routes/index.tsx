@@ -1283,7 +1283,7 @@ function BuildingStackVisual() {
             Your minimum floor
           </div>
         </div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: "#fff" }}>$611/hr</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: "#fff" }}>$311/hr</div>
       </div>
     </VisualShell>
   );
