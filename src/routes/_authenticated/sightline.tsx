@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { useNavigate } from "@tanstack/react-router";
+import { X as XIcon } from "lucide-react";
 import {
   ArrowLeft, AlertTriangle, Filter, Plus, Trash2, Info, ChevronDown, Lock, History,
 } from "lucide-react";
@@ -36,11 +39,17 @@ import {
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
+import { ProjectSetupWizard } from "@/components/projects/ProjectSetupWizard";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
 export const Route = createFileRoute("/_authenticated/sightline")({
   head: () => ({ meta: [{ title: "Sightline — Project Profitability" }] }),
+  validateSearch: (s: Record<string, unknown>) =>
+    z.object({
+      openProject: z.string().uuid().optional(),
+      onboarded: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
+    }).parse(s),
   component: SightlinePage,
 });
 
@@ -50,6 +59,15 @@ function SightlinePage() {
   const tier = effectiveTier(ctx?.profile, ctx?.firm);
 
   const [openProject, setOpenProject] = useState<string | null>(null);
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (search.openProject && search.openProject !== openProject) {
+      setOpenProject(search.openProject);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.openProject]);
+  const showOnboardHint = String(search.onboarded ?? "") === "1";
 
   if (tier !== "practice") {
     return (
@@ -70,7 +88,16 @@ function SightlinePage() {
   }
 
   if (openProject) {
-    return <ProjectDetail id={openProject} onBack={() => setOpenProject(null)} />;
+    return (
+      <ProjectDetail
+        id={openProject}
+        onBack={() => {
+          setOpenProject(null);
+          navigate({ to: "/sightline", search: {} });
+        }}
+        showOnboardHint={showOnboardHint}
+      />
+    );
   }
   return <ProjectList onOpen={setOpenProject} />;
 }
@@ -78,36 +105,11 @@ function SightlinePage() {
 function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const getList = useServerFn(getProjectList);
   const qc = useQueryClient();
-  const createFn = useServerFn(createProject);
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
   const [filter, setFilter] = useState<"all" | Status>("active");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"health" | "margin_desc" | "margin_asc" | "recent" | "name">("health");
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
-
-  async function submitCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft.name.trim()) return;
-    try {
-      const res = await createFn({
-        data: {
-          name: draft.name.trim(),
-          client_name: draft.client_name.trim() || null,
-          status: "active",
-          scoped_rate: draft.scoped_rate ? Number(draft.scoped_rate) : null,
-          fixed_fee: draft.fixed_fee ? Number(draft.fixed_fee) : null,
-        },
-      });
-      toast.success("Project created");
-      setDraft({ name: "", client_name: "", scoped_rate: "", fixed_fee: "" });
-      setCreating(false);
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-      onOpen(res.id);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    }
-  }
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -134,37 +136,11 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       title="Sightline"
       description="Project profitability, finally answered."
       actions={
-        <Button onClick={() => setCreating((v) => !v)} className="bg-gold text-white hover:bg-goldl">
-          {creating ? "Cancel" : <><Plus className="mr-1.5 h-4 w-4" /> New project</>}
+        <Button onClick={() => setWizardOpen(true)} className="bg-gold text-white hover:bg-goldl">
+          <Plus className="mr-1.5 h-4 w-4" /> New project
         </Button>
       }
     >
-      {creating && (
-        <form onSubmit={submitCreate} className="mb-6 grid grid-cols-12 items-start gap-3 rounded-lg border border-border bg-white p-4">
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Project name</label>
-            <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus required />
-          </div>
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Client</label>
-            <Input value={draft.client_name} onChange={(e) => setDraft({ ...draft, client_name: e.target.value })} />
-          </div>
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Hourly project rate</label>
-            <Input type="number" min={0} step="any" value={draft.scoped_rate} onChange={(e) => setDraft({ ...draft, scoped_rate: e.target.value })} placeholder="$250" />
-            <p className="mt-1 text-[11px] text-ch/50">The rate per hour agreed with this client — not the total project fee.</p>
-          </div>
-          <div className="col-span-12 md:col-span-6">
-            <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Fixed project fee $ (optional)</label>
-            <Input type="number" min={0} step="any" value={draft.fixed_fee} onChange={(e) => setDraft({ ...draft, fixed_fee: e.target.value })} placeholder="$25,000" />
-            <p className="mt-1 text-[11px] text-ch/50">If this is a fixed-fee project, enter the total. Leave blank if billing hourly.</p>
-          </div>
-          <div className="col-span-12 flex justify-end">
-            <Button type="submit" className="bg-ch text-cream hover:bg-ch/90">Create project</Button>
-          </div>
-        </form>
-      )}
-
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Input
           value={search}
@@ -210,11 +186,9 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
             Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library.
           </p>
-          {!creating && (
-            <Button onClick={() => setCreating(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
-              <Plus className="mr-1.5 h-4 w-4" /> Create project
-            </Button>
-          )}
+          <Button onClick={() => setWizardOpen(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
+            <Plus className="mr-1.5 h-4 w-4" /> Create project
+          </Button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -223,6 +197,14 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           })}
         </div>
       )}
+      <ProjectSetupWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        onCreated={(projectId) => {
+          qc.invalidateQueries({ queryKey: ["sightline-list"] });
+          onOpen(projectId);
+        }}
+      />
     </ModulePage>
   );
 }
@@ -581,8 +563,18 @@ type PhaseRow = {
   nonBillActual: number;
 };
 
-function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
+function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: () => void; showOnboardHint?: boolean }) {
   const qc = useQueryClient();
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(`sightline-onboarded-${id}`) === "1";
+  });
+  function dismissHint() {
+    setHintDismissed(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(`sightline-onboarded-${id}`, "1");
+    }
+  }
   const getDetail = useServerFn(getProjectDetail);
   const statusFn = useServerFn(updateProjectStatus);
   const metaFn = useServerFn(updateProjectMeta);
@@ -1148,6 +1140,24 @@ function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
 
         {/* ============ OVERVIEW ============ */}
         <TabsContent value="overview" className="mt-6 space-y-6">
+          {showOnboardHint && !hintDismissed && (
+            <div
+              className="flex items-start justify-between gap-3 rounded-md border-l-2 border-l-[#5C8A6E] py-2 pl-3 pr-2"
+              style={{ backgroundColor: "rgba(92,138,110,0.07)" }}
+            >
+              <p className="text-[13px] font-body" style={{ color: "#6B6259" }}>
+                Your project is set up. Start logging time to track margin in real time.
+              </p>
+              <button
+                type="button"
+                onClick={dismissHint}
+                aria-label="Dismiss"
+                className="shrink-0 rounded p-1 text-ch/50 hover:text-ch"
+              >
+                <XIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {!hasExplicitRate && (
             <div className="rounded-lg border border-gold/40 bg-goldp/40 p-4 text-sm text-ch/80">
               Add a project rate to see profitability figures. This is the hourly rate agreed with this client.

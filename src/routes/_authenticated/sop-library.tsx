@@ -13,7 +13,6 @@ import {
   getSopLibrary,
   saveSopTemplate,
   deleteSopTemplate,
-  attachTemplateToProject,
   setSopHidden,
   unhideAllSops,
   duplicateSopTemplate,
@@ -40,6 +39,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { ProjectSetupWizard, type WizardPhase } from "@/components/projects/ProjectSetupWizard";
 
 type Risk = "low" | "medium" | "high";
 type Step = { id?: string; description: string; estimated_hrs: number; sort_order: number };
@@ -126,10 +126,10 @@ function Library() {
   const getLib = useServerFn(getSopLibrary);
   const saveFn = useServerFn(saveSopTemplate);
   const delFn = useServerFn(deleteSopTemplate);
-  const attachFn = useServerFn(attachTemplateToProject);
   const hideFn = useServerFn(setSopHidden);
   const unhideAllFn = useServerFn(unhideAllSops);
   const duplicateFn = useServerFn(duplicateSopTemplate);
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({ queryKey: ["sop-library"], queryFn: () => getLib() });
   const [search, setSearch] = useState("");
@@ -138,7 +138,7 @@ function Library() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("recent");
   const [editing, setEditing] = useState<TemplateDraft | null>(null);
-  const [attachFor, setAttachFor] = useState<{ id: string; name: string } | null>(null);
+  const [setupFor, setSetupFor] = useState<{ id: string; name: string; phases: WizardPhase[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; uses: number; activeUses: number } | null>(null);
   const [usageFor, setUsageFor] = useState<{ id: string; name: string } | null>(null);
 
@@ -184,18 +184,6 @@ function Library() {
       setDeleteTarget(null);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
-  });
-
-  const attachMut = useMutation({
-    mutationFn: (v: { template_id: string; project_id: string }) => attachFn({ data: v }),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ["sop-library"] });
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-      qc.invalidateQueries({ queryKey: ["sightline-detail", vars.project_id] });
-      setAttachFor(null);
-      toast.success("Template attached to project");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to attach"),
   });
 
   const hideMut = useMutation({
@@ -556,7 +544,17 @@ function Library() {
                   )}
                   <Button
                     className="flex-1 bg-ch text-white hover:bg-ch/85"
-                    onClick={() => setAttachFor({ id: tpl.id, name: tpl.name })}
+                    onClick={() => {
+                      const phs: WizardPhase[] = data!.phases
+                        .filter((p) => p.template_id === tpl.id)
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map((p) => ({
+                          name: p.name,
+                          expected_hrs: Number(p.expected_hrs) || 0,
+                          billable: !!p.billable,
+                        }));
+                      setSetupFor({ id: tpl.id, name: tpl.name, phases: phs });
+                    }}
                   >
                     Attach to project
                   </Button>
@@ -567,22 +565,17 @@ function Library() {
         </div>
       )}
 
-      <Dialog open={!!attachFor} onOpenChange={(o) => !o && setAttachFor(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl">Attach “{attachFor?.name}”</DialogTitle>
-          </DialogHeader>
-          {attachFor && (
-            <AttachProjectPicker
-              templateName={attachFor.name}
-              projects={(data?.projects ?? []) as ProjectOption[]}
-              onSubmit={(project_id) => attachMut.mutate({ template_id: attachFor.id, project_id })}
-              saving={attachMut.isPending}
-              onCancel={() => setAttachFor(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <ProjectSetupWizard
+        open={!!setupFor}
+        onClose={() => setSetupFor(null)}
+        onCreated={(projectId) => {
+          qc.invalidateQueries({ queryKey: ["sightline-list"] });
+          navigate({ to: "/sightline", search: { openProject: projectId, onboarded: 1 } });
+        }}
+        templateId={setupFor?.id ?? null}
+        templateName={setupFor?.name ?? null}
+        initialPhases={setupFor?.phases ?? []}
+      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
