@@ -697,6 +697,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const milestones = ((data as unknown) as { milestones?: Array<{ id: string; label: string; milestone_date: string }> }).milestones ?? [];
   const activityLog = (data as unknown as {
     activityLog?: Array<{ event_type: string; occurred_at: string; note: string | null }>;
   }).activityLog ?? [];
