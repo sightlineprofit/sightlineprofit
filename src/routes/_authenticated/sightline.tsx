@@ -1550,13 +1550,32 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Start date</label>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Work begins</label>
                 <Input type="date" value={metaDraft.start_date} onChange={(e) => setMetaDraft({ ...metaDraft, start_date: e.target.value })} />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">End date</label>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Work wraps</label>
                 <Input type="date" value={metaDraft.end_date} onChange={(e) => setMetaDraft({ ...metaDraft, end_date: e.target.value })} />
               </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                Estimated weekly hours during active work
+              </label>
+              <Input
+                type="number" min={0} step="any"
+                value={metaDraft.est_weekly_hrs}
+                onChange={(e) => setMetaDraft({ ...metaDraft, est_weekly_hrs: e.target.value })}
+                placeholder={(() => {
+                  const s = metaDraft.start_date; const e = metaDraft.end_date;
+                  if (!s || !e || !scopedHrs) return "auto (scoped hrs ÷ weeks)";
+                  const weeks = Math.max(1, Math.round((new Date(e).getTime() - new Date(s).getTime()) / (7 * 86400000)) + 1);
+                  return `auto ≈ ${(scopedHrs / weeks).toFixed(1)}`;
+                })()}
+              />
+              <p className="mt-1 text-[11px] text-ch/50">
+                Feeds the 16-week capacity pressure chart. Leave blank to auto-spread scoped hours evenly.
+              </p>
             </div>
             {isPrincipal && (
               <div className="border-t border-border pt-3">
