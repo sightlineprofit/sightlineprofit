@@ -293,7 +293,19 @@ function Hero({ isMobile }: { isMobile: boolean }) {
           pointerEvents: "none",
         }}
       />
-      <div style={{ maxWidth: 1120, margin: "0 auto", position: "relative", zIndex: 1 }}>
+      <div
+        style={{
+          maxWidth: 1240,
+          margin: "0 auto",
+          position: "relative",
+          zIndex: 1,
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1fr) minmax(0,1.05fr)",
+          gap: isMobile ? 48 : 56,
+          alignItems: "center",
+        }}
+      >
+        <div>
         {/* badge */}
         <div
           style={{
@@ -319,11 +331,11 @@ function Hero({ isMobile }: { isMobile: boolean }) {
         <h1
           style={{
             fontFamily: FONT_DISPLAY,
-            fontSize: "clamp(44px, 5.5vw, 76px)",
+            fontSize: "clamp(40px, 4.4vw, 62px)",
             fontWeight: 300,
             lineHeight: 1.04,
             color: C.charcoal,
-            maxWidth: 800,
+            maxWidth: 620,
             letterSpacing: "-0.02em",
             marginBottom: 24,
             marginTop: 0,
@@ -429,8 +441,12 @@ function Hero({ isMobile }: { isMobile: boolean }) {
             </span>
           ))}
         </div>
-
-        {!isMobile && <HeroDashboard />}
+        </div>
+        {!isMobile && (
+          <div>
+            <HeroDashboard />
+          </div>
+        )}
       </div>
     </section>
   );
@@ -440,7 +456,7 @@ function HeroDashboard() {
   return (
     <div
       style={{
-        marginTop: 72,
+        marginTop: 0,
         background: C.charcoal,
         borderRadius: 12,
         overflow: "hidden",
