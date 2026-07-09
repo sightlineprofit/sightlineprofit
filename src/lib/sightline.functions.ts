@@ -185,7 +185,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     if (!profile?.firm_id) throw new Error("No firm");
     const isPrincipal = profile.role === "principal";
     const isAdmin = profile.role === "principal" || profile.role === "admin";
-    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }, { data: activityLog }] = await Promise.all([
+    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }, { data: activityLog }, { data: milestones }] = await Promise.all([
       supabase.from("projects").select("*").eq("id", data.id).eq("firm_id", profile.firm_id).single(),
       supabase.from("project_phases").select("*").eq("project_id", data.id).order("sort_order"),
       supabase.from("time_entries").select("*").eq("project_id", data.id).order("date", { ascending: false }),
@@ -197,6 +197,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       }),
       supabase.from("profiles").select("id, name, email, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
       supabase.from("project_activity_log").select("*").eq("project_id", data.id).order("occurred_at", { ascending: false }),
+      supabase.from("project_milestones").select("*").eq("project_id", data.id).order("milestone_date"),
     ]);
     if (!project) throw new Error("Project not found");
     const phaseIds = (phases ?? []).map((p) => p.id);
@@ -220,6 +221,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       team: team ?? [],
       audit: audit ?? [],
       activityLog: activityLog ?? [],
+      milestones: milestones ?? [],
       isPrincipal,
       isAdmin,
     };
