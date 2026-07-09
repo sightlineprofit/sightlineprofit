@@ -734,50 +734,55 @@ function WhatIfTool({
   sopTemplates,
   target,
   availableAnnual,
+  weeks,
 }: {
   windows: CapacityWindow[];
   sopTemplates: Array<{ id: string; name: string; total_hrs: number }>;
   target: number;
   availableAnnual: number;
+  weeks: CapacitySummary["weeks"];
 }) {
   const [hrs, setHrs] = useState<number>(40);
-  const [windowId, setWindowId] = useState<string>("asap");
+  const [weeklyHrs, setWeeklyHrs] = useState<number>(10);
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date(); return d.toISOString().slice(0, 10);
+  });
 
   const noWindows = windows.length === 0;
-  const selected = windows.find((w) => w.id === windowId) ?? windows[0];
 
   const result = (() => {
-    if (noWindows) {
+    if (weeks.length === 0 || target === 0) {
       const pct = availableAnnual > 0 ? (hrs / availableAnnual) * 100 : 0;
       return {
         color: "#5C8A6E",
         text: `A ${hrs}-hr project uses ${Math.round(pct)}% of your ${fmtHrs(availableAnnual)} annual available hours.`,
       };
     }
-    const w = windowId === "asap" ? windows[0] : selected;
-    if (!w) return null;
-    const avail = w.available;
-    const pct = avail > 0 ? (hrs / avail) * 100 : 0;
-    const remaining = Math.max(0, avail - hrs);
-    const next = windows[windows.indexOf(w) + 1];
-    if (hrs <= avail && pct < 60) {
+    const sim = simulateAddProject({
+      weeks,
+      target,
+      startDate: new Date(startDate + "T00:00:00"),
+      weeklyHrs,
+      totalHrs: hrs,
+    });
+    const labelWeeks = (idxs: number[]) =>
+      idxs.map((i) => `W${i + 1}`).join(", ");
+    if (sim.affectedIdx.length === 0) {
+      return { color: "#5C8A6E", text: "Start date falls outside the 16-week window. Try a nearer start date." };
+    }
+    if (sim.overIdx.length === 0) {
+      const startLabel = weeks[sim.affectedIdx[0]].weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       return {
         color: "#5C8A6E",
-        text: `Starting ${w.label}, a ${hrs}-hr project fits within your open window of ~${avail} hrs. It uses about ${Math.round(pct)}% of that window. You'd still have ~${remaining} hrs available.`,
+        text: `Adding this project from ${startLabel} at ${weeklyHrs} hrs/wk fits within capacity across ${labelWeeks(sim.affectedIdx)}. You have room.`,
       };
     }
-    if (hrs <= avail) {
-      return {
-        color: "#B8860B",
-        text: `Starting ${w.label}, a ${hrs}-hr project fills ${Math.round(pct)}% of your ~${avail}-hr window. Workable — but little room for scope changes or delays.`,
-      };
-    }
-    const overage = hrs - avail;
-    const nextText = next ? ` Consider a later start ${next.label} which opens ~${next.available} hrs, or split delivery across periods.` : " Consider deferring or splitting delivery across periods.";
-    return {
-      color: "#C4714A",
-      text: `A ${hrs}-hr project exceeds the ~${avail}-hr window ${w.label} by ${overage} hrs.${nextText}`,
-    };
+    const startLabel = weeks[sim.affectedIdx[0]].weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const overText = `Adding this project from ${startLabel} at ${weeklyHrs} hrs/wk would put weeks ${labelWeeks(sim.overIdx)} over capacity.`;
+    const suggest = sim.nextOpenIdx != null
+      ? ` Consider starting in W${sim.nextOpenIdx + 1} (${weeks[sim.nextOpenIdx].weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}) when a window opens.`
+      : ` No open window in the next 16 weeks — consider a smaller weekly commitment or a later start.`;
+    return { color: "#C4714A", text: overText + suggest };
   })();
 
   return (
@@ -791,7 +796,7 @@ function WhatIfTool({
       <div className="mt-[14px] flex flex-wrap gap-4">
         <div>
           <label className="block text-[11px]" style={{ color: "#777" }}>
-            Estimated hours
+            Estimated total hours
           </label>
           <input
             type="number"
@@ -801,26 +806,30 @@ function WhatIfTool({
             style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, width: 80, background: "#FAF7F2" }}
           />
         </div>
-        {!noWindows && (
-          <div>
-            <label className="block text-[11px]" style={{ color: "#777" }}>
-              When would it start?
-            </label>
-            <select
-              value={windowId}
-              onChange={(e) => setWindowId(e.target.value)}
-              className="mt-1 px-2 py-1 text-[14px]"
-              style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, background: "#FAF7F2" }}
-            >
-              <option value="asap">As soon as possible</option>
-              {windows.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div>
+          <label className="block text-[11px]" style={{ color: "#777" }}>
+            Estimated weekly hours
+          </label>
+          <input
+            type="number"
+            value={weeklyHrs}
+            onChange={(e) => setWeeklyHrs(Number(e.target.value) || 0)}
+            className="mt-1 px-2 py-1 text-[14px]"
+            style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, width: 80, background: "#FAF7F2" }}
+          />
+        </div>
+        <div>
+          <label className="block text-[11px]" style={{ color: "#777" }}>
+            Estimated start
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="mt-1 px-2 py-1 text-[14px]"
+            style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, background: "#FAF7F2" }}
+          />
+        </div>
       </div>
 
       {result && (
