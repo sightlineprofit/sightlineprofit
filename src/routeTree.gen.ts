@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PostAuthRouteImport } from './routes/post-auth'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
@@ -47,6 +48,11 @@ import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/e
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PostAuthRoute = PostAuthRouteImport.update({
@@ -234,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
   '/post-auth': typeof PostAuthRoute
+  '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
@@ -269,6 +276,7 @@ export interface FileRoutesByTo {
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
   '/post-auth': typeof PostAuthRoute
+  '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
@@ -306,6 +314,7 @@ export interface FileRoutesById {
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
   '/post-auth': typeof PostAuthRoute
+  '/privacy': typeof PrivacyRoute
   '/register': typeof RegisterRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
@@ -343,6 +352,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/login'
     | '/post-auth'
+    | '/privacy'
     | '/register'
     | '/admin'
     | '/billing'
@@ -378,6 +388,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/login'
     | '/post-auth'
+    | '/privacy'
     | '/register'
     | '/admin'
     | '/billing'
@@ -414,6 +425,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/login'
     | '/post-auth'
+    | '/privacy'
     | '/register'
     | '/_authenticated/admin'
     | '/_authenticated/billing'
@@ -451,6 +463,7 @@ export interface RootRouteChildren {
   AcceptInviteRoute: typeof AcceptInviteRoute
   LoginRoute: typeof LoginRoute
   PostAuthRoute: typeof PostAuthRoute
+  PrivacyRoute: typeof PrivacyRoute
   RegisterRoute: typeof RegisterRoute
   ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
@@ -463,6 +476,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/post-auth': {
@@ -816,6 +836,7 @@ const rootRouteChildren: RootRouteChildren = {
   AcceptInviteRoute: AcceptInviteRoute,
   LoginRoute: LoginRoute,
   PostAuthRoute: PostAuthRoute,
+  PrivacyRoute: PrivacyRoute,
   RegisterRoute: RegisterRoute,
   ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
