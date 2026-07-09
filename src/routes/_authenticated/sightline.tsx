@@ -261,9 +261,52 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
   const actual = p.totals.actual;
   const pctConsumed = scoped > 0 ? (actual / scoped) * 100 : 0;
   const hrsRemaining = Math.max(0, scoped - actual);
-  const fresh = (p as any).freshness as { lastEntryAt: string | null; daysSince: number | null; state: "current" | "stale" | "critical" } | undefined;
+  const fresh = (p as any).freshness as { lastEntryAt: string | null; daysSince: number | null; state: "new" | "current" | "stale" | "critical" } | undefined;
   const freshState = fresh?.state ?? "critical";
   const daysSince = fresh?.daysSince ?? null;
+
+  // STATE 1 — brand-new project with no history and no started work.
+  // Render a neutral setup prompt instead of any warning or margin figure;
+  // there is nothing yet to be stale or unreliable about.
+  if (freshState === "new") {
+    return (
+      <button
+        onClick={() => onOpen(p.id)}
+        className="group flex flex-col rounded-lg border border-border bg-white p-5 text-left transition-shadow hover:shadow-md border-l-[3px] border-l-border"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="font-display text-xl tracking-tight text-ch">{p.name}</h3>
+            {p.client_name && <p className="mt-0.5 text-sm text-ch/60">{p.client_name}</p>}
+          </div>
+          <span
+            className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]"
+            style={{ background: "rgba(44,44,44,0.06)", color: "#6B6259", fontFamily: "'Jost', sans-serif", fontWeight: 500 }}
+          >
+            New
+          </span>
+        </div>
+        <div className="mt-5 border-t border-border pt-4">
+          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 400, color: "#2C2C2C", lineHeight: 1.15 }}>
+            Project set up
+          </div>
+          <div className="mt-1" style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, color: "#6B6259" }}>
+            Start logging time to track margin in real time.
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <a
+            href={`/time-calendar?project=${p.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px]"
+            style={{ fontFamily: "'Jost', sans-serif", fontWeight: 500, color: "#B8860B", border: "0.5px solid rgba(184,134,11,0.30)" }}
+          >
+            Log time →
+          </a>
+        </div>
+      </button>
+    );
+  }
 
   // Freshness overrides border + margin coloring; but the underlying margin health is
   // still surfaced via the progress bar tone when freshness is current.
