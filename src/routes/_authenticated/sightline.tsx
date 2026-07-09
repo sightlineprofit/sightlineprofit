@@ -592,6 +592,10 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   const deleteStepFn = useServerFn(deleteProjectStep);
   const confirmFn = useServerFn(confirmProjectReviewed);
   const nothingFn = useServerFn(logNothingToReport);
+  const saveMilestoneFn = useServerFn(saveProjectMilestone);
+  const deleteMilestoneFn = useServerFn(deleteProjectMilestone);
+  const [msLabel, setMsLabel] = useState("");
+  const [msDate, setMsDate] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
