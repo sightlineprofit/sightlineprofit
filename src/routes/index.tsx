@@ -1834,13 +1834,16 @@ function Testimonials({ isMobile }: { isMobile: boolean }) {
     <section style={{ padding: isMobile ? "72px 20px" : "96px 48px", background: C.cream, borderTop: "0.5px solid rgba(44,44,44,0.10)" }}>
       <div style={{ maxWidth: 1120, margin: "0 auto" }}>
         <div style={{ fontFamily: FONT_SANS, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.2em", color: C.gold, marginBottom: 10 }}>
-          From designers using Sightline
+          What designers are saying
         </div>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: "clamp(30px,4vw,48px)", fontWeight: 300, lineHeight: 1.12, color: C.charcoal, margin: 0 }}>
           The number was always there.
           <br />
           <em style={{ color: C.gold, fontStyle: "italic" }}>Now they can see it.</em>
         </h2>
+        <div style={{ fontFamily: FONT_SANS, fontSize: 12, fontStyle: "italic", color: "#8A7F75", marginTop: 8 }}>
+          Composite reflections from our beta community.
+        </div>
         <div
           style={{
             display: "grid",
