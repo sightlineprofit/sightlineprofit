@@ -563,19 +563,22 @@ export function WeeklyPressureChart({
   );
 }
 
-export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; phases: PhaseRow[] }) {
+export function ProjectTimeline({
+  projects, phases, milestones = [],
+}: {
+  projects: ProjRow[];
+  phases: PhaseRow[];
+  milestones?: MilestoneRow[];
+}) {
   const now = new Date();
   const windowStart = startOfISOWeek(now);
-  const windowEnd = addWeeks(windowStart, 26); // 6 months
+  const windowEnd = addWeeks(windowStart, 16); // aligned with pressure chart
   const span = windowEnd.getTime() - windowStart.getTime();
 
   const palette = ["#B8860B", "#5C8A6E", "#C4714A", "#D4A017", "#8b7355", "#4a6741"];
 
-  const months: Date[] = [];
-  for (let i = 0; i < 6; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    months.push(d);
-  }
+  // Week ticks matching pressure chart (W1..W16)
+  const weekTicks = Array.from({ length: 16 }, (_, i) => addWeeks(windowStart, i));
 
   const rows = [...projects]
     .filter((p) => p.start_date && p.end_date)
@@ -586,9 +589,9 @@ export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; pha
       {/* Month labels */}
       <div className="grid items-center text-[8px]" style={{ gridTemplateColumns: "160px 1fr 80px", color: "#ccc" }}>
         <div />
-        <div className="grid" style={{ gridTemplateColumns: `repeat(${months.length}, 1fr)` }}>
-          {months.map((m, i) => (
-            <div key={i}>{m.toLocaleDateString("en-US", { month: "short" })}</div>
+        <div className="grid" style={{ gridTemplateColumns: `repeat(16, 1fr)` }}>
+          {weekTicks.map((_, i) => (
+            <div key={i} className="text-center">W{i + 1}</div>
           ))}
         </div>
         <div />
@@ -607,12 +610,13 @@ export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; pha
           const hrs = phases
             .filter((ph) => ph.project_id === p.id)
             .reduce((s, ph) => s + Number(ph.expected_hrs || 0), 0) || Number(p.scoped_hrs || 0);
+          const projMilestones = milestones.filter((m) => m.project_id === p.id);
           return (
             <div key={p.id} className="grid items-center" style={{ gridTemplateColumns: "160px 1fr 80px" }}>
               <div className="truncate pr-2 text-[10px]" style={{ color: "#555" }}>
                 {p.name}
               </div>
-              <div className="relative h-3">
+              <div className="relative h-4">
                 <div
                   className="absolute top-0"
                   style={{
@@ -628,6 +632,26 @@ export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; pha
                     <span className="block truncate px-1 text-[8px] text-white">{p.name}</span>
                   )}
                 </div>
+                {projMilestones.map((m, mi) => {
+                  const mt = new Date(m.milestone_date + "T00:00:00").getTime();
+                  if (mt < windowStart.getTime() || mt > windowEnd.getTime()) return null;
+                  const mLeft = ((mt - windowStart.getTime()) / span) * 100;
+                  return (
+                    <div
+                      key={m.id + mi}
+                      className="absolute"
+                      title={`${m.label} · ${m.milestone_date}`}
+                      style={{
+                        left: `${mLeft}%`,
+                        top: 2,
+                        transform: "translateX(-50%) rotate(45deg)",
+                        width: 9, height: 9,
+                        background: "#2C2C2C",
+                        border: "1px solid #FFFFFF",
+                      }}
+                    />
+                  );
+                })}
               </div>
               <div className="text-right num text-[13px]" style={{ fontFamily: "Cormorant Garamond, serif", color: "#aaa" }}>
                 {fmtHrs(hrs)} hrs
