@@ -129,7 +129,12 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id)
         .order("date", { ascending: false })
         .limit(1000),
+      supabase
+        .from("project_milestones")
+        .select("id, project_id, label, milestone_date")
+        .eq("firm_id", profile.firm_id),
     ]);
+    const milestones = (arguments[0] as any); // placeholder — actual destructure below
 
     const isBD = (status: string | null | undefined) =>
       status === "pursuit" || status === "pipeline";
