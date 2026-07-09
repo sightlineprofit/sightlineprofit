@@ -563,8 +563,18 @@ type PhaseRow = {
   nonBillActual: number;
 };
 
-function ProjectDetail({ id, onBack }: { id: string; onBack: () => void }) {
+function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: () => void; showOnboardHint?: boolean }) {
   const qc = useQueryClient();
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(`sightline-onboarded-${id}`) === "1";
+  });
+  function dismissHint() {
+    setHintDismissed(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(`sightline-onboarded-${id}`, "1");
+    }
+  }
   const getDetail = useServerFn(getProjectDetail);
   const statusFn = useServerFn(updateProjectStatus);
   const metaFn = useServerFn(updateProjectMeta);
