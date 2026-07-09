@@ -2363,13 +2363,13 @@ function Footer({ isMobile }: { isMobile: boolean }) {
     fontWeight: 600,
     textTransform: "uppercase",
     letterSpacing: "0.12em",
-    color: "rgba(255,255,255,0.3)",
+    color: "rgba(255,255,255,0.65)",
     marginBottom: 12,
   };
   const linkStyle: React.CSSProperties = {
     fontFamily: FONT_SANS,
     fontSize: 13,
-    color: "rgba(255,255,255,0.4)",
+    color: "rgba(255,255,255,0.82)",
     textDecoration: "none",
     display: "block",
     marginBottom: 8,
@@ -2416,10 +2416,10 @@ function Footer({ isMobile }: { isMobile: boolean }) {
         }}
       >
         <div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: "rgba(255,255,255,0.6)", marginBottom: 6 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: "rgba(255,255,255,0.95)", marginBottom: 6 }}>
             Sightline · by Propos'Ability
           </div>
-          <div style={{ fontFamily: FONT_SANS, fontSize: 12, color: "rgba(255,255,255,0.25)", lineHeight: 1.6 }}>
+          <div style={{ fontFamily: FONT_SANS, fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
             Financial Architecture for Designers™
             <br />© 2026 Propos'Ability. All rights reserved.
           </div>
@@ -2465,7 +2465,7 @@ function Footer({ isMobile }: { isMobile: boolean }) {
           textAlign: isMobile ? "center" : "left",
           fontFamily: FONT_SANS,
           fontSize: 12,
-          color: "rgba(255,255,255,0.2)",
+          color: "rgba(255,255,255,0.65)",
         }}
       >
         <span>© 2026 Propos'Ability · Financial Architecture for Designers™</span>
