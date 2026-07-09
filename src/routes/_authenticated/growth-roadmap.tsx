@@ -263,15 +263,29 @@ function GrowthRoadmap() {
     rampWeeks: 12,
   });
 
-  const baseCalc = useMemo(() => calc(config, expenses, {}), [config, expenses]);
+  const ownerComp = ((data as any)?.ownerComp ?? []) as unknown[];
+  const teamBurdens = ((data as any)?.teamBurdens ?? []) as unknown[];
+  const baseCalc = useMemo(
+    () =>
+      calc(config, expenses, {
+        ownerComp: ownerComp as any,
+        teamProfiles: teamBurdens as any,
+      }),
+    [config, expenses, ownerComp, teamBurdens],
+  );
   const hireAnnualCost = hire.salary * (1 + hire.benefitsPct / 100);
   const hireWeeklyCost = hireAnnualCost / WEEKS_DEFAULT;
   const hireBillableHrsAnnual = hire.expectedHrsPerWeek * (hire.billablePct / 100) * WEEKS_DEFAULT;
 
   // Aligned rate after hire (recompute base calc treating hire cost as extra recurring)
   const calcAfterHire = useMemo(
-    () => calc(config, expenses, { extraRecurringAnnual: hireAnnualCost }),
-    [config, expenses, hireAnnualCost],
+    () =>
+      calc(config, expenses, {
+        extraRecurringAnnual: hireAnnualCost,
+        ownerComp: ownerComp as any,
+        teamProfiles: teamBurdens as any,
+      }),
+    [config, expenses, hireAnnualCost, ownerComp, teamBurdens],
   );
   const monthsRunway = baseCalc.grossProfit > 0 ? (baseCalc.grossProfit / hireAnnualCost) * 12 : 0;
   const revenueNeeded = hireAnnualCost / Math.max(0.0001, (Number(config?.target_gross_margin_pct) || 50) / 100);
