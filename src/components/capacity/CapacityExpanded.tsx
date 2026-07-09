@@ -6,9 +6,11 @@ import {
   fmtHrs,
   startOfISOWeek,
   statusMeta,
+  simulateAddProject,
   type CapacityInputs,
   type CapacitySummary,
   type CapacityWindow,
+  type MilestoneRow,
   type PhaseRow,
   type ProjRow,
 } from "@/lib/capacity-math";
