@@ -182,7 +182,10 @@ function projectYear(
   const annualRevenue = billedRate * annualBillableHrs;
 
   // Cost floor: scale base + add hire cost
-  const baseCalc = calc(baseConfig, expenses, {});
+  const baseCalc = calc(baseConfig, expenses, {
+    ownerComp: (inputs as any).ownerComp ?? [],
+    teamProfiles: (inputs as any).teamBurdens ?? [],
+  });
   const baseAnnualCost = baseCalc.totalCost * Math.pow(1 + inputs.expenseGrowthPct / 100, year);
   const annualCost = baseAnnualCost + extraHireAnnualCost;
   const grossMargin = annualRevenue - annualCost;
