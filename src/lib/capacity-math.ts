@@ -11,6 +11,13 @@ export type ProjRow = {
   fixed_fee: number | null;
   sop_template_id?: string | null;
   quoted_hours?: number | null;
+  est_weekly_hrs?: number | null;
+};
+export type MilestoneRow = {
+  id: string;
+  project_id: string;
+  label: string;
+  milestone_date: string; // YYYY-MM-DD
 };
 export type PhaseRow = {
   id: string;
@@ -42,6 +49,7 @@ export type CapacityInputs = {
   targetHrsPerWeek: number;
   weeksPerYear: number;
   ratePerHr: number;
+  milestones?: MilestoneRow[];
   /**
    * Optional override for the firm-wide annual billable capacity used in the
    * summary (committed / available). When provided, this is the SAME
@@ -59,6 +67,10 @@ export type WeekBucket = {
   weekStart: Date;
   past: boolean;
   committed: number;
+  /** Actual billable hours logged this week (0 for future weeks). */
+  actual?: number;
+  /** True if this bucket used actual hours instead of estimate. */
+  fromActual?: boolean;
 };
 
 export type CapacityWindow = {
@@ -135,7 +147,9 @@ function projectWeeklyHrs(p: ProjRow, totalHrs: number): { start: Date; end: Dat
   const start = startOfISOWeek(new Date(p.start_date + "T00:00:00"));
   const end = startOfISOWeek(new Date(p.end_date + "T00:00:00"));
   const weeks = Math.max(1, Math.round((end.getTime() - start.getTime()) / (7 * 86400000)) + 1);
-  return { start, end, perWeek: totalHrs / weeks };
+  const explicit = Number(p.est_weekly_hrs) || 0;
+  const perWeek = explicit > 0 ? explicit : (totalHrs / weeks);
+  return { start, end, perWeek };
 }
 
 function summaryStatus(committedPct: number): CapacitySummary["status"] {
@@ -195,19 +209,21 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
   // Build 16-week buckets centered around now: 0..15 future weeks starting this week.
   const buckets: WeekBucket[] = [];
   for (let i = 0; i < 16; i++) {
-    buckets.push({ weekStart: addWeeks(weekStart, i), past: false, committed: 0 });
+    buckets.push({ weekStart: addWeeks(weekStart, i), past: false, committed: 0, actual: 0, fromActual: false });
   }
 
-  // Past weeks: replace committed of the current week from actual logged billable
-  // (also fold 0-indexed week into committed from time entries to reflect now).
+  // Sum billable actuals into each bucket (matches by ISO week).
   for (const t of trailingEntries) {
+    if (!t.billable) continue;
     const tDate = new Date(t.date + "T00:00:00");
-    const ws = startOfISOWeek(tDate);
-    if (ws.getTime() === weekStart.getTime() && t.billable) {
-      buckets[0].committed += Number(t.hrs || 0);
+    const ws = startOfISOWeek(tDate).getTime();
+    for (let i = 0; i < buckets.length; i++) {
+      if (buckets[i].weekStart.getTime() === ws) {
+        buckets[i].actual = (buckets[i].actual ?? 0) + Number(t.hrs || 0);
+        break;
+      }
     }
   }
-  // Reset week 0 actual is intentional — past weeks displayed in chart use actuals if past.
 
   // Future allocation from active projects.
   for (const p of active) {
@@ -217,14 +233,19 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
     for (let i = 0; i < buckets.length; i++) {
       const ws = buckets[i].weekStart;
       if (ws >= d.start && ws <= d.end) {
-        // For week 0, we already added actual logged; for future weeks, use planned.
-        if (i === 0) {
-          // Replace planned only if no actual recorded
-          if (buckets[0].committed === 0) buckets[0].committed = d.perWeek;
-        } else {
-          buckets[i].committed += d.perWeek;
-        }
+        buckets[i].committed += d.perWeek;
       }
+    }
+  }
+
+  // Past/current weeks: actual overrides estimate when > 0.
+  const nowMs = now.getTime();
+  for (const b of buckets) {
+    const isPastOrCurrent = b.weekStart.getTime() <= nowMs;
+    b.past = isPastOrCurrent;
+    if (isPastOrCurrent && (b.actual ?? 0) > 0) {
+      b.committed = b.actual!;
+      b.fromActual = true;
     }
   }
 
@@ -276,6 +297,46 @@ export function computeCapacity(input: CapacityInputs): CapacitySummary {
     committedDollars,
     committedDollarMode,
   };
+}
+
+/**
+ * Simulate adding a new project starting on `startDate` at `weeklyHrs` for a
+ * total of `totalHrs` (or until we exhaust the 16-week window). Returns the
+ * affected week indices and which of them would exceed `target`.
+ */
+export function simulateAddProject(opts: {
+  weeks: WeekBucket[];
+  target: number;
+  startDate: Date;
+  weeklyHrs: number;
+  totalHrs?: number;
+}): {
+  affectedIdx: number[];
+  overIdx: number[];
+  perWeek: number;
+  nextOpenIdx: number | null;
+} {
+  const { weeks, target, startDate, weeklyHrs, totalHrs } = opts;
+  const startWs = startOfISOWeek(startDate).getTime();
+  const affected: number[] = [];
+  const over: number[] = [];
+  let remaining = totalHrs && totalHrs > 0 ? totalHrs : Infinity;
+  for (let i = 0; i < weeks.length; i++) {
+    if (weeks[i].weekStart.getTime() < startWs) continue;
+    if (remaining <= 0) break;
+    const add = Math.min(weeklyHrs, remaining);
+    affected.push(i);
+    if (target > 0 && weeks[i].committed + add > target) over.push(i);
+    remaining -= add;
+  }
+  let nextOpen: number | null = null;
+  if (over.length > 0 && target > 0) {
+    for (let i = 0; i < weeks.length; i++) {
+      if (weeks[i].weekStart.getTime() < startWs) continue;
+      if (weeks[i].committed + weeklyHrs <= target) { nextOpen = i; break; }
+    }
+  }
+  return { affectedIdx: affected, overIdx: over, perWeek: weeklyHrs, nextOpenIdx: nextOpen };
 }
 
 export function statusMeta(s: CapacitySummary["status"]) {

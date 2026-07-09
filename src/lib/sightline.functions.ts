@@ -185,7 +185,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     if (!profile?.firm_id) throw new Error("No firm");
     const isPrincipal = profile.role === "principal";
     const isAdmin = profile.role === "principal" || profile.role === "admin";
-    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }, { data: activityLog }] = await Promise.all([
+    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }, { data: activityLog }, { data: milestones }] = await Promise.all([
       supabase.from("projects").select("*").eq("id", data.id).eq("firm_id", profile.firm_id).single(),
       supabase.from("project_phases").select("*").eq("project_id", data.id).order("sort_order"),
       supabase.from("time_entries").select("*").eq("project_id", data.id).order("date", { ascending: false }),
@@ -197,6 +197,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       }),
       supabase.from("profiles").select("id, name, email, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
       supabase.from("project_activity_log").select("*").eq("project_id", data.id).order("occurred_at", { ascending: false }),
+      supabase.from("project_milestones").select("*").eq("project_id", data.id).order("milestone_date"),
     ]);
     if (!project) throw new Error("Project not found");
     const phaseIds = (phases ?? []).map((p) => p.id);
@@ -220,6 +221,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       team: team ?? [],
       audit: audit ?? [],
       activityLog: activityLog ?? [],
+      milestones: milestones ?? [],
       isPrincipal,
       isAdmin,
     };
@@ -512,12 +514,59 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
       fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
       start_date: z.string().optional().nullable(),
       end_date: z.string().optional().nullable(),
+      est_weekly_hrs: z.number().min(0).max(200).optional().nullable(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { id, ...patch } = data;
     const { error } = await supabase.from("projects").update(patch).eq("id", id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---- Milestones ------------------------------------------------------------
+
+export const saveProjectMilestone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid().optional(),
+      project_id: z.string().uuid(),
+      label: z.string().trim().min(1).max(120),
+      milestone_date: z.string().min(4),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (data.id) {
+      const { error } = await supabase.from("project_milestones")
+        .update({ label: data.label, milestone_date: data.milestone_date })
+        .eq("id", data.id);
+      if (error) throw new Error(error.message);
+      return { id: data.id };
+    }
+    const { data: row, error } = await supabase.from("project_milestones")
+      .insert({
+        project_id: data.project_id,
+        firm_id: profile.firm_id,
+        label: data.label,
+        milestone_date: data.milestone_date,
+      })
+      .select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: row.id };
+  });
+
+export const deleteProjectMilestone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("project_milestones").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

@@ -6,9 +6,11 @@ import {
   fmtHrs,
   startOfISOWeek,
   statusMeta,
+  simulateAddProject,
   type CapacityInputs,
   type CapacitySummary,
   type CapacityWindow,
+  type MilestoneRow,
   type PhaseRow,
   type ProjRow,
 } from "@/lib/capacity-math";
@@ -288,7 +290,11 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
         <p className="mt-1 text-[11px] font-light" style={{ color: "#aaa" }}>
           Hours committed per week against your {target.toFixed(0)}-hr target. The shape of your workload ahead.
         </p>
-        <WeeklyPressureChart weeks={summary.weeks} target={target} />
+        <WeeklyPressureChart
+          weeks={summary.weeks}
+          target={target}
+          milestones={data.inputs.milestones ?? []}
+        />
         <div className="mt-3 flex flex-wrap gap-4 text-[10px]" style={{ color: "#777" }}>
           <LegendSwatch color="#5C8A6E" label="Within target" />
           <LegendSwatch color="#B8860B" label="Approaching limit" />
@@ -332,7 +338,11 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
             </Link>
           </div>
         ) : (
-          <ProjectTimeline projects={withDates} phases={data.inputs.phases} />
+          <ProjectTimeline
+            projects={withDates}
+            phases={data.inputs.phases}
+            milestones={data.inputs.milestones ?? []}
+          />
         )}
         {withoutDates.length > 0 && (
           <ul className="mt-3 space-y-1 text-[11px]" style={{ color: "#777" }}>
@@ -357,7 +367,13 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
       <OpenWindowsSection windows={summary.windows} hasForwardData={withDates.length > 0} />
 
       {/* Section E: What-if */}
-      <WhatIfTool windows={summary.windows} sopTemplates={data.sopTemplates} target={target} availableAnnual={summary.available} />
+      <WhatIfTool
+        windows={summary.windows}
+        sopTemplates={data.sopTemplates}
+        target={target}
+        availableAnnual={summary.available}
+        weeks={summary.weeks}
+      />
     </div>
   );
 }
@@ -450,10 +466,42 @@ function ProspectsSection({
   );
 }
 
-export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary["weeks"]; target: number }) {
+export function WeeklyPressureChart({
+  weeks, target, milestones = [],
+}: {
+  weeks: CapacitySummary["weeks"];
+  target: number;
+  milestones?: MilestoneRow[];
+}) {
   const maxH = Math.max(target * 1.6, 1);
+  const windowStart = weeks[0]?.weekStart.getTime() ?? 0;
+  const windowEnd = weeks.length ? weeks[weeks.length - 1].weekStart.getTime() + 7 * 86400000 : 0;
+  const totalSpan = windowEnd - windowStart;
+  const inWindow = milestones.filter((m) => {
+    const t = new Date(m.milestone_date + "T00:00:00").getTime();
+    return t >= windowStart && t <= windowEnd;
+  });
   return (
     <div className="mt-3">
+      {/* Milestone markers row (above bars) */}
+      {inWindow.length > 0 && totalSpan > 0 && (
+        <div className="relative mb-1 h-4">
+          {inWindow.map((m, i) => {
+            const t = new Date(m.milestone_date + "T00:00:00").getTime();
+            const leftPct = ((t - windowStart) / totalSpan) * 100;
+            return (
+              <div
+                key={m.id + i}
+                className="absolute -translate-x-1/2"
+                style={{ left: `${leftPct}%`, top: 0 }}
+                title={`${m.label} · ${m.milestone_date}`}
+              >
+                <div className="whitespace-nowrap text-[8px]" style={{ color: "#777" }}>{m.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div
         className="relative w-full"
         style={{ height: 88, background: "#F0EBE1", borderRadius: 3, overflow: "hidden" }}
@@ -468,6 +516,22 @@ export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary[
             }}
           />
         )}
+        {/* milestone diamonds anchored to chart top */}
+        {inWindow.map((m, i) => {
+          const t = new Date(m.milestone_date + "T00:00:00").getTime();
+          const leftPct = ((t - windowStart) / totalSpan) * 100;
+          return (
+            <div
+              key={"d" + m.id + i}
+              className="absolute"
+              style={{
+                left: `${leftPct}%`, top: 2,
+                transform: "translateX(-50%) rotate(45deg)",
+                width: 8, height: 8, background: "#B8860B",
+              }}
+            />
+          );
+        })}
         <div className="flex items-end gap-[2px] px-[6px] pb-[6px] h-full">
           {weeks.map((w, i) => {
             const cHeight = (Math.min(w.committed, maxH) / maxH) * 82;
@@ -479,7 +543,10 @@ export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary[
                   : "#5C8A6E";
             return (
               <div key={i} className="flex flex-1 flex-col justify-end">
-                <div style={{ height: cHeight, background: color }} />
+                <div
+                  style={{ height: cHeight, background: color, opacity: w.fromActual ? 1 : 0.85 }}
+                  title={`${w.committed.toFixed(1)} hrs${w.fromActual ? " (logged)" : " (est.)"}`}
+                />
               </div>
             );
           })}
@@ -496,19 +563,22 @@ export function WeeklyPressureChart({ weeks, target }: { weeks: CapacitySummary[
   );
 }
 
-export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; phases: PhaseRow[] }) {
+export function ProjectTimeline({
+  projects, phases, milestones = [],
+}: {
+  projects: ProjRow[];
+  phases: PhaseRow[];
+  milestones?: MilestoneRow[];
+}) {
   const now = new Date();
   const windowStart = startOfISOWeek(now);
-  const windowEnd = addWeeks(windowStart, 26); // 6 months
+  const windowEnd = addWeeks(windowStart, 16); // aligned with pressure chart
   const span = windowEnd.getTime() - windowStart.getTime();
 
   const palette = ["#B8860B", "#5C8A6E", "#C4714A", "#D4A017", "#8b7355", "#4a6741"];
 
-  const months: Date[] = [];
-  for (let i = 0; i < 6; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    months.push(d);
-  }
+  // Week ticks matching pressure chart (W1..W16)
+  const weekTicks = Array.from({ length: 16 }, (_, i) => addWeeks(windowStart, i));
 
   const rows = [...projects]
     .filter((p) => p.start_date && p.end_date)
@@ -519,9 +589,9 @@ export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; pha
       {/* Month labels */}
       <div className="grid items-center text-[8px]" style={{ gridTemplateColumns: "160px 1fr 80px", color: "#ccc" }}>
         <div />
-        <div className="grid" style={{ gridTemplateColumns: `repeat(${months.length}, 1fr)` }}>
-          {months.map((m, i) => (
-            <div key={i}>{m.toLocaleDateString("en-US", { month: "short" })}</div>
+        <div className="grid" style={{ gridTemplateColumns: `repeat(16, 1fr)` }}>
+          {weekTicks.map((_, i) => (
+            <div key={i} className="text-center">W{i + 1}</div>
           ))}
         </div>
         <div />
@@ -540,12 +610,13 @@ export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; pha
           const hrs = phases
             .filter((ph) => ph.project_id === p.id)
             .reduce((s, ph) => s + Number(ph.expected_hrs || 0), 0) || Number(p.scoped_hrs || 0);
+          const projMilestones = milestones.filter((m) => m.project_id === p.id);
           return (
             <div key={p.id} className="grid items-center" style={{ gridTemplateColumns: "160px 1fr 80px" }}>
               <div className="truncate pr-2 text-[10px]" style={{ color: "#555" }}>
                 {p.name}
               </div>
-              <div className="relative h-3">
+              <div className="relative h-4">
                 <div
                   className="absolute top-0"
                   style={{
@@ -561,6 +632,26 @@ export function ProjectTimeline({ projects, phases }: { projects: ProjRow[]; pha
                     <span className="block truncate px-1 text-[8px] text-white">{p.name}</span>
                   )}
                 </div>
+                {projMilestones.map((m, mi) => {
+                  const mt = new Date(m.milestone_date + "T00:00:00").getTime();
+                  if (mt < windowStart.getTime() || mt > windowEnd.getTime()) return null;
+                  const mLeft = ((mt - windowStart.getTime()) / span) * 100;
+                  return (
+                    <div
+                      key={m.id + mi}
+                      className="absolute"
+                      title={`${m.label} · ${m.milestone_date}`}
+                      style={{
+                        left: `${mLeft}%`,
+                        top: 2,
+                        transform: "translateX(-50%) rotate(45deg)",
+                        width: 9, height: 9,
+                        background: "#2C2C2C",
+                        border: "1px solid #FFFFFF",
+                      }}
+                    />
+                  );
+                })}
               </div>
               <div className="text-right num text-[13px]" style={{ fontFamily: "Cormorant Garamond, serif", color: "#aaa" }}>
                 {fmtHrs(hrs)} hrs
@@ -643,50 +734,55 @@ function WhatIfTool({
   sopTemplates,
   target,
   availableAnnual,
+  weeks,
 }: {
   windows: CapacityWindow[];
   sopTemplates: Array<{ id: string; name: string; total_hrs: number }>;
   target: number;
   availableAnnual: number;
+  weeks: CapacitySummary["weeks"];
 }) {
   const [hrs, setHrs] = useState<number>(40);
-  const [windowId, setWindowId] = useState<string>("asap");
+  const [weeklyHrs, setWeeklyHrs] = useState<number>(10);
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date(); return d.toISOString().slice(0, 10);
+  });
 
   const noWindows = windows.length === 0;
-  const selected = windows.find((w) => w.id === windowId) ?? windows[0];
 
   const result = (() => {
-    if (noWindows) {
+    if (weeks.length === 0 || target === 0) {
       const pct = availableAnnual > 0 ? (hrs / availableAnnual) * 100 : 0;
       return {
         color: "#5C8A6E",
         text: `A ${hrs}-hr project uses ${Math.round(pct)}% of your ${fmtHrs(availableAnnual)} annual available hours.`,
       };
     }
-    const w = windowId === "asap" ? windows[0] : selected;
-    if (!w) return null;
-    const avail = w.available;
-    const pct = avail > 0 ? (hrs / avail) * 100 : 0;
-    const remaining = Math.max(0, avail - hrs);
-    const next = windows[windows.indexOf(w) + 1];
-    if (hrs <= avail && pct < 60) {
+    const sim = simulateAddProject({
+      weeks,
+      target,
+      startDate: new Date(startDate + "T00:00:00"),
+      weeklyHrs,
+      totalHrs: hrs,
+    });
+    const labelWeeks = (idxs: number[]) =>
+      idxs.map((i) => `W${i + 1}`).join(", ");
+    if (sim.affectedIdx.length === 0) {
+      return { color: "#5C8A6E", text: "Start date falls outside the 16-week window. Try a nearer start date." };
+    }
+    if (sim.overIdx.length === 0) {
+      const startLabel = weeks[sim.affectedIdx[0]].weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
       return {
         color: "#5C8A6E",
-        text: `Starting ${w.label}, a ${hrs}-hr project fits within your open window of ~${avail} hrs. It uses about ${Math.round(pct)}% of that window. You'd still have ~${remaining} hrs available.`,
+        text: `Adding this project from ${startLabel} at ${weeklyHrs} hrs/wk fits within capacity across ${labelWeeks(sim.affectedIdx)}. You have room.`,
       };
     }
-    if (hrs <= avail) {
-      return {
-        color: "#B8860B",
-        text: `Starting ${w.label}, a ${hrs}-hr project fills ${Math.round(pct)}% of your ~${avail}-hr window. Workable — but little room for scope changes or delays.`,
-      };
-    }
-    const overage = hrs - avail;
-    const nextText = next ? ` Consider a later start ${next.label} which opens ~${next.available} hrs, or split delivery across periods.` : " Consider deferring or splitting delivery across periods.";
-    return {
-      color: "#C4714A",
-      text: `A ${hrs}-hr project exceeds the ~${avail}-hr window ${w.label} by ${overage} hrs.${nextText}`,
-    };
+    const startLabel = weeks[sim.affectedIdx[0]].weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const overText = `Adding this project from ${startLabel} at ${weeklyHrs} hrs/wk would put weeks ${labelWeeks(sim.overIdx)} over capacity.`;
+    const suggest = sim.nextOpenIdx != null
+      ? ` Consider starting in W${sim.nextOpenIdx + 1} (${weeks[sim.nextOpenIdx].weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}) when a window opens.`
+      : ` No open window in the next 16 weeks — consider a smaller weekly commitment or a later start.`;
+    return { color: "#C4714A", text: overText + suggest };
   })();
 
   return (
@@ -700,7 +796,7 @@ function WhatIfTool({
       <div className="mt-[14px] flex flex-wrap gap-4">
         <div>
           <label className="block text-[11px]" style={{ color: "#777" }}>
-            Estimated hours
+            Estimated total hours
           </label>
           <input
             type="number"
@@ -710,26 +806,30 @@ function WhatIfTool({
             style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, width: 80, background: "#FAF7F2" }}
           />
         </div>
-        {!noWindows && (
-          <div>
-            <label className="block text-[11px]" style={{ color: "#777" }}>
-              When would it start?
-            </label>
-            <select
-              value={windowId}
-              onChange={(e) => setWindowId(e.target.value)}
-              className="mt-1 px-2 py-1 text-[14px]"
-              style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, background: "#FAF7F2" }}
-            >
-              <option value="asap">As soon as possible</option>
-              {windows.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div>
+          <label className="block text-[11px]" style={{ color: "#777" }}>
+            Estimated weekly hours
+          </label>
+          <input
+            type="number"
+            value={weeklyHrs}
+            onChange={(e) => setWeeklyHrs(Number(e.target.value) || 0)}
+            className="mt-1 px-2 py-1 text-[14px]"
+            style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, width: 80, background: "#FAF7F2" }}
+          />
+        </div>
+        <div>
+          <label className="block text-[11px]" style={{ color: "#777" }}>
+            Estimated start
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="mt-1 px-2 py-1 text-[14px]"
+            style={{ border: "0.5px solid rgba(44,44,44,0.2)", borderRadius: 3, background: "#FAF7F2" }}
+          />
+        </div>
       </div>
 
       {result && (

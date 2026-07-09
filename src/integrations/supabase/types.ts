@@ -1215,6 +1215,54 @@ export type Database = {
         }
         Relationships: []
       }
+      project_milestones: {
+        Row: {
+          created_at: string
+          firm_id: string
+          id: string
+          label: string
+          milestone_date: string
+          project_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          firm_id: string
+          id?: string
+          label: string
+          milestone_date: string
+          project_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          firm_id?: string
+          id?: string
+          label?: string
+          milestone_date?: string
+          project_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_milestones_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_milestones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_phases: {
         Row: {
           actual_hrs: number
@@ -1325,6 +1373,7 @@ export type Database = {
           client_name: string | null
           created_at: string
           end_date: string | null
+          est_weekly_hrs: number | null
           firm_id: string
           fixed_fee: number | null
           id: string
@@ -1340,6 +1389,7 @@ export type Database = {
           client_name?: string | null
           created_at?: string
           end_date?: string | null
+          est_weekly_hrs?: number | null
           firm_id: string
           fixed_fee?: number | null
           id?: string
@@ -1355,6 +1405,7 @@ export type Database = {
           client_name?: string | null
           created_at?: string
           end_date?: string | null
+          est_weekly_hrs?: number | null
           firm_id?: string
           fixed_fee?: number | null
           id?: string

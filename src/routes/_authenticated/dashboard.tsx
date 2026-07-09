@@ -224,6 +224,7 @@ function Dashboard() {
       // annualBillableHrs. Keeps Firm Capacity's total in sync with every
       // other rate/architecture surface.
       annualCapacityHrs: c.annualBillableHrs,
+      milestones: (cap as { milestones?: Array<{ id: string; project_id: string; label: string; milestone_date: string }> }).milestones ?? [],
     };
     const out: CapacityExpandedData = {
       inputs,

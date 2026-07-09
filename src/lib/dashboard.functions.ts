@@ -58,6 +58,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: teamBurdens },
       { data: ytdEntries },
       { data: memberLastEntries },
+      { data: projectMilestones },
     ] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -75,7 +76,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id),
       supabase
         .from("projects")
-        .select("id, name, status, start_date, end_date, scoped_hrs, scoped_rate, fixed_fee, sop_template_id")
+        .select("id, name, status, start_date, end_date, scoped_hrs, scoped_rate, fixed_fee, sop_template_id, est_weekly_hrs")
         .eq("firm_id", profile.firm_id),
       supabase
         .from("project_phases")
@@ -129,6 +130,10 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id)
         .order("date", { ascending: false })
         .limit(1000),
+      supabase
+        .from("project_milestones")
+        .select("id, project_id, label, milestone_date")
+        .eq("firm_id", profile.firm_id),
     ]);
 
     const isBD = (status: string | null | undefined) =>
@@ -229,6 +234,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         ytdHoursByUser,
         lastEntryByUser,
         weeksElapsed,
+        milestones: projectMilestones ?? [],
       },
     };
   });

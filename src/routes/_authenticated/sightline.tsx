@@ -20,6 +20,7 @@ import {
   patchTimeEntry, listSopTemplatesLite,
   updateProjectStepHrs, createProjectStep, deleteProjectStep,
   confirmProjectReviewed, logNothingToReport, NOTHING_TO_REPORT_PHRASE,
+  saveProjectMilestone, deleteProjectMilestone,
 } from "@/lib/sightline.functions";
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
@@ -591,6 +592,10 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   const deleteStepFn = useServerFn(deleteProjectStep);
   const confirmFn = useServerFn(confirmProjectReviewed);
   const nothingFn = useServerFn(logNothingToReport);
+  const saveMilestoneFn = useServerFn(saveProjectMilestone);
+  const deleteMilestoneFn = useServerFn(deleteProjectMilestone);
+  const [msLabel, setMsLabel] = useState("");
+  const [msDate, setMsDate] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
@@ -640,7 +645,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   // Operational edit drawer (overview details card)
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState({
-    name: "", client_name: "", start_date: "", end_date: "",
+    name: "", client_name: "", start_date: "", end_date: "", est_weekly_hrs: "",
   });
 
   // "Nothing to report" dialog state
@@ -692,6 +697,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const milestones = ((data as unknown) as { milestones?: Array<{ id: string; label: string; milestone_date: string }> }).milestones ?? [];
   const activityLog = (data as unknown as {
     activityLog?: Array<{ event_type: string; occurred_at: string; note: string | null }>;
   }).activityLog ?? [];
@@ -939,6 +945,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
       client_name: project.client_name ?? "",
       start_date: project.start_date ?? "",
       end_date: project.end_date ?? "",
+      est_weekly_hrs: project.est_weekly_hrs != null ? String(project.est_weekly_hrs) : "",
     });
     setEditingMeta(true);
   };
@@ -951,6 +958,9 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
           client_name: metaDraft.client_name.trim() || null,
           start_date: metaDraft.start_date || null,
           end_date: metaDraft.end_date || null,
+          est_weekly_hrs: metaDraft.est_weekly_hrs.trim()
+            ? Number(metaDraft.est_weekly_hrs)
+            : null,
         },
       });
       setEditingMeta(false);
@@ -1235,6 +1245,119 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
                 </dd>
               </div>
             </dl>
+          </div>
+
+          {/* ESTIMATED TIMELINE CARD */}
+          <div className="rounded-lg border border-border bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-display text-xl tracking-tight text-ch">Estimated timeline</h3>
+                <p className="mt-1 text-[13px] font-medium" style={{ fontFamily: "Jost, sans-serif", color: "#2C2C2C", fontWeight: 500 }}>
+                  When is the bulk of work happening on this project?
+                </p>
+              </div>
+              {isAdmin && (
+                <Button variant="outline" size="sm" onClick={openMetaEdit}>Edit dates</Button>
+              )}
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Work begins</dt>
+                <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Work wraps</dt>
+                <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Est. weekly hrs</dt>
+                <dd className="mt-0.5 text-ch">
+                  {project.est_weekly_hrs != null
+                    ? `${Number(project.est_weekly_hrs).toFixed(1)} / wk`
+                    : (project.start_date && project.end_date && scopedHrs
+                        ? (() => {
+                            const w = Math.max(1, Math.round((new Date(project.end_date).getTime() - new Date(project.start_date).getTime()) / (7 * 86400000)) + 1);
+                            return `${(scopedHrs / w).toFixed(1)} / wk (auto)`;
+                          })()
+                        : "—")}
+                </dd>
+              </div>
+            </dl>
+
+            {/* Milestones */}
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Milestones</h4>
+              </div>
+              {milestones.length === 0 ? (
+                <p className="mt-2 text-[12px] text-ch/50">No milestones yet. Add one below (e.g. Install, Reveal).</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-border">
+                  {milestones.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <div>
+                        <div className="text-ch">{m.label}</div>
+                        <div className="text-[11px] text-ch/50">{m.milestone_date}</div>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-ch/50 hover:text-terra"
+                          onClick={async () => {
+                            try {
+                              await deleteMilestoneFn({ data: { id: m.id } });
+                              toast.success("Milestone removed");
+                              invalidate();
+                            } catch (e) {
+                              toast.error(e instanceof Error ? e.message : "Failed");
+                            }
+                          }}
+                        >Remove</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {isAdmin && (
+                <form
+                  className="mt-3 grid grid-cols-12 gap-2"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    if (!msLabel.trim() || !msDate) return;
+                    try {
+                      await saveMilestoneFn({
+                        data: { project_id: id, label: msLabel.trim(), milestone_date: msDate },
+                      });
+                      setMsLabel(""); setMsDate("");
+                      toast.success("Milestone added");
+                      invalidate();
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed");
+                    }
+                  }}
+                >
+                  <Input
+                    className="col-span-6"
+                    placeholder="Label (e.g. Install, Reveal)"
+                    value={msLabel}
+                    onChange={(e) => setMsLabel(e.target.value)}
+                  />
+                  <Input
+                    className="col-span-4"
+                    type="date"
+                    value={msDate}
+                    onChange={(e) => setMsDate(e.target.value)}
+                  />
+                  <Button
+                    type="submit"
+                    className="col-span-2 bg-ch text-cream hover:bg-ch/90"
+                    disabled={!msLabel.trim() || !msDate}
+                  >
+                    + Add
+                  </Button>
+                </form>
+              )}
+            </div>
           </div>
 
           {/* FINANCIAL CHANGE HISTORY (principal-only, hidden if empty) */}
@@ -1545,13 +1668,32 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Start date</label>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Work begins</label>
                 <Input type="date" value={metaDraft.start_date} onChange={(e) => setMetaDraft({ ...metaDraft, start_date: e.target.value })} />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">End date</label>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Work wraps</label>
                 <Input type="date" value={metaDraft.end_date} onChange={(e) => setMetaDraft({ ...metaDraft, end_date: e.target.value })} />
               </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">
+                Estimated weekly hours during active work
+              </label>
+              <Input
+                type="number" min={0} step="any"
+                value={metaDraft.est_weekly_hrs}
+                onChange={(e) => setMetaDraft({ ...metaDraft, est_weekly_hrs: e.target.value })}
+                placeholder={(() => {
+                  const s = metaDraft.start_date; const e = metaDraft.end_date;
+                  if (!s || !e || !scopedHrs) return "auto (scoped hrs ÷ weeks)";
+                  const weeks = Math.max(1, Math.round((new Date(e).getTime() - new Date(s).getTime()) / (7 * 86400000)) + 1);
+                  return `auto ≈ ${(scopedHrs / weeks).toFixed(1)}`;
+                })()}
+              />
+              <p className="mt-1 text-[11px] text-ch/50">
+                Feeds the 16-week capacity pressure chart. Leave blank to auto-spread scoped hours evenly.
+              </p>
             </div>
             {isPrincipal && (
               <div className="border-t border-border pt-3">
