@@ -135,9 +135,18 @@ export const getProjectList = createServerFn({ method: "GET" })
           const ts = new Date(lastActivityAt as string).getTime();
           if (!Number.isNaN(ts)) daysSince = Math.floor((now - ts) / (24 * 3600 * 1000));
         }
-        let freshnessState: "current" | "stale" | "critical";
-        if (daysSince == null) freshnessState = "critical";
-        else if (daysSince <= 2) freshnessState = "current";
+        // "new" = no history at all (no time entries, no NTR override) AND
+        // the project hasn't started yet (or has no start date). Retroactive
+        // projects (past start date, no entries) still surface as critical
+        // so the user is prompted to backfill hours.
+        const startRaw = (p as { start_date?: string | null }).start_date ?? null;
+        const todayIso = new Date(now).toISOString().slice(0, 10);
+        const hasHistory = a.hasAnyEntry || lastNtr != null;
+        const notStarted = !startRaw || (startRaw as string) >= todayIso;
+        let freshnessState: "new" | "current" | "stale" | "critical";
+        if (!hasHistory && notStarted) freshnessState = "new";
+        else if (daysSince == null) freshnessState = "critical";
+        else if (daysSince < 7) freshnessState = "current";
         else if (daysSince <= 20) freshnessState = "stale";
         else freshnessState = "critical";
         return {
