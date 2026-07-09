@@ -88,14 +88,17 @@ type Entry = {
   hrs: number;
   billable: boolean;
   notes: string | null;
+  description: string | null;
   project_id: string | null;
   project_phase_id: string | null;
   activity_group_id: string | null;
+  activity_type_id: string | null;
   user_id: string;
 };
 type Project = { id: string; name: string; client_name: string | null; scoped_rate: number | null };
 type Phase = { id: string; project_id: string; name: string; expected_hrs: number; actual_hrs: number };
 type Ag = { id: string; name: string; color: string };
+type ActivityType = { id: string; name: string; is_billable: boolean; color: string; sort_order: number | null };
 type Member = {
   id: string; name: string | null; email: string; role: string;
   billable_rate: number | null; expected_hrs_per_week: number | null; billable_pct: number | null;
