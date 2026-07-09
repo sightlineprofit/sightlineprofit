@@ -1221,10 +1221,10 @@ function ProjectTaskPicker({
 
 // ───────── entry form ─────────
 function EntryForm({
-  compact = false, projects, phases, ags, team, isAdmin, meId, initial, onSaved, onDeleted,
+  compact = false, projects, phases, ags, activityTypes, team, isAdmin, meId, initial, onSaved, onDeleted,
 }: {
   compact?: boolean;
-  projects: Project[]; phases: Phase[]; ags: Ag[]; team: Member[];
+  projects: Project[]; phases: Phase[]; ags: Ag[]; activityTypes: ActivityType[]; team: Member[];
   isAdmin: boolean; meId: string;
   initial: Partial<Entry>;
   onSaved: () => void;
@@ -1235,8 +1235,10 @@ function EntryForm({
   const [endTime, setEndTime] = useState((initial.end_time || "10:00").slice(0, 5));
   const [projectId, setProjectId] = useState<string>(initial.project_id || "");
   const [phaseId, setPhaseId] = useState<string>(initial.project_phase_id || "");
-  const [agId, setAgId] = useState<string>(initial.activity_group_id || "");
+  const [atId, setAtId] = useState<string>(initial.activity_type_id || "");
+  const [agId] = useState<string>(initial.activity_group_id || "");
   const [billable, setBillable] = useState(initial.billable ?? true);
+  const [description, setDescription] = useState(initial.description || "");
   const [notes, setNotes] = useState(initial.notes || "");
   const [userId, setUserId] = useState(initial.user_id || meId);
 
@@ -1250,10 +1252,13 @@ function EntryForm({
       saveFn({
         data: {
           id: initial.id,
-          date, start_time: startTime, end_time: endTime, billable, notes: notes || null,
+          date, start_time: startTime, end_time: endTime, billable,
+          description: description || null,
+          notes: notes || null,
           project_id: projectId || null,
           project_phase_id: phaseId || null,
           activity_group_id: agId || null,
+          activity_type_id: atId || null,
           user_id: isAdmin ? userId : undefined,
         },
       }),
@@ -1261,6 +1266,7 @@ function EntryForm({
       onSaved();
       if (compact) {
         // reset partial state for quick log convenience
+        setDescription("");
         setNotes("");
       }
     },
@@ -1315,20 +1321,40 @@ function EntryForm({
 
       <div>
         <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Activity</Label>
-        <Select value={agId || "_none"} onValueChange={(v) => setAgId(v === "_none" ? "" : v)}>
+        <Select
+          value={atId || "_none"}
+          onValueChange={(v) => {
+            if (v === "_none") { setAtId(""); return; }
+            setAtId(v);
+            const picked = activityTypes.find((a) => a.id === v);
+            if (picked) setBillable(picked.is_billable);
+          }}
+        >
           <SelectTrigger className="h-9"><SelectValue placeholder="Choose activity" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_none">— None —</SelectItem>
-            {ags.map((a) => (
+            {activityTypes.map((a) => (
               <SelectItem key={a.id} value={a.id}>
                 <span className="inline-flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
                   {a.name}
+                  <span className="text-[10px] text-ch/40">{a.is_billable ? "· billable" : "· non-bill"}</span>
                 </span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div>
+        <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Description</Label>
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          maxLength={500}
+          placeholder="What did you work on?"
+          className="h-9"
+        />
       </div>
 
       {projectId && projectPhases.length > 0 && (
