@@ -42,12 +42,18 @@ export const getCalendarData = createServerFn({ method: "GET" })
       .lt("date", endIso);
     if (!isAdmin) entriesQ = entriesQ.eq("user_id", userId);
 
-    const [{ data: entries }, { data: projects }, { data: phases }, { data: ags }, { data: team }, { data: config }] =
+    const [{ data: entries }, { data: projects }, { data: phases }, { data: ags }, { data: activityTypes }, { data: team }, { data: config }] =
       await Promise.all([
         entriesQ,
         supabase.from("projects").select("id, name, client_name, scoped_rate, status").eq("firm_id", profile.firm_id).order("name"),
         supabase.from("project_phases").select("*"),
         supabase.from("activity_groups").select("*").eq("firm_id", profile.firm_id).order("name"),
+        supabase
+          .from("activity_types")
+          .select("id, name, is_billable, is_default, is_system, color, sort_order")
+          .eq("firm_id", profile.firm_id)
+          .order("sort_order", { ascending: true })
+          .order("name", { ascending: true }),
         supabase
           .from("profiles")
           .select("id, name, email, role, color, billable_rate, expected_hrs_per_week, billable_pct")
@@ -63,7 +69,8 @@ export const getCalendarData = createServerFn({ method: "GET" })
     return {
       profile, config, weekStart: data.weekStart,
       entries: entries ?? [], projects: projects ?? [],
-      phases: phasesScoped, activityGroups: ags ?? [], team: team ?? [],
+      phases: phasesScoped, activityGroups: ags ?? [],
+      activityTypes: activityTypes ?? [], team: team ?? [],
     };
   });
 
@@ -74,9 +81,11 @@ const entrySchema = z.object({
   end_time: timeStr,
   billable: z.boolean(),
   notes: z.string().max(500).optional().nullable(),
+  description: z.string().max(500).optional().nullable(),
   project_id: z.string().uuid().optional().nullable(),
   project_phase_id: z.string().uuid().optional().nullable(),
   activity_group_id: z.string().uuid().optional().nullable(),
+  activity_type_id: z.string().uuid().optional().nullable(),
   user_id: z
     .string()
     .optional()
@@ -125,9 +134,11 @@ export const saveTimeEntry = createServerFn({ method: "POST" })
       hrs,
       billable: data.billable,
       notes: data.notes ?? null,
+      description: data.description ?? null,
       project_id: data.project_id ?? null,
       project_phase_id: data.project_phase_id ?? null,
       activity_group_id: data.activity_group_id ?? null,
+      activity_type_id: data.activity_type_id ?? null,
     };
 
     if (data.id) {
@@ -153,9 +164,15 @@ export const saveTimeEntry = createServerFn({ method: "POST" })
       return { ok: true };
     }
 
-    // New entries: atomic insert + phase recompute + over-scope flag via RPC.
-    const { error } = await supabase.rpc("save_time_entry", { p_entry: row });
+    // New entries: direct insert (RPC doesn't yet accept activity_type_id / description),
+    // then recompute the phase actuals.
+    const { error } = await supabase
+      .from("time_entries")
+      .insert({ firm_id: profile.firm_id, ...row });
     if (error) throw new Error(error.message);
+    if (row.project_phase_id) {
+      await recomputePhaseActual(supabase, row.project_phase_id);
+    }
     return { ok: true };
   });
 

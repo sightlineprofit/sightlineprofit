@@ -88,14 +88,17 @@ type Entry = {
   hrs: number;
   billable: boolean;
   notes: string | null;
+  description: string | null;
   project_id: string | null;
   project_phase_id: string | null;
   activity_group_id: string | null;
+  activity_type_id: string | null;
   user_id: string;
 };
 type Project = { id: string; name: string; client_name: string | null; scoped_rate: number | null };
 type Phase = { id: string; project_id: string; name: string; expected_hrs: number; actual_hrs: number };
 type Ag = { id: string; name: string; color: string };
+type ActivityType = { id: string; name: string; is_billable: boolean; color: string; sort_order: number | null };
 type Member = {
   id: string; name: string | null; email: string; role: string;
   billable_rate: number | null; expected_hrs_per_week: number | null; billable_pct: number | null;
@@ -131,6 +134,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
   const projects: Project[] = (data?.projects ?? []) as Project[];
   const phases: Phase[] = (data?.phases ?? []) as Phase[];
   const ags: Ag[] = (data?.activityGroups ?? []) as Ag[];
+  const activityTypes: ActivityType[] = (data?.activityTypes ?? []) as ActivityType[];
   const team: Member[] = (data?.team ?? []) as Member[];
   const config = data?.config ?? null;
   const me = data?.profile ?? null;
@@ -213,7 +217,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
             <p className="text-ch/55">Loading…</p>
           ) : view === "week" ? (
             <WeekView
-              days={days} entries={entries} myId={me?.id || ""} projects={projects} ags={ags}
+              days={days} entries={entries} myId={me?.id || ""} projects={projects} ags={ags} activityTypes={activityTypes}
               onCellClick={(date, hour) => setModal({
                 date: isoDate(date), start_time: hourToTime(hour), end_time: hourToTime(hour + 1),
                 billable: true,
@@ -226,16 +230,18 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
                 billable: e.billable,
                 notes: e.notes,
+                description: e.description,
                 project_id: e.project_id,
                 project_phase_id: e.project_phase_id,
                 activity_group_id: e.activity_group_id,
+                activity_type_id: e.activity_type_id,
               })}
             />
           ) : view === "day" ? (
             <DayView
               day={activeDay} weekDays={days} setDay={setActiveDay}
               entries={entries.filter((e) => e.date === isoDate(activeDay))}
-              projects={projects} ags={ags}
+              projects={projects} ags={ags} activityTypes={activityTypes}
               onCellClick={(hour) => setModal({
                 date: isoDate(activeDay), start_time: hourToTime(hour), end_time: hourToTime(hour + 1),
                 billable: true,
@@ -248,9 +254,11 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
                 end_time: hourToTime(toHourFloat(e.end_time || "10:00") + Number(e.hrs || 1)),
                 billable: e.billable,
                 notes: e.notes,
+                description: e.description,
                 project_id: e.project_id,
                 project_phase_id: e.project_phase_id,
                 activity_group_id: e.activity_group_id,
+                activity_type_id: e.activity_type_id,
               })}
             />
           ) : (
@@ -260,6 +268,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               team={team}
               projects={projects}
               ags={ags}
+              activityTypes={activityTypes}
               onEntryClick={(e) => setModal(e)}
             />
           )}
@@ -285,6 +294,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
             projects={projects}
             phases={phases}
             ags={ags}
+            activityTypes={activityTypes}
             team={team}
             isAdmin={isAdmin}
             meId={me?.id || ""}
@@ -312,6 +322,7 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
               projects={projects}
               phases={phases}
               ags={ags}
+              activityTypes={activityTypes}
               team={team}
               isAdmin={isAdmin}
               meId={me?.id || ""}
@@ -328,10 +339,10 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
 
 // ───────── week view ─────────
 function WeekView({
-  days, entries, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
+  days, entries, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; myId: string;
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
   onDuplicate: (e: Entry) => void;
@@ -356,6 +367,7 @@ function WeekView({
         myId={myId}
         projects={projects}
         ags={ags}
+        activityTypes={activityTypes}
         onCellClick={onCellClick}
         onEntryClick={onEntryClick}
         onDuplicate={onDuplicate}
@@ -366,16 +378,17 @@ function WeekView({
 }
 
 function Grid({
-  days, entries, rowH, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
+  days, entries, rowH, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; rowH: number; myId: string;
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
   onDuplicate: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const atName = (id: string | null) => activityTypes.find((a) => a.id === id)?.name;
   const dayRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const getDayDateAt = (x: number, y: number): string | null => {
     for (const [iso, el] of dayRefs.current.entries()) {
@@ -420,7 +433,7 @@ function Grid({
               const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
               const isMine = e.user_id === myId;
               const proj = project(e.project_id);
-              const activity = agName(e.activity_group_id);
+              const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
               const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
               const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
               const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
@@ -502,9 +515,11 @@ function EntryBlock({
                 end_time: (prev.end_time || "10:00").slice(0, 5),
                 billable: prev.billable,
                 notes: prev.notes ?? null,
+                description: prev.description ?? null,
                 project_id: prev.project_id ?? null,
                 project_phase_id: prev.project_phase_id ?? null,
                 activity_group_id: prev.activity_group_id ?? null,
+                activity_type_id: prev.activity_type_id ?? null,
                 user_id: prev.user_id,
               },
             });
@@ -534,9 +549,11 @@ function EntryBlock({
           end_time: newEnd,
           billable: entry.billable,
           notes: entry.notes ?? null,
+          description: entry.description ?? null,
           project_id: entry.project_id ?? null,
           project_phase_id: entry.project_phase_id ?? null,
           activity_group_id: entry.activity_group_id ?? null,
+          activity_type_id: entry.activity_type_id ?? null,
           user_id: entry.user_id,
         },
       });
@@ -561,9 +578,11 @@ function EntryBlock({
           end_time: (entry.end_time || "10:00").slice(0, 5),
           billable: entry.billable,
           notes: entry.notes ?? null,
+          description: entry.description ?? null,
           project_id: entry.project_id ?? null,
           project_phase_id: entry.project_phase_id ?? null,
           activity_group_id: entry.activity_group_id ?? null,
+          activity_type_id: entry.activity_type_id ?? null,
           user_id: entry.user_id,
         },
       });
@@ -751,10 +770,10 @@ function DayFooters({ days, entries, myId }: { days: Date[]; entries: Entry[]; m
 
 // ───────── day view ─────────
 function DayView({
-  day, weekDays, setDay, entries, projects, ags, onCellClick, onEntryClick, onDuplicate,
+  day, weekDays, setDay, entries, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
 }: {
   day: Date; weekDays: Date[]; setDay: (d: Date) => void;
-  entries: Entry[]; projects: Project[]; ags: Ag[];
+  entries: Entry[]; projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (hour: number) => void;
   onEntryClick: (e: Entry) => void;
   onDuplicate: (e: Entry) => void;
@@ -788,6 +807,7 @@ function DayView({
           myId={entries[0]?.user_id || ""}
           projects={projects}
           ags={ags}
+          activityTypes={activityTypes}
           onCellClick={(_d, h) => onCellClick(h)}
           onEntryClick={onEntryClick}
           onDuplicate={onDuplicate}
@@ -801,10 +821,10 @@ function DayView({
 type TeamMode = "overview" | "calendar";
 
 function TeamView({
-  days, entries, team, projects, ags, onEntryClick,
+  days, entries, team, projects, ags, activityTypes, onEntryClick,
 }: {
   days: Date[]; entries: Entry[]; team: Member[];
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onEntryClick: (e: Entry) => void;
 }) {
   const [mode, setMode] = useState<TeamMode>("overview");
@@ -908,6 +928,7 @@ function TeamView({
           team={team}
           projects={projects}
           ags={ags}
+          activityTypes={activityTypes}
           memberFilter={memberFilter}
           onEntryClick={onEntryClick}
         />
@@ -954,15 +975,16 @@ function TeamView({
 
 // ───────── team calendar grid ─────────
 function TeamCalendarGrid({
-  days, entries, team, projects, ags, memberFilter, onEntryClick,
+  days, entries, team, projects, ags, activityTypes, memberFilter, onEntryClick,
 }: {
   days: Date[]; entries: Entry[]; team: Member[];
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   memberFilter: string;
   onEntryClick: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const atName = (id: string | null) => activityTypes.find((a) => a.id === id)?.name;
   const memberOf = (id: string) => team.find((m) => m.id === id);
 
   const visibleMembers = memberFilter === "all" ? team : team.filter((m) => m.id === memberFilter);
@@ -1008,7 +1030,7 @@ function TeamCalendarGrid({
                 const widthPct = 100 / subCount;
                 const leftPct = idx * widthPct;
                 const proj = project(e.project_id);
-                const activity = agName(e.activity_group_id);
+                const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
                 const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
                 const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
                 const memberName = (member?.name || member?.email || "").split(" ")[0];
@@ -1205,10 +1227,10 @@ function ProjectTaskPicker({
 
 // ───────── entry form ─────────
 function EntryForm({
-  compact = false, projects, phases, ags, team, isAdmin, meId, initial, onSaved, onDeleted,
+  compact = false, projects, phases, ags, activityTypes, team, isAdmin, meId, initial, onSaved, onDeleted,
 }: {
   compact?: boolean;
-  projects: Project[]; phases: Phase[]; ags: Ag[]; team: Member[];
+  projects: Project[]; phases: Phase[]; ags: Ag[]; activityTypes: ActivityType[]; team: Member[];
   isAdmin: boolean; meId: string;
   initial: Partial<Entry>;
   onSaved: () => void;
@@ -1219,8 +1241,10 @@ function EntryForm({
   const [endTime, setEndTime] = useState((initial.end_time || "10:00").slice(0, 5));
   const [projectId, setProjectId] = useState<string>(initial.project_id || "");
   const [phaseId, setPhaseId] = useState<string>(initial.project_phase_id || "");
-  const [agId, setAgId] = useState<string>(initial.activity_group_id || "");
+  const [atId, setAtId] = useState<string>(initial.activity_type_id || "");
+  const [agId] = useState<string>(initial.activity_group_id || "");
   const [billable, setBillable] = useState(initial.billable ?? true);
+  const [description, setDescription] = useState(initial.description || "");
   const [notes, setNotes] = useState(initial.notes || "");
   const [userId, setUserId] = useState(initial.user_id || meId);
 
@@ -1234,10 +1258,13 @@ function EntryForm({
       saveFn({
         data: {
           id: initial.id,
-          date, start_time: startTime, end_time: endTime, billable, notes: notes || null,
+          date, start_time: startTime, end_time: endTime, billable,
+          description: description || null,
+          notes: notes || null,
           project_id: projectId || null,
           project_phase_id: phaseId || null,
           activity_group_id: agId || null,
+          activity_type_id: atId || null,
           user_id: isAdmin ? userId : undefined,
         },
       }),
@@ -1245,6 +1272,7 @@ function EntryForm({
       onSaved();
       if (compact) {
         // reset partial state for quick log convenience
+        setDescription("");
         setNotes("");
       }
     },
@@ -1299,20 +1327,40 @@ function EntryForm({
 
       <div>
         <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Activity</Label>
-        <Select value={agId || "_none"} onValueChange={(v) => setAgId(v === "_none" ? "" : v)}>
+        <Select
+          value={atId || "_none"}
+          onValueChange={(v) => {
+            if (v === "_none") { setAtId(""); return; }
+            setAtId(v);
+            const picked = activityTypes.find((a) => a.id === v);
+            if (picked) setBillable(picked.is_billable);
+          }}
+        >
           <SelectTrigger className="h-9"><SelectValue placeholder="Choose activity" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_none">— None —</SelectItem>
-            {ags.map((a) => (
+            {activityTypes.map((a) => (
               <SelectItem key={a.id} value={a.id}>
                 <span className="inline-flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
                   {a.name}
+                  <span className="text-[10px] text-ch/40">{a.is_billable ? "· billable" : "· non-bill"}</span>
                 </span>
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div>
+        <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Description</Label>
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          maxLength={500}
+          placeholder="What did you work on?"
+          className="h-9"
+        />
       </div>
 
       {projectId && projectPhases.length > 0 && (
