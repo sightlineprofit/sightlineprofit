@@ -14,7 +14,14 @@ export const Route = createFileRoute("/_authenticated/dashboard/growth")({
 function Page() {
   const fn = useServerFn(getDashboardData);
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fn() });
-  const c = useMemo(() => calc(data?.config ?? null, data?.expenses ?? []), [data]);
+  const c = useMemo(
+    () =>
+      calc(data?.config ?? null, data?.expenses ?? [], {
+        ownerComp: (data as any)?.ownerComp ?? [],
+        teamProfiles: (data as any)?.teamBurdens ?? [],
+      }),
+    [data],
+  );
   if (isLoading) return <div className="mx-auto max-w-7xl px-8 py-10 text-ch/50">Loading…</div>;
   return (
     <div className="mx-auto max-w-7xl px-8 py-10">
