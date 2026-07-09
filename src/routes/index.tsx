@@ -1856,8 +1856,11 @@ function Testimonials({ isMobile }: { isMobile: boolean }) {
                 “{c.q}”
               </blockquote>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: "50%", background: C.charcoal, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: FONT_DISPLAY, fontSize: 15, color: C.cream }}>
-                  {c.i}
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(44,44,44,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="5" r="3" fill="rgba(44,44,44,0.25)" />
+                    <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="rgba(44,44,44,0.25)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                  </svg>
                 </div>
                 <div>
                   <div style={{ fontFamily: FONT_SANS, fontSize: 13, fontWeight: 500, color: C.charcoal }}>{c.n}</div>
