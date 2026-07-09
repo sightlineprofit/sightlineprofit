@@ -512,7 +512,7 @@ function RatePanel() {
       </div>
       <div style={{ display: "flex", alignItems: "baseline" }}>
         <span style={{ fontFamily: FONT_DISPLAY, fontSize: 52, fontWeight: 300, color: "#fff", lineHeight: 1 }}>
-          $611
+          $311
         </span>
         <span style={{ fontSize: 14, color: "rgba(255,255,255,0.3)", marginLeft: 4 }}>/hr</span>
         <span
