@@ -1826,9 +1826,9 @@ function HowItWorks({ isMobile }: { isMobile: boolean }) {
 /* ============ TESTIMONIALS ============ */
 function Testimonials({ isMobile }: { isMobile: boolean }) {
   const cards = [
-    { q: "I've been in business for nine years. I had no idea my rate was below break-even until Sightline showed me the calculation. The number was shocking — and completely obvious in hindsight.", n: "Lauren M.", f: "Lauren Mallon Interiors", i: "L" },
-    { q: "The capacity timeline changed how I take on new projects. I used to say yes from a feeling. Now I look at the actual open windows and have a real answer before I even get on the call.", n: "Elaina C.", f: "Design 4 Corners", i: "E" },
-    { q: "I hired a junior designer last year and my profit went down. I couldn't figure out why. Sightline showed me her burdened cost wasn't being captured in my rate. Simple fix, massive impact.", n: "Carmen C.", f: "Daughters of Design", i: "C" },
+    { q: "I've been in business for nine years. I had no idea my rate was below break-even until Sightline showed me the calculation. The number was shocking — and completely obvious in hindsight." },
+    { q: "The capacity timeline changed how I take on new projects. I used to say yes from a feeling. Now I look at the actual open windows and have a real answer before I even get on the call." },
+    { q: "I hired a junior designer last year and my profit went down. I couldn't figure out why. Sightline showed me her burdened cost wasn't being captured in my rate. Simple fix, massive impact." },
   ];
   return (
     <section style={{ padding: isMobile ? "72px 20px" : "96px 48px", background: C.cream, borderTop: "0.5px solid rgba(44,44,44,0.10)" }}>
