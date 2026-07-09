@@ -290,7 +290,11 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
         <p className="mt-1 text-[11px] font-light" style={{ color: "#aaa" }}>
           Hours committed per week against your {target.toFixed(0)}-hr target. The shape of your workload ahead.
         </p>
-        <WeeklyPressureChart weeks={summary.weeks} target={target} />
+        <WeeklyPressureChart
+          weeks={summary.weeks}
+          target={target}
+          milestones={data.inputs.milestones ?? []}
+        />
         <div className="mt-3 flex flex-wrap gap-4 text-[10px]" style={{ color: "#777" }}>
           <LegendSwatch color="#5C8A6E" label="Within target" />
           <LegendSwatch color="#B8860B" label="Approaching limit" />
@@ -334,7 +338,11 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
             </Link>
           </div>
         ) : (
-          <ProjectTimeline projects={withDates} phases={data.inputs.phases} />
+          <ProjectTimeline
+            projects={withDates}
+            phases={data.inputs.phases}
+            milestones={data.inputs.milestones ?? []}
+          />
         )}
         {withoutDates.length > 0 && (
           <ul className="mt-3 space-y-1 text-[11px]" style={{ color: "#777" }}>
@@ -359,7 +367,13 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
       <OpenWindowsSection windows={summary.windows} hasForwardData={withDates.length > 0} />
 
       {/* Section E: What-if */}
-      <WhatIfTool windows={summary.windows} sopTemplates={data.sopTemplates} target={target} availableAnnual={summary.available} />
+      <WhatIfTool
+        windows={summary.windows}
+        sopTemplates={data.sopTemplates}
+        target={target}
+        availableAnnual={summary.available}
+        weeks={summary.weeks}
+      />
     </div>
   );
 }
