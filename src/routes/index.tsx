@@ -960,9 +960,8 @@ function Problem({ isMobile }: { isMobile: boolean }) {
               iconBg="rgba(196,113,74,0.10)"
               icon={
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#C4714A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="3" y1="13" x2="17" y2="13" />
-                  <path d="M8 10c0-1.1.9-2 2-2s2 .9 2 2c0 1-1 1.5-2 2v1" />
-                  <circle cx="10" cy="16.5" r="0.5" fill="#C4714A" stroke="none" />
+                  <line x1="10" y1="2.5" x2="10" y2="17.5" />
+                  <path d="M13.5 6H8.5a2 2 0 0 0 0 4h3a2 2 0 0 1 0 4H6" />
                 </svg>
               }
               title="Pricing from instinct, not data"
@@ -972,11 +971,9 @@ function Problem({ isMobile }: { isMobile: boolean }) {
               iconBg="rgba(184,134,11,0.10)"
               icon={
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#B8860B" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="8" width="4" height="9" rx="0.5" />
-                  <rect x="8" y="4" width="4" height="13" rx="0.5" />
-                  <rect x="14" y="6" width="4" height="11" rx="0.5" />
-                  <line x1="16" y1="2" x2="16" y2="8" />
-                  <polyline points="14,6 16,8 18,6" />
+                  <line x1="2.5" y1="17" x2="17.5" y2="17" />
+                  <polyline points="3.5,12 8,7.5 11.5,11 17,5" />
+                  <polyline points="13,5 17,5 17,9" />
                 </svg>
               }
               title="Profitable-looking projects that aren't"
@@ -986,12 +983,12 @@ function Problem({ isMobile }: { isMobile: boolean }) {
               iconBg="rgba(92,138,110,0.10)"
               icon={
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#5C8A6E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="4" width="16" height="14" rx="1.5" />
-                  <line x1="2" y1="8" x2="18" y2="8" />
-                  <line x1="6" y1="2" x2="6" y2="6" />
-                  <line x1="14" y1="2" x2="14" y2="6" />
-                  <line x1="7" y1="12" x2="13" y2="16" />
-                  <line x1="13" y1="12" x2="7" y2="16" />
+                  <rect x="2.5" y="4.5" width="15" height="13" rx="1.5" />
+                  <line x1="2.5" y1="8.5" x2="17.5" y2="8.5" />
+                  <line x1="6.5" y1="2.5" x2="6.5" y2="6" />
+                  <line x1="13.5" y1="2.5" x2="13.5" y2="6" />
+                  <line x1="8" y1="12" x2="12" y2="12" />
+                  <line x1="8" y1="15" x2="12" y2="15" />
                 </svg>
               }
               title="Saying yes without knowing if there's room"
@@ -1001,10 +998,9 @@ function Problem({ isMobile }: { isMobile: boolean }) {
               iconBg="rgba(44,44,44,0.06)"
               icon={
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#2C2C2C" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="10" y1="16" x2="10" y2="5" />
-                  <polyline points="6,9 10,5 14,9" />
-                  <path d="M7 13.5c0-1.1.9-2 2-2h2 c.6 0 1 .4 1 1s-.4 1-1 1h-1v1.5" />
-                  <circle cx="10" cy="18" r="0.5" fill="#2C2C2C" stroke="none" />
+                  <polyline points="3,14 8,9 11,12 17,5" />
+                  <polyline points="12,5 17,5 17,10" />
+                  <line x1="2.5" y1="17.5" x2="17.5" y2="17.5" />
                 </svg>
               }
               title="Growth decisions made without the numbers"
