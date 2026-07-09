@@ -339,10 +339,10 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
 
 // ───────── week view ─────────
 function WeekView({
-  days, entries, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
+  days, entries, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; myId: string;
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
   onDuplicate: (e: Entry) => void;
@@ -367,6 +367,7 @@ function WeekView({
         myId={myId}
         projects={projects}
         ags={ags}
+        activityTypes={activityTypes}
         onCellClick={onCellClick}
         onEntryClick={onEntryClick}
         onDuplicate={onDuplicate}
@@ -377,16 +378,17 @@ function WeekView({
 }
 
 function Grid({
-  days, entries, rowH, myId, projects, ags, onCellClick, onEntryClick, onDuplicate,
+  days, entries, rowH, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
 }: {
   days: Date[]; entries: Entry[]; rowH: number; myId: string;
-  projects: Project[]; ags: Ag[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
   onDuplicate: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
   const agName = (id: string | null) => ags.find((a) => a.id === id)?.name;
+  const atName = (id: string | null) => activityTypes.find((a) => a.id === id)?.name;
   const dayRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const getDayDateAt = (x: number, y: number): string | null => {
     for (const [iso, el] of dayRefs.current.entries()) {
@@ -431,7 +433,7 @@ function Grid({
               const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
               const isMine = e.user_id === myId;
               const proj = project(e.project_id);
-              const activity = agName(e.activity_group_id);
+              const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
               const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
               const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
               const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
