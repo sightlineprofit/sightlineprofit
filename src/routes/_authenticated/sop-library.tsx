@@ -13,7 +13,6 @@ import {
   getSopLibrary,
   saveSopTemplate,
   deleteSopTemplate,
-  attachTemplateToProject,
   setSopHidden,
   unhideAllSops,
   duplicateSopTemplate,
@@ -127,7 +126,6 @@ function Library() {
   const getLib = useServerFn(getSopLibrary);
   const saveFn = useServerFn(saveSopTemplate);
   const delFn = useServerFn(deleteSopTemplate);
-  const attachFn = useServerFn(attachTemplateToProject);
   const hideFn = useServerFn(setSopHidden);
   const unhideAllFn = useServerFn(unhideAllSops);
   const duplicateFn = useServerFn(duplicateSopTemplate);
@@ -186,18 +184,6 @@ function Library() {
       setDeleteTarget(null);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
-  });
-
-  const attachMut = useMutation({
-    mutationFn: (v: { template_id: string; project_id: string }) => attachFn({ data: v }),
-    onSuccess: (_res, vars) => {
-      qc.invalidateQueries({ queryKey: ["sop-library"] });
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-      qc.invalidateQueries({ queryKey: ["sightline-detail", vars.project_id] });
-      setAttachFor(null);
-      toast.success("Template attached to project");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to attach"),
   });
 
   const hideMut = useMutation({
