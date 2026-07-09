@@ -20,6 +20,7 @@ import {
   patchTimeEntry, listSopTemplatesLite,
   updateProjectStepHrs, createProjectStep, deleteProjectStep,
   confirmProjectReviewed, logNothingToReport, NOTHING_TO_REPORT_PHRASE,
+  saveProjectMilestone, deleteProjectMilestone,
 } from "@/lib/sightline.functions";
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
@@ -640,7 +641,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   // Operational edit drawer (overview details card)
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaDraft, setMetaDraft] = useState({
-    name: "", client_name: "", start_date: "", end_date: "",
+    name: "", client_name: "", start_date: "", end_date: "", est_weekly_hrs: "",
   });
 
   // "Nothing to report" dialog state
@@ -939,6 +940,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
       client_name: project.client_name ?? "",
       start_date: project.start_date ?? "",
       end_date: project.end_date ?? "",
+      est_weekly_hrs: project.est_weekly_hrs != null ? String(project.est_weekly_hrs) : "",
     });
     setEditingMeta(true);
   };
@@ -951,6 +953,9 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
           client_name: metaDraft.client_name.trim() || null,
           start_date: metaDraft.start_date || null,
           end_date: metaDraft.end_date || null,
+          est_weekly_hrs: metaDraft.est_weekly_hrs.trim()
+            ? Number(metaDraft.est_weekly_hrs)
+            : null,
         },
       });
       setEditingMeta(false);
