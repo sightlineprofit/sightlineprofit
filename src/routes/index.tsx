@@ -512,7 +512,7 @@ function RatePanel() {
       </div>
       <div style={{ display: "flex", alignItems: "baseline" }}>
         <span style={{ fontFamily: FONT_DISPLAY, fontSize: 52, fontWeight: 300, color: "#fff", lineHeight: 1 }}>
-          $611
+          $311
         </span>
         <span style={{ fontSize: 14, color: "rgba(255,255,255,0.3)", marginLeft: 4 }}>/hr</span>
         <span
@@ -553,9 +553,9 @@ function RatePanel() {
         }}
       >
         {[
-          { label: "YOUR RATE", val: "$250", valColor: "#C4714A", sub: "−$361/hr below floor", subColor: C.terra },
-          { label: "BREAK-EVEN", val: "$354", valColor: "rgba(255,255,255,0.7)", sub: "Cost-only floor", subColor: "rgba(255,255,255,0.35)" },
-          { label: "MARGIN TARGET", val: "42%", valColor: "rgba(255,255,255,0.7)", sub: "$257/hr per hour", subColor: "rgba(255,255,255,0.35)" },
+          { label: "YOUR RATE", val: "$175", valColor: "#C4714A", sub: "−$136/hr below floor", subColor: C.terra },
+          { label: "BREAK-EVEN", val: "$242", valColor: "rgba(255,255,255,0.7)", sub: "Cost-only floor", subColor: "rgba(255,255,255,0.35)" },
+          { label: "MARGIN TARGET", val: "22%", valColor: "rgba(255,255,255,0.7)", sub: "$69/hr margin", subColor: "rgba(255,255,255,0.35)" },
         ].map((s, i) => (
           <div
             key={s.label}
@@ -597,7 +597,7 @@ function RatePanel() {
             position: "absolute",
             left: 0,
             top: 0,
-            width: "41%",
+            width: "56%",
             height: 6,
             background: "rgba(196,113,74,0.4)",
             borderRadius: 3,
@@ -606,7 +606,7 @@ function RatePanel() {
         <div
           style={{
             position: "absolute",
-            left: "41%",
+            left: "56%",
             top: -3,
             width: 2,
             height: 12,
@@ -639,8 +639,8 @@ function RatePanel() {
           lineHeight: 1.6,
         }}
       >
-        At $250/hr you're leaving $263,430/yr in potential revenue on the table — based on
-        730 billable hours annually.
+        At $175/hr you're leaving $97,920/yr in potential revenue on the table — based on
+        720 billable hours annually.
       </div>
     </div>
   );
@@ -708,7 +708,7 @@ function ActionTile() {
       bg: "#C4714A",
       color: "#E08060",
       n: "1",
-      text: "Raise your rate to $360/hr on your next new client proposal",
+      text: "Raise your rate to $311/hr on your next new client proposal",
     },
     {
       bg: C.gold,
@@ -720,7 +720,7 @@ function ActionTile() {
       bg: "rgba(255,255,255,0.07)",
       color: "rgba(255,255,255,0.5)",
       n: "3",
-      text: "Calculate what last 3 projects earned at $360/hr",
+      text: "Calculate what last 3 projects earned at $311/hr",
     },
   ];
   return (
@@ -782,7 +782,7 @@ function ActionTile() {
 /* ============ SOCIAL PROOF ============ */
 function SocialProof() {
   const stats = [
-    { n: "$611", l: "avg aligned rate revealed" },
+    { n: "$311", l: "avg aligned rate revealed" },
     { n: "$72k", l: "avg annual gap at $100/hr" },
     { n: "14 days", l: "free trial, full access" },
     { n: "5 min", l: "to see your aligned rate" },
@@ -1183,11 +1183,11 @@ function FeatureBlock({
 
 function BuildingStackVisual() {
   const blocks = [
-    { h: 44, bg: "#8B6914", label: "Margin", amt: "+$257/hr" },
-    { h: 50, bg: "#C4714A", label: "Billable hours", amt: "730/yr" },
-    { h: 44, bg: "#3D4A3F", label: "Team cost", amt: "$74k/yr" },
-    { h: 40, bg: "#4A3F35", label: "Operating expenses", amt: "$53k/yr" },
-    { h: 52, bg: "#2C2C2C", label: "Owner compensation", amt: "$137k/yr" },
+    { h: 44, bg: "#8B6914", label: "Margin", amt: "+$69/hr" },
+    { h: 50, bg: "#C4714A", label: "Billable hours", amt: "720/yr" },
+    { h: 44, bg: "#3D4A3F", label: "Team cost", amt: "$64k/yr" },
+    { h: 40, bg: "#4A3F35", label: "Operating expenses", amt: "$28k/yr" },
+    { h: 52, bg: "#2C2C2C", label: "Owner compensation", amt: "$82k/yr" },
   ];
   return (
     <VisualShell>
@@ -1283,7 +1283,7 @@ function BuildingStackVisual() {
             Your minimum floor
           </div>
         </div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: "#fff" }}>$611/hr</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: "#fff" }}>$311/hr</div>
       </div>
     </VisualShell>
   );
@@ -1826,21 +1826,24 @@ function HowItWorks({ isMobile }: { isMobile: boolean }) {
 /* ============ TESTIMONIALS ============ */
 function Testimonials({ isMobile }: { isMobile: boolean }) {
   const cards = [
-    { q: "I've been in business for nine years. I had no idea my rate was below break-even until Sightline showed me the calculation. The number was shocking — and completely obvious in hindsight.", n: "Lauren M.", f: "Lauren Mallon Interiors", i: "L" },
-    { q: "The capacity timeline changed how I take on new projects. I used to say yes from a feeling. Now I look at the actual open windows and have a real answer before I even get on the call.", n: "Elaina C.", f: "Design 4 Corners", i: "E" },
-    { q: "I hired a junior designer last year and my profit went down. I couldn't figure out why. Sightline showed me her burdened cost wasn't being captured in my rate. Simple fix, massive impact.", n: "Carmen C.", f: "Daughters of Design", i: "C" },
+    { q: "I've been in business for nine years. I had no idea my rate was below break-even until Sightline showed me the calculation. The number was shocking — and completely obvious in hindsight.", n: "Studio Principal", f: "Residential design firm · 9 years in business" },
+    { q: "The capacity timeline changed how I take on new projects. I used to say yes from a feeling. Now I look at the actual open windows and have a real answer before I even get on the call.", n: "Independent Designer", f: "Solo practice · Full-service interior design" },
+    { q: "I hired a junior designer last year and my profit went down. I couldn't figure out why. Sightline showed me her burdened cost wasn't being captured in my rate. Simple fix, massive impact.", n: "Studio Owner", f: "Design studio · Principal + 2 team members" },
   ];
   return (
     <section style={{ padding: isMobile ? "72px 20px" : "96px 48px", background: C.cream, borderTop: "0.5px solid rgba(44,44,44,0.10)" }}>
       <div style={{ maxWidth: 1120, margin: "0 auto" }}>
         <div style={{ fontFamily: FONT_SANS, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.2em", color: C.gold, marginBottom: 10 }}>
-          From designers using Sightline
+          What designers are saying
         </div>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: "clamp(30px,4vw,48px)", fontWeight: 300, lineHeight: 1.12, color: C.charcoal, margin: 0 }}>
           The number was always there.
           <br />
           <em style={{ color: C.gold, fontStyle: "italic" }}>Now they can see it.</em>
         </h2>
+        <div style={{ fontFamily: FONT_SANS, fontSize: 12, fontStyle: "italic", color: "#8A7F75", marginTop: 8 }}>
+          Composite reflections from our beta community.
+        </div>
         <div
           style={{
             display: "grid",
@@ -1856,8 +1859,11 @@ function Testimonials({ isMobile }: { isMobile: boolean }) {
                 “{c.q}”
               </blockquote>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: "50%", background: C.charcoal, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: FONT_DISPLAY, fontSize: 15, color: C.cream }}>
-                  {c.i}
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(44,44,44,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="5" r="3" fill="rgba(44,44,44,0.25)" />
+                    <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="rgba(44,44,44,0.25)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                  </svg>
                 </div>
                 <div>
                   <div style={{ fontFamily: FONT_SANS, fontSize: 13, fontWeight: 500, color: C.charcoal }}>{c.n}</div>
