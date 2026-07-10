@@ -62,17 +62,18 @@ export function TrialBanner({ firm }: { firm: TrialBannerFirm | null | undefined
     );
   }
 
-  const urgent = daysLeft <= 3;
+  // Urgency scales with the 27-day trial: calm 10–27, moderate 5–9, high 1–4.
+  const urgent = daysLeft <= 4;
   const bg = urgent ? "rgba(196,113,74,0.07)" : "rgba(184,134,11,0.06)";
   const border = urgent ? "#C4714A" : "#B8860B";
   const linkColor = urgent ? "#C4714A" : "#B8860B";
 
   let message: string;
   let ctaText: string;
-  if (daysLeft >= 8) {
+  if (daysLeft >= 10) {
     message = `Your free trial ends in ${daysLeft} days.`;
     ctaText = "Activate my plan →";
-  } else if (daysLeft >= 4) {
+  } else if (daysLeft >= 5) {
     message = `Your trial ends in ${daysLeft} days. Activate now to keep access to your rate architecture and projects.`;
     ctaText = "Activate my plan →";
   } else {
