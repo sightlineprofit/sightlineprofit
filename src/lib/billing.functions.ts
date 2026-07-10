@@ -7,45 +7,14 @@ import {
   getStripeErrorMessage,
   CHECKOUT_PRICE_KEYS,
   PRICE_TO_TIER,
-  FOUNDING_PRICE_KEYS,
 } from "@/lib/stripe.server";
+import { resolveOrCreateCustomerForFirm, resolvePriceKey } from "@/lib/stripe-billing-sync.server";
 
 const envSchema = z.enum(["sandbox", "live"]);
 const priceKeySchema = z.enum(CHECKOUT_PRICE_KEYS);
 
 type CheckoutResult = { clientSecret: string } | { error: string };
 type PortalResult = { url: string } | { error: string };
-
-async function resolveOrCreateCustomerForFirm(
-  stripe: ReturnType<typeof createStripeClient>,
-  opts: { firmId: string; email?: string; firmName?: string },
-): Promise<string> {
-  if (!/^[a-zA-Z0-9_-]+$/.test(opts.firmId)) throw new Error("Invalid firmId");
-  const found = await stripe.customers.search({
-    query: `metadata['firmId']:'${opts.firmId}'`,
-    limit: 1,
-  });
-  if (found.data.length) return found.data[0].id;
-
-  if (opts.email) {
-    const existing = await stripe.customers.list({ email: opts.email, limit: 1 });
-    if (existing.data.length) {
-      const customer = existing.data[0];
-      if (customer.metadata?.firmId !== opts.firmId) {
-        await stripe.customers.update(customer.id, {
-          metadata: { ...customer.metadata, firmId: opts.firmId },
-        });
-      }
-      return customer.id;
-    }
-  }
-  const created = await stripe.customers.create({
-    ...(opts.email && { email: opts.email }),
-    ...(opts.firmName && { name: opts.firmName }),
-    metadata: { firmId: opts.firmId },
-  });
-  return created.id;
-}
 
 export const createCheckoutSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -116,6 +85,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         mode: "subscription",
         ui_mode: "embedded_page",
         return_url: data.returnUrl,
+        client_reference_id: firm.id,
         customer: customerId,
         metadata: { firmId: firm.id, userId, tier, priceKey: priceLookup },
         subscription_data: {
@@ -204,18 +174,6 @@ export const getBillingSummary = createServerFn({ method: "GET" })
     }
     return { ...firm, card, nextChargeAmountCents };
   });
-
-// -- Activation: subscribe an existing customer using the payment method captured at registration.
-const FREQUENCY_TO_PRICE = {
-  monthly: { founding: "sightline_founding_monthly", standard: "sightline_standard_monthly" },
-  annual: { founding: "sightline_founding_annual", standard: "sightline_standard_annual" },
-} as const;
-
-function resolvePriceKey(frequency: "monthly" | "annual", currentPriceId: string | null): string {
-  const isFounding = currentPriceId ? FOUNDING_PRICE_KEYS.has(currentPriceId) : false;
-  const row = FREQUENCY_TO_PRICE[frequency];
-  return isFounding ? row.founding : row.standard;
-}
 
 export const activateSubscription = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
