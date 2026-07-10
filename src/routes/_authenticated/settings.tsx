@@ -30,6 +30,7 @@ import {
   type BurdenedCostValue,
 } from "@/components/team/BurdenedCostCalculator";
 import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
+import { useTour } from "@/components/tour/TourProvider";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
@@ -238,6 +239,60 @@ function GroupLabel({ children, className }: { children: React.ReactNode; classN
     <div className={cn("mt-5 mb-2.5 border-b border-border pb-1.5 text-[9px] font-medium uppercase tracking-[0.1em] text-ch/60", className)}>
       {children}
     </div>
+  );
+}
+
+function GettingStartedSection() {
+  const { resetTour, startTour } = useTour();
+  const [confirming, setConfirming] = useState(false);
+  const navigate = useNavigate();
+  return (
+    <>
+      <GroupLabel className="mt-6">Getting started</GroupLabel>
+      <div className="rounded-[8px] border border-border bg-white px-5 py-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[14px] font-normal text-ch">Setup tour</div>
+            <div className="text-[12px] text-ch/60">Walk through setting up your aligned rate, first project, and time tracking.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="rounded-[5px] border border-ch/20 px-4 py-1.5 text-[12px] font-medium text-ch hover:bg-ch/5"
+          >
+            Redo tour
+          </button>
+        </div>
+        {confirming && (
+          <div className="mt-3 rounded-md border border-ch/10 bg-cream/60 p-3">
+            <p className="text-[12px] text-ch/70">
+              This will restart the setup tour from the beginning. Your existing data won't be affected.
+            </p>
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                className="rounded-[5px] border border-ch/20 px-3 py-1 text-[12px] text-ch"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await resetTour();
+                  setConfirming(false);
+                  await navigate({ to: "/dashboard" });
+                  setTimeout(() => startTour(), 300);
+                }}
+                className="rounded-[5px] bg-ch px-3 py-1 text-[12px] font-medium text-cream"
+              >
+                Restart tour
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
