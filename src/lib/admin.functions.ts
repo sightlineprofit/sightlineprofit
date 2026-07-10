@@ -431,7 +431,7 @@ export const backfillFirmBillingFromStripe = createServerFn({ method: "POST" })
         ok: true as const,
         customerId,
         subscriptionId: sub.id,
-        status: patch.subscription_status,
+        status: patch.subscription_status as SubStatus,
         priceLookup: lookup,
       };
     } catch (e) {
