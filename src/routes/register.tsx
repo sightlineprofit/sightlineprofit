@@ -625,7 +625,7 @@ function StepPayment(props: {
       ) : priceKey ? (
         <StripeEmbeddedCheckoutPane
           priceKey={priceKey}
-          returnUrl={`${window.location.origin}/post-auth`}
+          returnUrl={`${window.location.origin}/post-auth?session_id={CHECKOUT_SESSION_ID}`}
         />
       ) : (
         <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">
