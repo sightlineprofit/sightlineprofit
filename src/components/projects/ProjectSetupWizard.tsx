@@ -139,6 +139,13 @@ export function ProjectSetupWizard({
     },
     onSuccess: (res: { id: string }) => {
       toast.success("Project created");
+      // Signal the guided tour (Step 6) regardless of whether the
+      // `projects` table is in the Supabase realtime publication.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("sightline:project-created", { detail: { id: res.id } }),
+        );
+      }
       onCreated(res.id);
       handleClose();
     },

@@ -13,7 +13,7 @@ import {
   reconcileTour,
   dismissTourWelcomeBanner,
 } from "@/lib/tour.functions";
-import { upsertFirmConfig, addExpense } from "@/lib/firm.functions";
+import { upsertFirmConfig, addExpense, upsertOwnerCompensation } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -136,6 +136,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (currentStep === 4) {
       if (location.pathname !== "/dashboard") {
         await navigate({ to: "/dashboard" });
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    }
+    // Step 6 → Step 7: Step 7 spotlights the time calendar.
+    if (currentStep === 6) {
+      if (location.pathname !== "/time-calendar") {
+        await navigate({ to: "/time-calendar" });
       }
       await new Promise((r) => setTimeout(r, 350));
     }
@@ -488,6 +495,7 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const upsert = useServerFn(upsertFirmConfig);
+  const upsertOwnerComp = useServerFn(upsertOwnerCompensation);
 
   const total = (Number(salary) || 0) + (Number(distributions) || 0) + (Number(health) || 0) + (Number(retire) || 0);
 
@@ -509,6 +517,22 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
           comp_retire_annual: Number(retire) || 0,
         },
       });
+      // Also persist to owner_compensation so Settings → Compensation and
+      // finance.calc() (which prefers owner_compensation rows over
+      // firm_config when any exist) see the same values entered here.
+      try {
+        await upsertOwnerComp({
+          data: {
+            comp_draw_annual: s,
+            comp_distribution_annual: d,
+            health_insurance_annual: Number(health) || 0,
+            retirement_annual: Number(retire) || 0,
+          },
+        });
+      } catch (ownerErr) {
+        // Non-fatal: firm_config still holds the values for the aligned rate.
+        console.warn("upsertOwnerCompensation from tour failed", ownerErr);
+      }
       await onAdvance();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save");
@@ -843,6 +867,22 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
+  }, [projectCreated]);
+
+  // Fallback (and primary path): the ProjectSetupWizard dispatches a
+  // window CustomEvent when it successfully creates a project. This works
+  // even when `public.projects` is not in the Supabase realtime publication.
+  useEffect(() => {
+    if (projectCreated) return;
+    const onCreated = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) {
+        setProjectCreated(true);
+        setProjectId(id);
+      }
+    };
+    window.addEventListener("sightline:project-created", onCreated as EventListener);
+    return () => window.removeEventListener("sightline:project-created", onCreated as EventListener);
   }, [projectCreated]);
 
   // Realtime: watch for project_phases inserted against the created project.
