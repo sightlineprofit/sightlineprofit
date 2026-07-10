@@ -211,9 +211,10 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
       )}
       <ProjectSetupWizard
         open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
+        onClose={() => { setWizardOpen(false); clearNewParam(); }}
         onCreated={(projectId) => {
           qc.invalidateQueries({ queryKey: ["sightline-list"] });
+          clearNewParam();
           onOpen(projectId);
         }}
       />
