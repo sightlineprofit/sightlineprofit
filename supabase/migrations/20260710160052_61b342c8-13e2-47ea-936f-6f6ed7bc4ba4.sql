@@ -1,0 +1,1 @@
+ALTER TABLE public.firms ALTER COLUMN trial_ends_at SET DEFAULT (now() + interval '27 days');
