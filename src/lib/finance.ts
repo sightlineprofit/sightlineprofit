@@ -318,3 +318,77 @@ export function marginBreakdown(grossProfitPerHr: number) {
   const growth = Math.max(0, m - tax - reserve);
   return { tax, reserve, growth, available: growth };
 }
+
+// ─── Per-project margin (true margin, not revenue) ─────────────────────────
+// Uses the firm's break-even rate as the per-hour cost floor. Margin equals
+// project fee minus (breakEven × scoped hours). Margin only erodes once
+// hours logged exceed the scoped budget: each over-scope hour subtracts
+// breakEven from remaining margin.
+
+export type ProjectMarginCalc = {
+  projectFee: number;
+  scopedHours: number;
+  hoursLogged: number;
+  hoursRemaining: number;
+  breakEvenRate: number;
+  alignedRate: number | null;
+  effectiveRate: number;
+  totalProjectCost: number;
+  grossMargin: number;
+  grossMarginPct: number;
+  taxReserve: number;
+  netProfit: number;
+  netProfitPct: number;
+  isBelowBreakEven: boolean;
+  isBelowAlignedRate: boolean;
+  isOverScope: boolean;
+  overScopeHours: number;
+  marginErosion: number;
+  remainingMargin: number;
+  remainingMarginPct: number;
+};
+
+export function getProjectMarginCalc(args: {
+  projectFee: number;
+  scopedHours: number;
+  hoursLogged: number;
+  breakEvenRate: number;
+  alignedRate?: number | null;
+  taxReservePct?: number;
+}): ProjectMarginCalc {
+  const projectFee = Number(args.projectFee) || 0;
+  const scopedHours = Number(args.scopedHours) || 0;
+  const hoursLogged = Math.max(0, Number(args.hoursLogged) || 0);
+  const breakEvenRate = Math.max(0, Number(args.breakEvenRate) || 0);
+  const alignedRate = args.alignedRate == null ? null : Number(args.alignedRate) || 0;
+  const taxReservePct = args.taxReservePct ?? 0.25;
+
+  const totalProjectCost = breakEvenRate * scopedHours;
+  const grossMargin = projectFee - totalProjectCost;
+  const grossMarginPct = projectFee > 0 ? (grossMargin / projectFee) * 100 : 0;
+  const taxReserve = grossMargin > 0 ? grossMargin * taxReservePct : 0;
+  const netProfit = grossMargin - taxReserve;
+  const netProfitPct = projectFee > 0 ? (netProfit / projectFee) * 100 : 0;
+
+  const effectiveRate = scopedHours > 0 ? projectFee / scopedHours : 0;
+  const isBelowBreakEven = effectiveRate > 0 && effectiveRate < breakEvenRate;
+  const isBelowAlignedRate =
+    alignedRate != null && alignedRate > 0 && effectiveRate > 0 && effectiveRate < alignedRate;
+
+  const overScopeHours = Math.max(0, hoursLogged - scopedHours);
+  const isOverScope = overScopeHours > 0;
+  const marginErosion = overScopeHours * breakEvenRate;
+  const remainingMargin = grossMargin - marginErosion;
+  const remainingMarginPct = projectFee > 0 ? (remainingMargin / projectFee) * 100 : 0;
+  const hoursRemaining = Math.max(0, scopedHours - hoursLogged);
+
+  return {
+    projectFee, scopedHours, hoursLogged, hoursRemaining,
+    breakEvenRate, alignedRate, effectiveRate,
+    totalProjectCost, grossMargin, grossMarginPct,
+    taxReserve, netProfit, netProfitPct,
+    isBelowBreakEven, isBelowAlignedRate,
+    isOverScope, overScopeHours, marginErosion,
+    remainingMargin, remainingMarginPct,
+  };
+}
