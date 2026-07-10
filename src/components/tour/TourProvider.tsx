@@ -863,6 +863,22 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
     return () => { supabase.removeChannel(ch); };
   }, [projectCreated]);
 
+  // Fallback (and primary path): the ProjectSetupWizard dispatches a
+  // window CustomEvent when it successfully creates a project. This works
+  // even when `public.projects` is not in the Supabase realtime publication.
+  useEffect(() => {
+    if (projectCreated) return;
+    const onCreated = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) {
+        setProjectCreated(true);
+        setProjectId(id);
+      }
+    };
+    window.addEventListener("sightline:project-created", onCreated as EventListener);
+    return () => window.removeEventListener("sightline:project-created", onCreated as EventListener);
+  }, [projectCreated]);
+
   // Realtime: watch for project_phases inserted against the created project.
   useEffect(() => {
     if (!projectId || sopAttached) return;
