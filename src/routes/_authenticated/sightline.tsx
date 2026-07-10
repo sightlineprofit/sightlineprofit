@@ -25,7 +25,9 @@ import {
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
 import { toast } from "sonner";
-import { fmtUsd, fmtPct, formatHours, calc as calcFinance } from "@/lib/finance";
+import {
+  fmtUsd, fmtPct, formatHours, calc as calcFinance, getProjectMarginCalc,
+} from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -230,9 +232,10 @@ function marginHealthState(m: MarginInfo): MarginHealth {
   if (!m || m.mode === "none" || m.projectFee <= 0 || m.remaining == null) return "none";
   if (m.remaining < 0) return "critical";
   const pct = (m.remaining / m.projectFee) * 100;
-  if (pct < 10) return "critical";
-  if (pct < 20) return "at_risk";
-  if (pct < 40) return "watch";
+  // Thresholds match the spec: >20% sage (healthy), 10-20% gold (watch),
+  // <10% terra (at risk), negative = critical.
+  if (pct < 10) return "at_risk";
+  if (pct < 20) return "watch";
   return "healthy";
 }
 
@@ -471,7 +474,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
               >
                 {freshState === "stale"
                   ? `Based on hours logged ${daysSince} days ago. Actual may be lower.`
-                  : `of ${fmtUsd(m!.projectFee)} fee · ${pctConsumed.toFixed(0)}% of budget consumed · ${formatHours(hrsRemaining)} remaining`}
+                  : `${(m!.calc?.remainingMarginPct ?? 0).toFixed(1)}% margin · ${formatHours(hrsRemaining)} remaining · of ${fmtUsd(m!.projectFee)} fee`}
                 {m!.usingFallbackCostRate && " · using firm rate"}
               </div>
             </>
@@ -709,6 +712,14 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const firmMetrics = (data as unknown as {
+    firmMetrics?: {
+      breakEvenRate: number;
+      alignedRate: number;
+      billedRate: number;
+      perHour: { comp: number; opexRecurring: number; opexOneTime: number };
+    };
+  }).firmMetrics ?? { breakEvenRate: 0, alignedRate: 0, billedRate: 0, perHour: { comp: 0, opexRecurring: 0, opexOneTime: 0 } };
   const milestones = ((data as unknown) as { milestones?: Array<{ id: string; label: string; milestone_date: string }> }).milestones ?? [];
   const activityLog = (data as unknown as {
     activityLog?: Array<{ event_type: string; occurred_at: string; note: string | null }>;
@@ -1213,6 +1224,10 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             hasOwnerSalary={Number(config?.comp_draw_annual ?? 0) > 0}
             alignedRate={calcFinance(config ?? null, []).alignedRate}
             onOpenSettings={openMetaEdit}
+            breakEvenRate={firmMetrics.breakEvenRate}
+            firmAlignedRate={firmMetrics.alignedRate}
+            perHour={firmMetrics.perHour}
+            teamCount={team.length}
           />
 
           <HoursSummary
@@ -1927,15 +1942,46 @@ function ProfitabilitySummary(props: {
   hasOwnerSalary: boolean;
   alignedRate: number;
   onOpenSettings: () => void;
+  breakEvenRate: number;
+  firmAlignedRate: number;
+  perHour: { comp: number; opexRecurring: number; opexOneTime: number };
+  teamCount: number;
 }) {
   const {
     projectFee, isFixedFee, budgetedBillableHrs, actualHrs, billableHrs, nonBillableHrs,
     rate, rateIsProject, firmBilledRate, phaseRows, startDate, endDate,
     hasOwnerSalary, alignedRate, onOpenSettings,
+    breakEvenRate, firmAlignedRate, perHour, teamCount,
   } = props;
 
   const hasFee = projectFee > 0;
   const usableRate = rate > 0 ? rate : firmBilledRate;
+
+  // ── True project margin (fee minus break-even cost × scoped hrs) ──
+  const marginCalc = getProjectMarginCalc({
+    projectFee,
+    scopedHours: budgetedBillableHrs,
+    hoursLogged: actualHrs,
+    breakEvenRate,
+    alignedRate: firmAlignedRate,
+  });
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const marginColor =
+    marginCalc.grossMarginPct >= 20
+      ? "#5C8A6E"
+      : marginCalc.grossMarginPct >= 10
+        ? "#B8860B"
+        : "#C4714A";
+  const compContribution = perHour.comp * budgetedBillableHrs;
+  const opexContribution = (perHour.opexRecurring + perHour.opexOneTime) * budgetedBillableHrs;
+  // Team cost per hour is embedded in break-even; approximate as remainder.
+  const teamContribution = Math.max(
+    0,
+    (breakEvenRate * budgetedBillableHrs) - compContribution - opexContribution,
+  );
+  const scopePct = budgetedBillableHrs > 0 ? (actualHrs / budgetedBillableHrs) * 100 : 0;
+  const showScopeWarn = scopePct >= 80 && scopePct < 100;
+  const showScopeAlert = marginCalc.isOverScope;
 
   // Empty state: no fee at all
   if (!hasFee) {
@@ -2009,6 +2055,139 @@ function ProfitabilitySummary(props: {
     <div className="rounded-lg border border-border bg-white p-6">
       <h3 className="font-display text-xl tracking-tight text-ch">Profitability</h3>
       <p className="mt-1 text-xs text-ch/50 italic">Is the fee enough for the time this is taking?</p>
+
+      {/* ── PROJECT MARGIN — true margin (fee minus break-even cost) ── */}
+      {budgetedBillableHrs > 0 && breakEvenRate > 0 && (
+        <div className="mt-5 border-t border-border pt-4">
+          <div
+            style={{
+              fontFamily: "'Jost', sans-serif",
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: "0.16em",
+              textTransform: "uppercase",
+              color: "#8A7F75",
+            }}
+          >
+            Project margin
+          </div>
+          <div
+            style={{
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: 36,
+              fontWeight: 400,
+              lineHeight: 1.05,
+              color: marginColor,
+              marginTop: 4,
+            }}
+          >
+            {fmtUsd(marginCalc.grossMargin)}
+          </div>
+          <div
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 13, color: marginColor, marginTop: 2 }}
+          >
+            {marginCalc.grossMarginPct.toFixed(1)}% margin
+          </div>
+          <div
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, color: "#8A7F75", marginTop: 2 }}
+          >
+            of {fmtUsd(projectFee)} total fee
+          </div>
+
+          {/* Effective vs aligned rate */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 13, color: "#2C2C2C" }}>
+              Effective rate: {fmtUsd(marginCalc.effectiveRate)}/hr
+            </span>
+            {firmAlignedRate > 0 && (
+              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 13, color: "#8A7F75" }}>
+                Aligned rate: {fmtUsd(firmAlignedRate)}/hr
+              </span>
+            )}
+            {marginCalc.isBelowBreakEven ? (
+              <span
+                className="rounded-full px-2 py-0.5"
+                style={{
+                  background: "#C4714A",
+                  color: "#fff",
+                  fontFamily: "'Jost', sans-serif",
+                  fontSize: 10,
+                }}
+              >
+                Below break-even
+              </span>
+            ) : marginCalc.isBelowAlignedRate ? (
+              <span
+                className="rounded-full px-2 py-0.5"
+                style={{
+                  background: "rgba(196,113,74,0.10)",
+                  color: "#C4714A",
+                  fontFamily: "'Jost', sans-serif",
+                  fontSize: 10,
+                }}
+              >
+                Below aligned rate
+              </span>
+            ) : null}
+          </div>
+
+          {/* Scope warnings */}
+          {showScopeWarn && (
+            <div
+              className="mt-3"
+              style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, color: "#B8860B" }}
+            >
+              80% of scoped hours used
+            </div>
+          )}
+          {showScopeAlert && (
+            <div className="mt-3" style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, color: "#C4714A" }}>
+              Over scope — margin eroding
+              <div style={{ marginTop: 2 }}>
+                Every additional hour costs {fmtUsd(breakEvenRate)} in margin
+              </div>
+            </div>
+          )}
+
+          {/* Expandable breakdown */}
+          <button
+            type="button"
+            onClick={() => setShowBreakdown((v) => !v)}
+            className="mt-3 inline-flex items-center gap-1 text-[11px] text-ch/60 hover:text-ch"
+          >
+            <ChevronDown className={cn("h-3 w-3 transition-transform", showBreakdown && "rotate-180")} />
+            {showBreakdown ? "Hide breakdown" : "Show breakdown"}
+          </button>
+          {showBreakdown && (
+            <div className="mt-3 space-y-1.5 rounded-md border border-border bg-creamd/40 px-4 py-3">
+              <BreakdownRow label="Comp contribution" value={fmtUsd(compContribution)} />
+              <BreakdownRow label="OpEx contribution" value={fmtUsd(opexContribution)} />
+              {teamCount > 0 && teamContribution > 0 && (
+                <BreakdownRow label="Team contribution" value={fmtUsd(teamContribution)} />
+              )}
+              <div className="my-1.5 border-t border-border" />
+              <BreakdownRow label="Gross margin" value={fmtUsd(marginCalc.grossMargin)} bold />
+              <BreakdownRow
+                label="Tax reserve (~25%)"
+                value={`−${fmtUsd(marginCalc.taxReserve)}`}
+              />
+              <div className="my-1.5 border-t border-border" />
+              <BreakdownRow
+                label="Est. net profit"
+                value={fmtUsd(marginCalc.netProfit)}
+                bold
+                valueColor="#5C8A6E"
+              />
+              <p
+                className="mt-2"
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontStyle: "italic", color: "#8A7F75" }}
+              >
+                Tax reserve is an estimate. Consult your accountant for exact figures.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* SECTION 1 — THE FEE */}
       <SummarySection label="What this project earns">
@@ -2143,6 +2322,32 @@ function SummarySection({ label, children }: { label: string; children: React.Re
       <table className="w-full text-sm">
         <tbody className="[&_td]:py-1.5">{children}</tbody>
       </table>
+    </div>
+  );
+}
+
+function BreakdownRow({ label, value, bold, valueColor }: {
+  label: string;
+  value: string;
+  bold?: boolean;
+  valueColor?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, color: "#8A7F75" }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: "'Jost', sans-serif",
+          fontSize: 12,
+          fontWeight: bold ? 600 : 400,
+          color: valueColor ?? "#2C2C2C",
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
