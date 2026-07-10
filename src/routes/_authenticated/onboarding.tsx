@@ -328,7 +328,7 @@ function Onboarding() {
               Step {step + 1} of {STEPS.length}
             </div>
             {trialEnd && (
-              <div style={{ fontFamily: "Jost, sans-serif", fontSize: 10, color: "#5C8A6E" }}>
+              <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#5C8A6E" }}>
                 Free trial active · No charge until {trialEnd}
               </div>
             )}
@@ -347,7 +347,7 @@ function Onboarding() {
                 key={label}
                 style={{
                   fontFamily: "Jost, sans-serif",
-                  fontSize: 10,
+                  fontSize: 11,
                   textTransform: "uppercase",
                   letterSpacing: "0.10em",
                   color,
@@ -584,7 +584,7 @@ function Onboarding() {
                 <p className="mt-1 text-sm text-ch/60">Optional. You can add team members later from settings.</p>
                 <p
                   className="mt-2 italic"
-                  style={{ fontFamily: "Jost, sans-serif", fontSize: 10, fontWeight: 400, color: "#aaa" }}
+                  style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 400, color: "#aaa" }}
                 >
                   Financial details are for your planning only and are never shown to the team member.
                 </p>
@@ -647,7 +647,7 @@ function Onboarding() {
                   </div>
                   <button className={`${ghostBtnClass} w-auto`} onClick={addTeamLocal} type="button">Save team member</button>
                 </div>
-                <p className="text-[10px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+                <p className="text-[11px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
                   This saves their cost for your rate calculations. You can invite them to Sightline from Settings → Team when you're ready.
                 </p>
                 {tEmail.trim() && (
@@ -752,7 +752,7 @@ function Field({
       {helper && (
         <p
           className="mt-1"
-          style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 300, color: "#777", lineHeight: 1.6 }}
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 400, color: "#777", lineHeight: 1.6 }}
         >
           {helper}
         </p>

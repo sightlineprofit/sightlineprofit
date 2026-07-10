@@ -56,7 +56,7 @@ function WelcomePage() {
         <h1 className="mt-4 text-ch" style={{ fontFamily: '"Cormorant Garamond", serif', fontSize: 28, fontWeight: 400 }}>
           Welcome to {data.firm?.name ?? "your firm"}
         </h1>
-        <p className="mt-3" style={{ fontFamily: "Jost, sans-serif", fontSize: 13, fontWeight: 300, color: "#777" }}>
+        <p className="mt-3" style={{ fontFamily: "Jost, sans-serif", fontSize: 13, fontWeight: 400, color: "#777" }}>
           Here's what you have access to and how to get started.
         </p>
 
@@ -73,7 +73,7 @@ function WelcomePage() {
           className="mt-8 rounded-[3px] px-3.5 py-3"
           style={{ background: "var(--goldp, #F5EDD6)", borderLeft: "2px solid var(--gold)" }}
         >
-          <p style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 300, color: "#777", lineHeight: 1.6 }}>
+          <p style={{ fontFamily: "Jost, sans-serif", fontSize: 11, fontWeight: 400, color: "#777", lineHeight: 1.6 }}>
             Financial information about the firm — rates, costs, revenue, and margins — is not part of your view. This is by design. If you have questions about project budgets or billing, speak with your firm principal directly.
           </p>
         </div>
@@ -99,7 +99,7 @@ function AccessCard({ icon, title, body }: { icon: React.ReactNode; title: strin
     <div className="rounded-lg border border-border bg-white p-5">
       <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-goldp">{icon}</div>
       <div className="text-ch" style={{ fontFamily: '"Cormorant Garamond", serif', fontSize: 18 }}>{title}</div>
-      <p className="mt-2" style={{ fontFamily: "Jost, sans-serif", fontSize: 12, fontWeight: 300, color: "#777", lineHeight: 1.55 }}>{body}</p>
+      <p className="mt-2" style={{ fontFamily: "Jost, sans-serif", fontSize: 12, fontWeight: 400, color: "#777", lineHeight: 1.55 }}>{body}</p>
     </div>
   );
 }

@@ -24,7 +24,7 @@ export function RestrictedPreview({ role }: { role: Role }) {
   return (
     <div className="mx-auto max-w-xl px-8 py-20">
       <div className="rounded-md bg-creamd p-8">
-        <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-gold">
+        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-gold">
           View-as preview
         </p>
         <h2 className="mt-3 font-display text-2xl tracking-tight text-ch">

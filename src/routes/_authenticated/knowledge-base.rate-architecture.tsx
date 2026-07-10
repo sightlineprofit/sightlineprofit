@@ -20,7 +20,7 @@ function Page() {
 
   return (
     <div className="mx-auto max-w-6xl px-8 py-10">
-      <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-ch/50">
+      <div className="mb-2 text-[11px] uppercase tracking-[0.16em] text-ch/50">
         <Link to="/knowledge-base" className="hover:underline">← Knowledge base</Link>
       </div>
       <h1 className="font-display text-4xl tracking-tight text-ch mb-2">Your rate, one layer at a time</h1>

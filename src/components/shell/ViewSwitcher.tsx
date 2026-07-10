@@ -81,7 +81,7 @@ export function ViewSwitcherBanner({ realIsSuper, realImpersonating }: Props) {
         color: DARK,
         padding: "0 16px",
         fontFamily: "Jost, system-ui, sans-serif",
-        fontSize: 10,
+        fontSize: 11,
         fontWeight: 600,
         letterSpacing: "0.1em",
         textTransform: "uppercase",
@@ -107,7 +107,7 @@ export function ViewSwitcherBanner({ realIsSuper, realImpersonating }: Props) {
           cursor: "pointer",
           fontWeight: 600,
           letterSpacing: "0.1em",
-          fontSize: 10,
+          fontSize: 11,
         }}
       >
         Exit override ×
@@ -158,7 +158,7 @@ export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
     bottom: 16,
     left: 16,
     fontFamily: "Jost, system-ui, sans-serif",
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: 600,
     letterSpacing: "0.14em",
     textTransform: "uppercase",
@@ -321,7 +321,7 @@ export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
                   padding: "7px 10px",
                   borderRadius: 2,
                   fontFamily: "Jost, system-ui, sans-serif",
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 400,
                   cursor: "pointer",
                 }}
@@ -349,7 +349,7 @@ export function ViewSwitcher({ realIsSuper, realImpersonating }: Props) {
                 borderRadius: 2,
                 padding: 8,
                 fontFamily: "Jost, system-ui, sans-serif",
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 500,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
@@ -370,7 +370,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontFamily: "Jost, system-ui, sans-serif",
-        fontSize: 8,
+        fontSize: 11,
         fontWeight: 600,
         letterSpacing: "0.14em",
         textTransform: "uppercase",
@@ -404,7 +404,7 @@ function ToggleButton({
         borderRadius: 2,
         padding: "6px 0",
         fontFamily: "Jost, system-ui, sans-serif",
-        fontSize: 10,
+        fontSize: 11,
         cursor: "pointer",
       }}
     >

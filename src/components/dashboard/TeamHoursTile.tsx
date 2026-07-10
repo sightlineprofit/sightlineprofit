@@ -136,7 +136,7 @@ export function TeamHoursTile({
         <div
           style={{
             fontFamily: "'Jost', sans-serif",
-            fontSize: 8,
+            fontSize: 11,
             fontWeight: 600,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
@@ -146,7 +146,7 @@ export function TeamHoursTile({
           Team hours this week
         </div>
         {allLogged ? (
-          <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, color: SAGE }}>
+          <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: SAGE }}>
             All up to date ✓
           </span>
         ) : (
@@ -155,7 +155,7 @@ export function TeamHoursTile({
             onClick={handleRemind}
             style={{
               fontFamily: "'Jost', sans-serif",
-              fontSize: 9,
+              fontSize: 11,
               color: GOLD,
               background: "none",
               border: "none",
@@ -207,7 +207,7 @@ export function TeamHoursTile({
                   <div
                     style={{
                       fontFamily: "'Jost', sans-serif",
-                      fontSize: 9,
+                      fontSize: 11,
                       color: MUTED,
                       lineHeight: 1.2,
                       textTransform: "capitalize",
@@ -256,7 +256,7 @@ export function TeamHoursTile({
                   <div
                     style={{
                       fontFamily: "'Jost', sans-serif",
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: 500,
                       color: TERRA,
                     }}
@@ -268,7 +268,7 @@ export function TeamHoursTile({
                       marginTop: 3,
                       width: 60,
                       textAlign: "right",
-                      fontSize: 10,
+                      fontSize: 11,
                       color: MUTED,
                       marginLeft: "auto",
                       lineHeight: 1,
@@ -289,7 +289,7 @@ export function TeamHoursTile({
           paddingTop: 8,
           marginTop: 8,
           fontFamily: "'Jost', sans-serif",
-          fontSize: 10,
+          fontSize: 11,
           color: allLogged ? SAGE : noneLogged ? TERRA : MUTED,
         }}
       >
@@ -305,7 +305,7 @@ export function TeamHoursTile({
           style={{
             marginTop: 6,
             fontFamily: "'Jost', sans-serif",
-            fontSize: 10,
+            fontSize: 11,
             color: SAGE,
           }}
         >

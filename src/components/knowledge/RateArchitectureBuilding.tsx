@@ -139,7 +139,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
           }}
         >
           {/* $ axis */}
-          <div className="absolute left-0 top-5 bottom-10 flex flex-col justify-between" style={{ fontSize: 9, color: MUTED }}>
+          <div className="absolute left-0 top-5 bottom-10 flex flex-col justify-between" style={{ fontSize: 11, color: MUTED }}>
             <span style={{ color: allBuilt ? GOLD : MUTED, fontWeight: 500 }}>
               {allBuilt ? `${fmtUsd(aligned, { decimals: 0 })}/hr ← your floor` : ""}
             </span>
@@ -179,7 +179,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
                     }}
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span style={{ fontSize: 9, letterSpacing: "0.16em", opacity: 0.7 }}>
+                      <span style={{ fontSize: 11, letterSpacing: "0.16em", opacity: 0.7 }}>
                         {layer.num} · {layer.title}
                       </span>
                       {layer.perHr > 0 && (
@@ -195,7 +195,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
 
           {/* Ground line */}
           <div style={{ borderTop: `1px solid ${CHARCOAL}`, marginTop: 0, marginLeft: 60, marginRight: 40 }} />
-          <div style={{ textAlign: "center", fontSize: 9, color: MUTED, marginTop: 4, marginLeft: 60, marginRight: 40 }}>
+          <div style={{ textAlign: "center", fontSize: 11, color: MUTED, marginTop: 4, marginLeft: 60, marginRight: 40 }}>
             Ground floor
           </div>
         </div>
@@ -203,7 +203,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
         <button
           type="button"
           onClick={replay}
-          style={{ fontSize: 10, color: GOLD, marginTop: 8 }}
+          style={{ fontSize: 11, color: GOLD, marginTop: 8 }}
           className="hover:underline"
         >
           How this was built →
@@ -212,7 +212,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
 
       {/* Detail column */}
       <div>
-        <div style={{ fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: GOLD, fontWeight: 600 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: GOLD, fontWeight: 600 }}>
           Layer {selectedLayer.num}
         </div>
         <div
@@ -234,7 +234,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
 
         {selectedLayer.perHr > 0 && (
           <div style={{ marginTop: 18, padding: "12px 16px", background: "rgba(184,134,11,0.06)", borderLeft: `2px solid ${GOLD}`, borderRadius: "0 4px 4px 0" }}>
-            <div style={{ fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
               Per-hour contribution
             </div>
             <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: CHARCOAL, marginTop: 2 }}>
@@ -244,7 +244,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
         )}
 
         {selectedLayer.alert && (
-          <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(196,113,74,0.06)", borderLeft: `2px solid ${TERRA}`, fontSize: 12, color: CHARCOAL, borderRadius: "0 4px 4px 0", fontWeight: 300, lineHeight: 1.6 }}>
+          <div style={{ marginTop: 14, padding: "10px 14px", background: "rgba(196,113,74,0.06)", borderLeft: `2px solid ${TERRA}`, fontSize: 12, color: CHARCOAL, borderRadius: "0 4px 4px 0", fontWeight: 400, lineHeight: 1.6 }}>
             {selectedLayer.alert}
           </div>
         )}

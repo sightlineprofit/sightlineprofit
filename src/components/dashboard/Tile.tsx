@@ -22,7 +22,7 @@ export function Tile({
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-gold">{eyebrow}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-gold">{eyebrow}</p>
           <h3 className="mt-1 font-display text-xl tracking-tight text-ch">{title}</h3>
         </div>
         <ArrowUpRight className="h-4 w-4 text-ch/30 transition-all group-hover:text-gold group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

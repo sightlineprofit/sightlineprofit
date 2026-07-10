@@ -302,7 +302,7 @@ export function LegalPage({
             style={{
               fontFamily: FONT_DISPLAY,
               fontSize: 48,
-              fontWeight: 300,
+              fontWeight: 400,
               color: C.charcoal,
               marginBottom: 8,
               marginTop: 0,

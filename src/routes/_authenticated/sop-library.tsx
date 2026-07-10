@@ -433,12 +433,12 @@ function Library() {
                     <div className="flex items-center gap-2">
                       <h3 className="font-display text-xl tracking-tight text-ch">{tpl.name}</h3>
                       {isDefault && (
-                        <span className="shrink-0 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-gold">
+                        <span className="shrink-0 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-gold">
                           Starter
                         </span>
                       )}
                       {isHidden && (
-                        <span className="shrink-0 rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em] text-ch/60">
+                        <span className="shrink-0 rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-ch/60">
                           Hidden
                         </span>
                       )}
@@ -450,7 +450,7 @@ function Library() {
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        "shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]",
+                        "shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] uppercase tracking-[0.15em]",
                         RISK_STYLE[(tpl.scope_risk_level ?? "low") as Risk],
                       )}
                     >
@@ -503,11 +503,11 @@ function Library() {
                 <div className="mt-4 flex items-baseline gap-6 border-t border-border pt-4">
                   <div>
                     <div className="font-display text-2xl text-ch">{phases.length}</div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Phases</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Phases</div>
                   </div>
                   <div>
                     <div className="font-display text-2xl text-ch">{scopedLabel}</div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Scoped hrs</div>
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Scoped hrs</div>
                   </div>
                   <div className="ml-auto text-right">
                     <button
@@ -526,7 +526,7 @@ function Library() {
                           : `Used on ${uses} project${uses === 1 ? "" : "s"}`}
                     </button>
                     {lastUsed && (
-                      <div className="text-[10px] text-ch/40">
+                      <div className="text-[11px] text-ch/40">
                         Last {new Date(lastUsed).toLocaleDateString()}
                       </div>
                     )}
@@ -640,7 +640,7 @@ function UsageSheet({ target, onClose }: { target: { id: string; name: string } 
                   <div className="truncate font-medium text-ch">{p.name}</div>
                   {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
                 </div>
-                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
+                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] uppercase tracking-[0.15em] text-ch/70">
                   {p.status}
                 </span>
               </div>
@@ -722,7 +722,7 @@ function AttachProjectPicker({
                     <div className="truncate font-medium text-ch">{p.name}</div>
                     {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
                   </div>
-                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.15em] text-ch/70">
+                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] uppercase tracking-[0.15em] text-ch/70">
                     {p.status}
                   </span>
                 </button>
@@ -1050,7 +1050,7 @@ function PhaseRow({
             <Stat label="Revenue" value={fmtUsd(revenue)} />
             <Stat label="Margin" value={`${fmtUsd(margin)} (${marginPct.toFixed(0)}%)`} accent={margin < 0 ? "danger" : "success"} />
           </div>
-          <div className="bg-white px-3 pb-2 text-center text-[10px] uppercase tracking-[0.16em] text-ch/40">
+          <div className="bg-white px-3 pb-2 text-center text-[11px] uppercase tracking-[0.16em] text-ch/40">
             Est. at {fmtUsd(billedRate)}/hr
           </div>
         </div>
@@ -1139,7 +1139,7 @@ function PhaseRow({
 function Stat({ label, value, accent }: { label: string; value: string; accent?: "success" | "danger" }) {
   return (
     <div className="bg-white px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
+      <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
       <div className={cn("font-display text-base", accent === "danger" && "text-terra", accent === "success" && "text-success")}>
         {value}
       </div>

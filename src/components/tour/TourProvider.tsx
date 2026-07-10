@@ -318,7 +318,7 @@ function TourOverlay() {
 function StepHeader({ step }: { step: number }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".14em", textTransform: "uppercase", color: "#8A7F75" }}>
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".14em", textTransform: "uppercase", color: "#8A7F75" }}>
         Step {step} of 7
       </div>
       <div style={{ display: "flex", gap: 6 }}>
@@ -920,7 +920,7 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
           width: 14, height: 14, borderRadius: "50%",
           border: "1.5px solid " + (done ? "#B8860B" : "rgba(44,44,44,0.25)"),
           background: done ? "#B8860B" : "transparent",
-          color: "#FAF7F2", fontSize: 10, display: "inline-flex",
+          color: "#FAF7F2", fontSize: 11, display: "inline-flex",
           alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2,
         }}
       >{done ? "✓" : ""}</span>

@@ -177,7 +177,7 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
         </Select>
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
           <SelectTrigger className="w-56 bg-white">
-            <span className="mr-2 text-[10px] uppercase tracking-[0.15em] text-ch/40">Sort</span>
+            <span className="mr-2 text-[11px] uppercase tracking-[0.15em] text-ch/40">Sort</span>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -275,7 +275,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
             {p.client_name && <p className="mt-0.5 text-sm text-ch/60">{p.client_name}</p>}
           </div>
           <span
-            className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]"
+            className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] uppercase tracking-[0.15em]"
             style={{ background: "rgba(44,44,44,0.06)", color: "#6B6259", fontFamily: "'Jost', sans-serif", fontWeight: 500 }}
           >
             New
@@ -367,7 +367,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
           {p.client_name && <p className="mt-0.5 text-sm text-ch/60">{p.client_name}</p>}
         </div>
         <span
-          className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-[0.15em]"
+          className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] uppercase tracking-[0.15em]"
           style={{ background: fs.pill.bg, color: fs.pill.color, fontFamily: "'Jost', sans-serif", fontWeight: 500 }}
         >
           {fs.pill.label}
@@ -385,7 +385,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
       >
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: fs.bar.dot }} />
         <span
-          style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400, color: fs.bar.color, lineHeight: 1.4 }}
+          style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400, color: fs.bar.color, lineHeight: 1.4 }}
         >
           {freshCopy}
         </span>
@@ -396,19 +396,19 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
         <div className="min-w-0">
           <div
             className="flex items-center gap-1.5 text-[#aaa]"
-            style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase" }}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase" }}
           >
             {state === "critical" && (
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-danger" />
             )}
             <span>Remaining margin</span>
             {freshState === "stale" && (
-              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, fontWeight: 500, color: "#B8860B", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
+              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 500, color: "#B8860B", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
                 · estimate only
               </span>
             )}
             {freshState === "critical" && (
-              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, fontWeight: 500, color: "#C4714A", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
+              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 500, color: "#C4714A", marginLeft: 4, letterSpacing: 0, textTransform: "none" }}>
                 · unreliable
               </span>
             )}
@@ -423,7 +423,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
               </div>
               <div
                 className="mt-0.5 text-gold"
-                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400 }}
               >
                 {m?.hasAnyEntry === false && m?.mode !== "none"
                   ? "No hours logged yet — full margin available"
@@ -450,7 +450,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
               >
                 Unknown until hours are logged
               </div>
-              <div className="mt-0.5" style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "#C4714A" }}>
+              <div className="mt-0.5" style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: "#C4714A" }}>
                 You may have already consumed this margin. Log hours now to find out.
               </div>
             </>
@@ -467,7 +467,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
               </div>
               <div
                 className="mt-0.5 text-[#aaa]"
-                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300 }}
               >
                 {freshState === "stale"
                   ? `Based on hours logged ${daysSince} days ago. Actual may be lower.`
@@ -481,14 +481,14 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
           <div className="shrink-0 text-right">
             {m!.weeklyCost > 0 ? (
               <div
-                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400, color: fs.marginColor }}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400, color: fs.marginColor }}
               >
                 –{fmtUsd(m!.weeklyCost)} this week
               </div>
             ) : (
               <div
                 className="text-[#aaa]"
-                style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400 }}
               >
                 No activity this week
               </div>
@@ -513,7 +513,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
         >
           <span
             className={cn(fs.prompt.textColor || "text-ch/60")}
-            style={{ fontFamily: "'Jost', sans-serif", fontSize: 10 }}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 11 }}
           >
             {fs.prompt.leftText}
           </span>
@@ -521,7 +521,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
             className="shrink-0 rounded px-2.5 py-1"
             style={{
               fontFamily: "'Jost', sans-serif",
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 500,
               color: fs.prompt.button,
               border: `0.5px solid ${fs.prompt.border}`,
@@ -544,7 +544,7 @@ function healthColor(pct: number) {
 function Cell({ label, value, accent }: { label: string; value: string; accent?: "success" | "danger" }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
+      <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
       <div className={cn("font-display text-xl text-ch",
         accent === "danger" && "text-terra",
         accent === "success" && "text-success",
@@ -1231,27 +1231,27 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Client</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Client</dt>
                 <dd className="mt-0.5 text-ch">{project.client_name ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Project rate</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Project rate</dt>
                 <dd className="mt-0.5 text-ch">{hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "—"}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Template</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Template</dt>
                 <dd className="mt-0.5 text-ch">{template?.name ?? (phaseCount > 0 ? "Custom phases" : "—")}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Start date</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Start date</dt>
                 <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">End date</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">End date</dt>
                 <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Team logging time</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Team logging time</dt>
                 <dd className="mt-0.5 text-ch">
                   {Array.from(new Set(entries.map((e) => e.user_id))).length || "—"}
                 </dd>
@@ -1274,15 +1274,15 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Work begins</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Work begins</dt>
                 <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Work wraps</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Work wraps</dt>
                 <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
               </div>
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Est. weekly hrs</dt>
+                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Est. weekly hrs</dt>
                 <dd className="mt-0.5 text-ch">
                   {project.est_weekly_hrs != null
                     ? `${Number(project.est_weekly_hrs).toFixed(1)} / wk`
@@ -1561,7 +1561,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
 
           <div className="overflow-hidden rounded-lg border border-border bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-creamd/60 text-[10px] uppercase tracking-[0.16em] text-ch/50">
+              <thead className="bg-creamd/60 text-[11px] uppercase tracking-[0.16em] text-ch/50">
                 <tr>
                   <th className="px-4 py-3 text-left">Date</th>
                   <th className="px-3 py-3 text-left">Assignee</th>
@@ -1616,7 +1616,7 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
                             }
                           }}
                           className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.15em]",
+                            "rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.15em]",
                             e.billable ? "bg-success/10 text-success" : "bg-terra/10 text-terra",
                           )}
                         >
@@ -1638,11 +1638,11 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
                                     toast.error(err instanceof Error ? err.message : "Failed");
                                   }
                                 }}
-                                className="rounded px-2 py-0.5 text-[10px] uppercase text-terra hover:bg-terra/10"
+                                className="rounded px-2 py-0.5 text-[11px] uppercase text-terra hover:bg-terra/10"
                               >
                                 Confirm
                               </button>
-                              <button onClick={() => setDeleteConfirmId(null)} className="rounded px-2 py-0.5 text-[10px] uppercase text-ch/50 hover:bg-creamd">
+                              <button onClick={() => setDeleteConfirmId(null)} className="rounded px-2 py-0.5 text-[11px] uppercase text-ch/50 hover:bg-creamd">
                                 Cancel
                               </button>
                             </div>
@@ -2139,7 +2139,7 @@ function ProfitabilitySummary(props: {
 function SummarySection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mt-5 border-t border-border pt-4 first:mt-4 first:border-0 first:pt-0">
-      <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-ch/40">{label}</p>
+      <p className="mb-2 text-[11px] uppercase tracking-[0.18em] text-ch/40">{label}</p>
       <table className="w-full text-sm">
         <tbody className="[&_td]:py-1.5">{children}</tbody>
       </table>
@@ -2246,7 +2246,7 @@ function LegendRow({ swatch, label, value }: { swatch: string; label: string; va
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-border bg-white p-4">
-      <div className="text-[10px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
+      <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
       <div className="mt-1 font-display text-2xl text-ch">{value}</div>
     </div>
   );
@@ -2317,7 +2317,7 @@ function PhaseCard({
                   return (
                     <HoverCard openDelay={120}>
                       <HoverCardTrigger asChild>
-                        <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[9px] uppercase tracking-[0.15em] text-ch/60">
+                        <span className="rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[11px] uppercase tracking-[0.15em] text-ch/60">
                           {modified ? "Modified" : "In SOP library"}
                         </span>
                       </HoverCardTrigger>
@@ -2425,7 +2425,7 @@ function PhaseCard({
             {/* Time entries for this phase */}
             {entries.length > 0 && (
               <div className="mt-5">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Time logged on this phase</p>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Time logged on this phase</p>
                 <ul className="mt-2 space-y-1 text-sm">
                   {entries.slice(0, 8).map((e) => {
                     const who = team.find((m) => m.id === e.user_id);
@@ -2494,7 +2494,7 @@ function PhaseMiniBar({ phase }: { phase: PhaseRow }) {
 function StatusBadge({ tone, label }: { tone: "success" | "gold" | "terra" | "muted"; label: string }) {
   return (
     <span className={cn(
-      "rounded-full px-2 py-0.5 text-[10px] tracking-[0.05em]",
+      "rounded-full px-2 py-0.5 text-[11px] tracking-[0.05em]",
       tone === "success" && "bg-success/10 text-success",
       tone === "gold" && "bg-goldp text-gold",
       tone === "terra" && "bg-terra/10 text-terra",
@@ -2538,7 +2538,7 @@ function ProcessSteps({
 
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-[0.16em] text-ch/50">Process steps</p>
+      <p className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Process steps</p>
       <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-creamd/30">
         {steps.map((s) => (
           <StepRowItem
@@ -2656,7 +2656,7 @@ function StepRowItem({
         <span>{step.description}</span>
         {step.is_custom && (
           <span
-            className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.15em]"
+            className="rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.15em]"
             style={{ backgroundColor: "rgba(87,83,66,0.1)", color: "#575342" }}
           >
             Custom
@@ -2667,7 +2667,7 @@ function StepRowItem({
         {overridden && (
           <HoverCard openDelay={120}>
             <HoverCardTrigger asChild>
-              <span className="text-[10px] text-[#C59845] leading-none" aria-label="Customised">✎</span>
+              <span className="text-[11px] text-[#C59845] leading-none" aria-label="Customised">✎</span>
             </HoverCardTrigger>
             <HoverCardContent className="w-64 text-xs">
               Customised for this project. Template default: {formatHours(tpl ?? 0)}.

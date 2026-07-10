@@ -61,7 +61,7 @@ export function ActionEnginePanel() {
             className="text-[#aaa]"
             style={{
               fontFamily: "'Jost', sans-serif",
-              fontSize: 8,
+              fontSize: 11,
               fontWeight: 600,
               letterSpacing: "0.16em",
               textTransform: "uppercase",
@@ -77,7 +77,7 @@ export function ActionEnginePanel() {
           </h3>
           <p
             className="mt-1 text-ch/50"
-            style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300 }}
           >
             Gap composition: {data.pricingGapPct.toFixed(0)}% pricing ·{" "}
             {data.utilGapPct.toFixed(0)}% utilization · {data.costGapPct.toFixed(0)}% cost structure
@@ -107,7 +107,7 @@ export function ActionEnginePanel() {
                 </p>
                 <p
                   className="mt-1 text-ch/50"
-                  style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300, lineHeight: 1.55 }}
+                  style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400, lineHeight: 1.55 }}
                 >
                   {a.why}
                 </p>
@@ -117,7 +117,7 @@ export function ActionEnginePanel() {
                       if (data.openCommitment) setReconsiderOpen(true);
                     }}
                     className="mt-1 text-left hover:underline"
-                    style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 500, color: "#B8860B" }}
+                    style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 500, color: "#B8860B" }}
                   >
                     {a.linkLabel}
                   </button>
@@ -125,7 +125,7 @@ export function ActionEnginePanel() {
                   <Link
                     to={a.linkTo}
                     className="mt-1 inline-block hover:underline"
-                    style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 500, color: "#B8860B" }}
+                    style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 500, color: "#B8860B" }}
                   >
                     {a.linkLabel}
                   </Link>
@@ -144,7 +144,7 @@ export function ActionEnginePanel() {
         >
           <label
             className="block text-ch/60"
-            style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 500 }}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 500 }}
           >
             What got in the way?
           </label>
@@ -186,7 +186,7 @@ export function ActionEnginePanel() {
           className="flex w-full items-center justify-between text-[#aaa] hover:text-ch/70"
           style={{
             fontFamily: "'Jost', sans-serif",
-            fontSize: 8,
+            fontSize: 11,
             fontWeight: 600,
             letterSpacing: "0.16em",
             textTransform: "uppercase",
@@ -203,7 +203,7 @@ export function ActionEnginePanel() {
                   <tr key={s.key} className={i > 0 ? "border-t" : ""} style={{ borderColor: "rgba(44,44,44,0.06)" }}>
                     <td
                       className="px-3 py-2 text-ch/60"
-                      style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 400 }}
+                      style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400 }}
                     >
                       {s.key}
                     </td>
@@ -226,7 +226,7 @@ export function ActionEnginePanel() {
         )}
         <p
           className="mt-3 italic text-ch/40"
-          style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 300 }}
+          style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300 }}
         >
           {data.rotationNote}
         </p>
