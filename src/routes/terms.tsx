@@ -30,7 +30,7 @@ const sections: LegalSection[] = [
   },
   {
     h: "Free trial",
-    body: "Sightline offers a 14-day free trial. A valid payment method is required to start the trial but will not be charged until the trial period ends. You may cancel at any time before the trial ends to avoid being charged. One trial per person.",
+    body: "Sightline offers a 27-day free trial. A valid payment method is required to start the trial but will not be charged until the trial period ends. You may cancel at any time before the trial ends to avoid being charged. One trial per person.",
   },
   {
     h: "Subscription and billing",
