@@ -1,15 +1,20 @@
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight, Library } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Popover, PopoverTrigger, PopoverContent,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { createProject } from "@/lib/sightline.functions";
+import { listSopTemplatesLite } from "@/lib/sightline.functions";
+import { getSopTemplatePhases } from "@/lib/sop.functions";
 
 export type WizardPhase = {
   name: string;
@@ -32,6 +37,8 @@ export function ProjectSetupWizard({
   open, onClose, onCreated, templateId, templateName, initialPhases,
 }: ProjectSetupWizardProps) {
   const createFn = useServerFn(createProject);
+  const listTemplatesFn = useServerFn(listSopTemplatesLite);
+  const getTemplatePhasesFn = useServerFn(getSopTemplatePhases);
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
@@ -41,6 +48,34 @@ export function ProjectSetupWizard({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [phases, setPhases] = useState<WizardPhase[]>(initialPhases ?? []);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [appendingId, setAppendingId] = useState<string | null>(null);
+
+  const templatesQ = useQuery({
+    queryKey: ["wizard-sop-templates"],
+    queryFn: () => listTemplatesFn(),
+    enabled: open && step === 2,
+    staleTime: 60_000,
+  });
+
+  async function appendTemplate(id: string, name: string) {
+    setAppendingId(id);
+    try {
+      const res = await getTemplatePhasesFn({ data: { template_id: id } });
+      const incoming = (res?.phases ?? []) as WizardPhase[];
+      if (!incoming.length) {
+        toast.info(`"${name}" has no phases to append.`);
+        return;
+      }
+      setPhases((phs) => [...phs, ...incoming]);
+      toast.success(`Appended ${incoming.length} phase${incoming.length === 1 ? "" : "s"} from ${name}.`);
+      setLibraryOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load template");
+    } finally {
+      setAppendingId(null);
+    }
+  }
 
   // Re-seed phases when the wizard is reopened with a different template.
   const seededKey = useMemo(
