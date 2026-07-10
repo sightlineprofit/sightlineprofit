@@ -7,7 +7,6 @@ import {
   getStripeErrorMessage,
   CHECKOUT_PRICE_KEYS,
   PRICE_TO_TIER,
-  FOUNDING_PRICE_KEYS,
 } from "@/lib/stripe.server";
 import { resolveOrCreateCustomerForFirm, resolvePriceKey } from "@/lib/stripe-billing-sync.server";
 
