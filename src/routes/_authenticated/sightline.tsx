@@ -50,6 +50,7 @@ export const Route = createFileRoute("/_authenticated/sightline")({
     z.object({
       openProject: z.string().uuid().optional(),
       onboarded: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
+      new: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
     }).parse(s),
   component: SightlinePage,
 });
@@ -69,6 +70,7 @@ function SightlinePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.openProject]);
   const showOnboardHint = String(search.onboarded ?? "") === "1";
+  const autoOpenNew = String(search.new ?? "") === "1";
 
   if (tier !== "practice") {
     return (
@@ -100,10 +102,10 @@ function SightlinePage() {
       />
     );
   }
-  return <ProjectList onOpen={setOpenProject} />;
+  return <ProjectList onOpen={setOpenProject} autoOpenNew={autoOpenNew} />;
 }
 
-function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
+function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; autoOpenNew?: boolean }) {
   const getList = useServerFn(getProjectList);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
@@ -111,6 +113,15 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"health" | "margin_desc" | "margin_asc" | "recent" | "name">("health");
   const [wizardOpen, setWizardOpen] = useState(false);
+  const navigate = useNavigate();
+  // Auto-open the wizard when arriving via the tour ("Create my first
+  // project →") or any other flow that passes ?new=1.
+  useEffect(() => {
+    if (autoOpenNew) setWizardOpen(true);
+  }, [autoOpenNew]);
+  const clearNewParam = () => {
+    if (autoOpenNew) navigate({ to: "/sightline", search: {}, replace: true });
+  };
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -200,9 +211,10 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       )}
       <ProjectSetupWizard
         open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
+        onClose={() => { setWizardOpen(false); clearNewParam(); }}
         onCreated={(projectId) => {
           qc.invalidateQueries({ queryKey: ["sightline-list"] });
+          clearNewParam();
           onOpen(projectId);
         }}
       />
