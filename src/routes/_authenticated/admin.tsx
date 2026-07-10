@@ -24,6 +24,7 @@ import {
 } from "@/lib/demo.functions";
 import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
+import { GoLiveChecklist } from "@/components/admin/GoLiveChecklist";
 import { cn } from "@/lib/utils";
 import { Shield, Eye, RotateCcw, Trash2, Plus, X, CalendarClock } from "lucide-react";
 
