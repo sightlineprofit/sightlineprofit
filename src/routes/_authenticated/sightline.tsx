@@ -472,7 +472,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
               >
                 {freshState === "stale"
                   ? `Based on hours logged ${daysSince} days ago. Actual may be lower.`
-                  : `of ${fmtUsd(m!.projectFee)} fee · ${pctConsumed.toFixed(0)}% of budget consumed · ${formatHours(hrsRemaining)} remaining`}
+                  : `${(m!.calc?.remainingMarginPct ?? 0).toFixed(1)}% margin · ${formatHours(hrsRemaining)} remaining · of ${fmtUsd(m!.projectFee)} fee`}
                 {m!.usingFallbackCostRate && " · using firm rate"}
               </div>
             </>
