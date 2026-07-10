@@ -1144,7 +1144,7 @@ export const listOwnerCompensations = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: me } = await supabase
       .from("profiles")
-      .select("firm_id")
+      .select("firm_id, role")
       .eq("id", userId)
       .single();
     if (!me?.firm_id) return { principals: [], comp: [] };
@@ -1160,7 +1160,49 @@ export const listOwnerCompensations = createServerFn({ method: "GET" })
         .select("*")
         .eq("firm_id", me.firm_id),
     ]);
-    return { principals: principals ?? [], comp: comp ?? [] };
+    let compRows = comp ?? [];
+    // Backfill: if the current principal has no owner_compensation row but
+    // firm_config carries non-zero comp fields (from an older onboarding
+    // flow that only wrote to firm_config), seed a row so Settings and the
+    // Rate Architecture itemization surface the same values automatically.
+    if (
+      me.role === "principal" &&
+      !compRows.some((r: any) => r.profile_id === userId)
+    ) {
+      const { data: cfg } = await supabase
+        .from("firm_config")
+        .select(
+          "comp_draw_annual, comp_distribution_annual, comp_health_annual, comp_retire_annual, comp_ptax_pct",
+        )
+        .eq("firm_id", me.firm_id)
+        .maybeSingle();
+      const draw = Number(cfg?.comp_draw_annual) || 0;
+      const dist = Number(cfg?.comp_distribution_annual) || 0;
+      const health = Number(cfg?.comp_health_annual) || 0;
+      const retire = Number(cfg?.comp_retire_annual) || 0;
+      if (draw > 0 || dist > 0 || health > 0 || retire > 0) {
+        const ptax = Number(cfg?.comp_ptax_pct);
+        const { data: inserted } = await supabase
+          .from("owner_compensation")
+          .upsert(
+            {
+              firm_id: me.firm_id,
+              profile_id: userId,
+              comp_draw_annual: draw || null,
+              distribution_annual: dist || null,
+              health_insurance_annual: health || null,
+              retirement_annual: retire || null,
+              payroll_tax_pct: Number.isFinite(ptax) && ptax > 0 ? ptax : 15.3,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "firm_id,profile_id" },
+          )
+          .select("*")
+          .maybeSingle();
+        if (inserted) compRows = [...compRows, inserted];
+      }
+    }
+    return { principals: principals ?? [], comp: compRows };
   });
 
 const ownerCompSchema = z.object({

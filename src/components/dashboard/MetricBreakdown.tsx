@@ -867,23 +867,6 @@ export function MetricBreakdown({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
-  const openT = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeT = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearT = () => {
-    if (openT.current) clearTimeout(openT.current);
-    if (closeT.current) clearTimeout(closeT.current);
-    openT.current = null;
-    closeT.current = null;
-  };
-  const schedOpen = () => {
-    clearT();
-    openT.current = setTimeout(() => setOpen(true), 200);
-  };
-  const schedClose = () => {
-    clearT();
-    closeT.current = setTimeout(() => setOpen(false), 300);
-  };
 
   useEffect(() => {
     if (!open) return;
@@ -909,8 +892,6 @@ export function MetricBreakdown({
     };
   }, [open, metric]);
 
-  useEffect(() => () => clearT(), []);
-
   const posClass = side === "left" ? "right-full mr-2 top-0" : "left-0 top-full mt-2";
   const caret =
     side === "left"
@@ -921,15 +902,12 @@ export function MetricBreakdown({
     <span
       ref={wrapRef}
       className="relative inline-flex items-center align-middle"
-      onMouseEnter={schedOpen}
-      onMouseLeave={schedClose}
     >
       <button
         type="button"
         aria-label={`${LABELS[metric]} breakdown`}
         onClick={(e) => {
           e.stopPropagation();
-          clearT();
           setOpen((v) => !v);
         }}
         className="ml-1.5 inline-flex cursor-pointer items-center hover:opacity-80"
@@ -942,8 +920,6 @@ export function MetricBreakdown({
         <div
           role="dialog"
           aria-label={`${LABELS[metric]} breakdown`}
-          onMouseEnter={clearT}
-          onMouseLeave={schedClose}
           onClick={(e) => e.stopPropagation()}
           className={`absolute ${posClass} z-50`}
           style={{
