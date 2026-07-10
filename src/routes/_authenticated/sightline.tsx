@@ -2326,6 +2326,32 @@ function SummarySection({ label, children }: { label: string; children: React.Re
   );
 }
 
+function BreakdownRow({ label, value, bold, valueColor }: {
+  label: string;
+  value: string;
+  bold?: boolean;
+  valueColor?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 12, color: "#8A7F75" }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: "'Jost', sans-serif",
+          fontSize: 12,
+          fontWeight: bold ? 600 : 400,
+          color: valueColor ?? "#2C2C2C",
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 function ProfitRow({ label, value, bold, accent, tip }: {
   label: string; value: string; bold?: boolean;
   accent?: "success" | "danger" | "gold"; tip: string;
