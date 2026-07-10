@@ -621,7 +621,10 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
   const [margin, setMargin] = useState("40");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [calculating, setCalculating] = useState(false);
   const upsert = useServerFn(upsertFirmConfig);
+  const qc = useQueryClient();
+  const fetchDashDirect = useServerFn(getDashboardData);
 
   // Load current comp+expenses via dashboard fetch to preview aligned rate
   const fetchDash = useServerFn(getDashboardData);
@@ -664,11 +667,26 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
           target_gross_margin_pct: m,
         },
       });
+      // Race condition fix: wait for aligned rate to recalculate before Step 5.
+      setCalculating(true);
+      const start = Date.now();
+      // Poll dashboard config until rate_billed is present, capped at 3s.
+      while (Date.now() - start < 3000) {
+        try {
+          const fresh: any = await fetchDashDirect();
+          if (Number(fresh?.config?.rate_billed) > 0 && Number(fresh?.config?.target_billable_hrs_per_week) > 0) {
+            break;
+          }
+        } catch { /* keep polling */ }
+        await new Promise((r2) => setTimeout(r2, 300));
+      }
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       await onAdvance();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save");
     } finally {
       setSaving(false);
+      setCalculating(false);
     }
   };
 
@@ -717,7 +735,14 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
         )}
       </div>
       {err ? <div style={{ color: "#B23B3B", fontSize: 12, marginTop: 10 }}>{err}</div> : null}
-      <NavRow step={3} onBack={onBack} onSkip={onSkip} onNext={save} nextLabel={saving ? "Saving…" : "Save & continue →"} nextDisabled={saving} />
+      <NavRow
+        step={3}
+        onBack={onBack}
+        onSkip={onSkip}
+        onNext={save}
+        nextLabel={calculating ? "Calculating your rate…" : saving ? "Saving…" : "Save & continue →"}
+        nextDisabled={saving || calculating}
+      />
     </>
   );
 }
