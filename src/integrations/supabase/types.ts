@@ -2025,6 +2025,10 @@ export type Database = {
         Args: { p_firm_id: string }
         Returns: undefined
       }
+      update_firm_billing_from_backend: {
+        Args: { p_firm_id: string; p_patch: Json }
+        Returns: undefined
+      }
     }
     Enums: {
       change_log_category:
