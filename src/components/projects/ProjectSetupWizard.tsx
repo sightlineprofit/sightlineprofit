@@ -1,15 +1,20 @@
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight, Library } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Popover, PopoverTrigger, PopoverContent,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { createProject } from "@/lib/sightline.functions";
+import { listSopTemplatesLite } from "@/lib/sightline.functions";
+import { getSopTemplatePhases } from "@/lib/sop.functions";
 
 export type WizardPhase = {
   name: string;
@@ -32,6 +37,8 @@ export function ProjectSetupWizard({
   open, onClose, onCreated, templateId, templateName, initialPhases,
 }: ProjectSetupWizardProps) {
   const createFn = useServerFn(createProject);
+  const listTemplatesFn = useServerFn(listSopTemplatesLite);
+  const getTemplatePhasesFn = useServerFn(getSopTemplatePhases);
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
@@ -41,6 +48,34 @@ export function ProjectSetupWizard({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [phases, setPhases] = useState<WizardPhase[]>(initialPhases ?? []);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [appendingId, setAppendingId] = useState<string | null>(null);
+
+  const templatesQ = useQuery({
+    queryKey: ["wizard-sop-templates"],
+    queryFn: () => listTemplatesFn(),
+    enabled: open && step === 2,
+    staleTime: 60_000,
+  });
+
+  async function appendTemplate(id: string, name: string) {
+    setAppendingId(id);
+    try {
+      const res = await getTemplatePhasesFn({ data: { template_id: id } });
+      const incoming = (res?.phases ?? []) as WizardPhase[];
+      if (!incoming.length) {
+        toast.info(`"${name}" has no phases to append.`);
+        return;
+      }
+      setPhases((phs) => [...phs, ...incoming]);
+      toast.success(`Appended ${incoming.length} phase${incoming.length === 1 ? "" : "s"} from ${name}.`);
+      setLibraryOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not load template");
+    } finally {
+      setAppendingId(null);
+    }
+  }
 
   // Re-seed phases when the wizard is reopened with a different template.
   const seededKey = useMemo(
@@ -225,13 +260,57 @@ export function ProjectSetupWizard({
                 </div>
               ))}
             </div>
-            <Button
-              variant="outline"
-              className="w-full border-dashed border-border"
-              onClick={() => setPhases((phs) => [...phs, { name: "", expected_hrs: 0, billable: true }])}
-            >
-              <Plus className="mr-1.5 h-4 w-4" /> Add phase
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                className="border-dashed border-border"
+                onClick={() => setPhases((phs) => [...phs, { name: "", expected_hrs: 0, billable: true }])}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Add phase
+              </Button>
+              <Popover open={libraryOpen} onOpenChange={setLibraryOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="border-dashed border-border">
+                    <Library className="mr-1.5 h-4 w-4" /> Append from SOP library
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-0">
+                  <div className="border-b border-border px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-ch/60">
+                    SOP templates
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {templatesQ.isLoading ? (
+                      <p className="px-3 py-4 text-sm text-ch/60">Loading templates…</p>
+                    ) : (templatesQ.data?.templates?.length ?? 0) === 0 ? (
+                      <p className="px-3 py-4 text-sm text-ch/60">
+                        No SOP templates yet. Create one in the SOP Library, then come back here.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-border">
+                        {templatesQ.data!.templates.map((t) => (
+                          <li key={t.id}>
+                            <button
+                              type="button"
+                              disabled={appendingId === t.id}
+                              onClick={() => appendTemplate(t.id, t.name)}
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-cream/60 disabled:opacity-60"
+                            >
+                              <span>
+                                <span className="block text-ch">{t.name}</span>
+                                {t.category ? (
+                                  <span className="block text-[11px] text-ch/50">{t.category}</span>
+                                ) : null}
+                              </span>
+                              <Plus className="h-4 w-4 text-ch/50" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
         )}
 
