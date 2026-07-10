@@ -19,25 +19,7 @@ export function AlignedRateBreakdown({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
-
-  const clearTimers = () => {
-    if (openTimer.current) clearTimeout(openTimer.current);
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    openTimer.current = null;
-    closeTimer.current = null;
-  };
-
-  const scheduleOpen = () => {
-    clearTimers();
-    openTimer.current = setTimeout(() => setOpen(true), 200);
-  };
-  const scheduleClose = () => {
-    clearTimers();
-    closeTimer.current = setTimeout(() => setOpen(false), 300);
-  };
 
   useEffect(() => {
     if (!open) return;
@@ -55,8 +37,6 @@ export function AlignedRateBreakdown({
       window.removeEventListener("mousedown", onDown);
     };
   }, [open]);
-
-  useEffect(() => () => clearTimers(), []);
 
   const hrs = c.annualBillableHrs || 0;
   const ownerAnn = c.compTotal || 0;
@@ -98,15 +78,12 @@ export function AlignedRateBreakdown({
     <span
       ref={wrapRef}
       className="relative inline-flex items-center align-middle"
-      onMouseEnter={scheduleOpen}
-      onMouseLeave={scheduleClose}
     >
       <button
         type="button"
         aria-label="Aligned rate breakdown"
         onClick={(e) => {
           e.stopPropagation();
-          clearTimers();
           setOpen((v) => !v);
         }}
         className="ml-1.5 inline-flex cursor-pointer items-center text-gold hover:opacity-80"
@@ -118,8 +95,6 @@ export function AlignedRateBreakdown({
       {open && (
         <div
           role="dialog"
-          onMouseEnter={clearTimers}
-          onMouseLeave={scheduleClose}
           className={`absolute ${posClass} z-50`}
           style={{
             width: 320,
