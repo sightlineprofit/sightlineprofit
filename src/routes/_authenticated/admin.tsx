@@ -203,6 +203,86 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
 }
 
 /* ============ Users ============ */
+function TrialExtender({
+  firmId,
+  trialEndsAt,
+  onExtend,
+  pending,
+}: {
+  firmId: string;
+  trialEndsAt: string | null;
+  onExtend: (iso: string) => void;
+  pending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const currentEnd = trialEndsAt ? new Date(trialEndsAt) : null;
+  const base = currentEnd && currentEnd.getTime() > Date.now() ? currentEnd : new Date();
+
+  const addDays = (n: number) => {
+    const d = new Date(base);
+    d.setDate(d.getDate() + n);
+    onExtend(d.toISOString());
+    setOpen(false);
+  };
+  const setToDate = (yyyyMmDd: string) => {
+    if (!yyyyMmDd) return;
+    // Interpret as end-of-day UTC-ish; use noon to avoid TZ drift.
+    const d = new Date(`${yyyyMmDd}T12:00:00`);
+    if (isNaN(d.getTime())) return;
+    onExtend(d.toISOString());
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative inline-flex items-center gap-2">
+      <span>{currentEnd ? currentEnd.toLocaleDateString() : "—"}</span>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={pending}
+        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] hover:bg-creamd disabled:opacity-50"
+        title="Extend trial"
+      >
+        <CalendarClock className="h-3 w-3" /> Extend
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full z-50 mt-1 w-60 rounded-md border border-border bg-white p-3 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-ch/60">
+              Extend from {base.toLocaleDateString()}
+            </div>
+            <div className="mb-3 flex flex-wrap gap-1">
+              {[7, 14, 30].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => addDays(n)}
+                  className="rounded border border-border bg-white px-2 py-1 text-xs hover:bg-creamd"
+                >
+                  +{n} days
+                </button>
+              ))}
+            </div>
+            <label className="block text-[11px] text-ch/60 mb-1">Set specific date</label>
+            <input
+              type="date"
+              min={new Date().toISOString().slice(0, 10)}
+              defaultValue={currentEnd ? currentEnd.toISOString().slice(0, 10) : ""}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full rounded border border-border bg-white px-2 py-1 text-xs"
+            />
+            <div className="mt-2 text-[10px] text-ch/50">Firm {firmId.slice(0, 8)}…</div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function UsersTab() {
   const list = useServerFn(listAllUsers);
   const { data: users = [] } = useQuery({ queryKey: ["admin-users"], queryFn: () => list() });
