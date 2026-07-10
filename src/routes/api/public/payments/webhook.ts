@@ -1,11 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { type StripeEnv, verifyWebhook } from "@/lib/stripe.server";
-import {
-  markFirmBillingCanceled,
-  markFirmBillingPastDue,
-  resolveFirmIdForBillingSync,
-  syncFirmBillingFromSubscription,
-} from "@/lib/stripe-billing-sync.server";
 
 async function getAdmin() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -21,7 +14,14 @@ export const Route = createFileRoute("/api/public/payments/webhook")({
           console.error("[stripe-webhook] invalid env:", rawEnv);
           return Response.json({ received: true, ignored: "invalid env" });
         }
-        const env: StripeEnv = rawEnv;
+        const env = rawEnv;
+        const { verifyWebhook } = await import("@/lib/stripe.server");
+        const {
+          markFirmBillingCanceled,
+          markFirmBillingPastDue,
+          resolveFirmIdForBillingSync,
+          syncFirmBillingFromSubscription,
+        } = await import("@/lib/stripe-billing-sync.server");
 
         let event: { id: string; type: string; data: { object: any } };
         try {
