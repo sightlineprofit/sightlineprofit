@@ -852,7 +852,7 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
 
   const goToProjectCreate = () => navigate({ to: "/projects" as any });
   const goToSopLibrary = () => {
-    if (projectId) navigate({ to: "/projects/$projectId" as any, params: { projectId } });
+    if (projectId) navigate({ to: "/projects/$id" as any, params: { id: projectId } });
   };
 
   const item = (label: string, done: boolean, doneLabel: string) => (
