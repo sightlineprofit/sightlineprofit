@@ -1942,15 +1942,46 @@ function ProfitabilitySummary(props: {
   hasOwnerSalary: boolean;
   alignedRate: number;
   onOpenSettings: () => void;
+  breakEvenRate: number;
+  firmAlignedRate: number;
+  perHour: { comp: number; opexRecurring: number; opexOneTime: number };
+  teamCount: number;
 }) {
   const {
     projectFee, isFixedFee, budgetedBillableHrs, actualHrs, billableHrs, nonBillableHrs,
     rate, rateIsProject, firmBilledRate, phaseRows, startDate, endDate,
     hasOwnerSalary, alignedRate, onOpenSettings,
+    breakEvenRate, firmAlignedRate, perHour, teamCount,
   } = props;
 
   const hasFee = projectFee > 0;
   const usableRate = rate > 0 ? rate : firmBilledRate;
+
+  // ── True project margin (fee minus break-even cost × scoped hrs) ──
+  const marginCalc = getProjectMarginCalc({
+    projectFee,
+    scopedHours: budgetedBillableHrs,
+    hoursLogged: actualHrs,
+    breakEvenRate,
+    alignedRate: firmAlignedRate,
+  });
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const marginColor =
+    marginCalc.grossMarginPct >= 20
+      ? "#5C8A6E"
+      : marginCalc.grossMarginPct >= 10
+        ? "#B8860B"
+        : "#C4714A";
+  const compContribution = perHour.comp * budgetedBillableHrs;
+  const opexContribution = (perHour.opexRecurring + perHour.opexOneTime) * budgetedBillableHrs;
+  // Team cost per hour is embedded in break-even; approximate as remainder.
+  const teamContribution = Math.max(
+    0,
+    (breakEvenRate * budgetedBillableHrs) - compContribution - opexContribution,
+  );
+  const scopePct = budgetedBillableHrs > 0 ? (actualHrs / budgetedBillableHrs) * 100 : 0;
+  const showScopeWarn = scopePct >= 80 && scopePct < 100;
+  const showScopeAlert = marginCalc.isOverScope;
 
   // Empty state: no fee at all
   if (!hasFee) {
