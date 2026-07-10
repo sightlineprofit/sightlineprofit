@@ -260,13 +260,57 @@ export function ProjectSetupWizard({
                 </div>
               ))}
             </div>
-            <Button
-              variant="outline"
-              className="w-full border-dashed border-border"
-              onClick={() => setPhases((phs) => [...phs, { name: "", expected_hrs: 0, billable: true }])}
-            >
-              <Plus className="mr-1.5 h-4 w-4" /> Add phase
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                className="border-dashed border-border"
+                onClick={() => setPhases((phs) => [...phs, { name: "", expected_hrs: 0, billable: true }])}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Add phase
+              </Button>
+              <Popover open={libraryOpen} onOpenChange={setLibraryOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="border-dashed border-border">
+                    <Library className="mr-1.5 h-4 w-4" /> Append from SOP library
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-0">
+                  <div className="border-b border-border px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-ch/60">
+                    SOP templates
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {templatesQ.isLoading ? (
+                      <p className="px-3 py-4 text-sm text-ch/60">Loading templates…</p>
+                    ) : (templatesQ.data?.templates?.length ?? 0) === 0 ? (
+                      <p className="px-3 py-4 text-sm text-ch/60">
+                        No SOP templates yet. Create one in the SOP Library, then come back here.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-border">
+                        {templatesQ.data!.templates.map((t) => (
+                          <li key={t.id}>
+                            <button
+                              type="button"
+                              disabled={appendingId === t.id}
+                              onClick={() => appendTemplate(t.id, t.name)}
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-cream/60 disabled:opacity-60"
+                            >
+                              <span>
+                                <span className="block text-ch">{t.name}</span>
+                                {t.category ? (
+                                  <span className="block text-[11px] text-ch/50">{t.category}</span>
+                                ) : null}
+                              </span>
+                              <Plus className="h-4 w-4 text-ch/50" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
         )}
 
