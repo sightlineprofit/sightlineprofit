@@ -1393,7 +1393,7 @@ function EntryForm({
       )}
 
       {compact ? (
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="w-full bg-gold text-white hover:bg-goldl">
+        <Button data-tour="log-time-entry" onClick={() => save.mutate()} disabled={save.isPending} className="w-full bg-gold text-white hover:bg-goldl">
           <Plus className="h-3.5 w-3.5 mr-1" /> Log time
         </Button>
       ) : (
@@ -1403,7 +1403,7 @@ function EntryForm({
               <Trash2 className="h-4 w-4 mr-1" /> Delete
             </Button>
           ) : <div />}
-          <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-gold text-white hover:bg-goldl">
+          <Button data-tour="log-time-entry" onClick={() => save.mutate()} disabled={save.isPending} className="bg-gold text-white hover:bg-goldl">
             {initial.id ? "Save changes" : "Create entry"}
           </Button>
         </DialogFooter>
