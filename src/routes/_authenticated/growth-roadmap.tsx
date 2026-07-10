@@ -1124,7 +1124,7 @@ function SignalCardUI({
     <div className="rounded-md border border-border bg-white p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-ch/40">Signal {letter}</div>
+          <div className="text-[11px] uppercase tracking-[0.22em] text-ch/40">Signal {letter}</div>
           <h4 className="mt-0.5 font-display text-lg text-ch">{title}</h4>
           <p className="text-xs text-ch/55 mt-1">{measures}</p>
         </div>

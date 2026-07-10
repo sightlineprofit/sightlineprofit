@@ -443,7 +443,7 @@ function computeWindowHours(
 function MetricCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-[6px] border border-border bg-cream p-[20px_22px]" style={{ padding: "20px 22px", borderWidth: "0.5px" }}>
-      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-ch/50">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ch/50">{label}</p>
       <div className="mt-3">{children}</div>
     </div>
   );
@@ -486,7 +486,7 @@ function HoursMetric({
         <button
           type="button"
           onClick={onOpenDetail}
-          className="mt-2 text-[10px] font-normal text-gold hover:underline"
+          className="mt-2 text-[11px] font-normal text-gold hover:underline"
           style={{ letterSpacing: "0.02em" }}
         >
           See capacity detail →
@@ -575,7 +575,7 @@ function RateHealthMetric({
       <div className={cn("font-display text-[40px] leading-none font-normal num", valueColor)}>{value}</div>
       <div className="mt-2 text-[11px] font-light text-ch/60">{secondary}</div>
       <span
-        className="mt-3 inline-block rounded-[2px] px-2 py-[3px] text-[9px] font-semibold uppercase tracking-wider"
+        className="mt-3 inline-block rounded-[2px] px-2 py-[3px] text-[11px] font-semibold uppercase tracking-wider"
         style={pillStyle}
       >
         {pillLabel}
@@ -585,7 +585,7 @@ function RateHealthMetric({
           <button
             type="button"
             onClick={onOpenDetail}
-            className="mt-2 text-[10px] font-normal text-gold hover:underline"
+            className="mt-2 text-[11px] font-normal text-gold hover:underline"
             style={{ letterSpacing: "0.02em" }}
           >
             See full breakdown →
@@ -651,7 +651,7 @@ function HealthBadge({ health }: { health: "healthy" | "watch" | "at_risk" }) {
   const s = map[health];
   return (
     <span
-      className="rounded-[2px] px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wider"
+      className="rounded-[2px] px-2 py-[2px] text-[11px] font-semibold uppercase tracking-wider"
       style={{ background: s.bg, color: s.fg }}
     >
       {s.label}
@@ -720,7 +720,7 @@ function GrowthSignalsStrip({ active }: { active: number }) {
       style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
     >
       <div>
-        <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-ch/50">Growth signals</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ch/50">Growth signals</div>
         <div className="mt-0.5 text-[13px] font-medium text-ch num">{active} of 12 active</div>
       </div>
       <div className={cn("text-[11px]", color)}>{msg}</div>
@@ -872,7 +872,7 @@ function QuickLogRow({
         <>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-ch/50">Total hours</label>
+              <label className="text-[11px] uppercase tracking-wider text-ch/50">Total hours</label>
               <input
                 type="number"
                 min={0}
@@ -885,7 +885,7 @@ function QuickLogRow({
               />
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-ch/50">Billable</label>
+              <label className="text-[11px] uppercase tracking-wider text-ch/50">Billable</label>
               <input
                 type="number"
                 min={0}
@@ -900,11 +900,11 @@ function QuickLogRow({
                 )}
               />
               {invalid && (
-                <div className="mt-1 text-[10px] text-danger">Billable can't exceed total hours</div>
+                <div className="mt-1 text-[11px] text-danger">Billable can't exceed total hours</div>
               )}
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-ch/50">Non-billable</label>
+              <label className="text-[11px] uppercase tracking-wider text-ch/50">Non-billable</label>
               <input
                 type="number"
                 readOnly
@@ -925,7 +925,7 @@ function QuickLogRow({
                     type="button"
                     onClick={() => setSelectedDate(iso)}
                     className={cn(
-                      "rounded-full px-2.5 py-1 text-[10px] transition-colors",
+                      "rounded-full px-2.5 py-1 text-[11px] transition-colors",
                       isSel
                         ? "bg-ch text-cream"
                         : "border border-border bg-white text-ch/70 hover:border-gold",
@@ -952,7 +952,7 @@ function QuickLogRow({
                 type="button"
                 disabled={!canSubmit || mut.isPending}
                 onClick={() => mut.mutate()}
-                className="rounded-[2px] bg-gold px-4 py-[7px] text-[10px] font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40 hover:opacity-90"
+                className="rounded-[2px] bg-gold px-4 py-[7px] text-[11px] font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40 hover:opacity-90"
               >
                 {mut.isPending ? "Logging…" : "Log hours"}
               </button>
@@ -1999,7 +1999,7 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
 function ScenarioCard({ label, rate, margin, revenue, accent }: { label: string; rate: number; margin: number; revenue: number; accent?: boolean }) {
   return (
     <div className={cn("rounded-lg border p-4", accent ? "border-gold bg-goldp/30" : "border-border bg-white")}>
-      <p className="text-[10px] uppercase tracking-wider text-ch/50">{label}</p>
+      <p className="text-[11px] uppercase tracking-wider text-ch/50">{label}</p>
       <p className="font-display text-2xl text-ch mt-1 num">{fmtUsd(rate, { decimals: 0 })}<span className="text-xs text-ch/40">/hr</span></p>
       <p className="text-xs text-ch/60 mt-2">Margin <span className="num text-ch">{fmtPct(margin, 0)}</span></p>
       <p className="text-xs text-ch/60">Revenue <span className="num text-ch">{fmtUsd(revenue)}</span></p>
@@ -2160,7 +2160,7 @@ function AllocationPreview({ c }: { c: ReturnType<typeof calc> }) {
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-2 text-[10px]">
+      <div className="flex flex-wrap gap-2 text-[11px]">
         {segs.map((s) => (
           <span key={s.label} className="inline-flex items-center gap-1 text-ch/70">
             <span
@@ -2339,7 +2339,7 @@ export function GrowthFull({ c }: { c: ReturnType<typeof calc> }) {
       {years.map((g, i) => (
         <div key={i} className="flex items-center justify-between rounded-lg border border-border bg-white p-4">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-gold">Year {i}</p>
+            <p className="text-[11px] uppercase tracking-wider text-gold">Year {i}</p>
             <p className="font-display text-2xl text-ch num">{fmtUsd(c.annualRevenue * (1 + g))}</p>
           </div>
           <div className="text-sm text-ch/60">+{(g * 100).toFixed(0)}%</div>
@@ -2362,7 +2362,7 @@ function KnowledgePreview() {
           {latest.kind === "video" ? <Play className="h-5 w-5 text-gold" /> : <BookOpen className="h-5 w-5 text-gold" />}
         </div>
         <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-ch/50">{categoryLabel(latest.category)}</p>
+          <p className="text-[11px] uppercase tracking-wider text-ch/50">{categoryLabel(latest.category)}</p>
           <p className="font-display text-base text-ch mt-0.5 line-clamp-2">{latest.title}</p>
         </div>
       </div>
@@ -2394,7 +2394,7 @@ export function KnowledgeFull() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {items.map((a) => (
           <div key={a.id} className="rounded-lg border border-border bg-white p-5 hover:border-gold/40 transition-colors cursor-pointer">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-gold">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-gold">
               {a.kind === "video" ? <Play className="h-3 w-3" /> : <BookOpen className="h-3 w-3" />}
               {categoryLabel(a.category)}
             </div>

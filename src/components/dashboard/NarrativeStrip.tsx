@@ -55,7 +55,7 @@ export function NarrativeStrip(input: NarrativeInput) {
       style={{
         fontFamily: "'Jost', sans-serif",
         fontSize: 12,
-        fontWeight: 300,
+        fontWeight: 400,
         color: "#555",
         lineHeight: 1.8,
         maxWidth: 600,

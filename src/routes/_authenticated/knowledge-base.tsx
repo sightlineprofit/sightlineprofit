@@ -118,7 +118,7 @@ function KbPage() {
               {i.tags?.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {i.tags.slice(0, 3).map((t: string) => (
-                    <span key={t} className="rounded bg-creamd px-2 py-0.5 text-[10px] text-ch/60">{t}</span>
+                    <span key={t} className="rounded bg-creamd px-2 py-0.5 text-[11px] text-ch/60">{t}</span>
                   ))}
                 </div>
               )}

@@ -151,7 +151,7 @@ export function AlignedRateBreakdown({
 
           <div
             style={{
-              fontSize: 8,
+              fontSize: 11,
               fontWeight: 600,
               letterSpacing: "0.16em",
               textTransform: "uppercase",
@@ -221,7 +221,7 @@ export function AlignedRateBreakdown({
             </span>
           </div>
           {opexAnn === 0 && (
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginTop: 2 }}>
               No expenses added yet.
             </div>
           )}
@@ -232,7 +232,7 @@ export function AlignedRateBreakdown({
             <span style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.85)" }}>Break-even</span>
             <span style={{ fontSize: 12, fontWeight: 500, color: "white" }}>{fmtUsd(breakEven)}/hr</span>
           </div>
-          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>
             The minimum rate to cover all firm costs.
           </div>
 
@@ -276,7 +276,7 @@ export function AlignedRateBreakdown({
 
           {/* Empty-state hint */}
           {ownerAnn <= 0 && (
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 8 }}>
               Complete your compensation setup for a full breakdown.{" "}
               <button
                 type="button"
@@ -301,7 +301,7 @@ export function AlignedRateBreakdown({
               }}
               className="hover:!text-[rgba(184,134,11,0.8)]"
               style={{
-                fontSize: 9,
+                fontSize: 11,
                 color: "rgba(255,255,255,0.3)",
                 cursor: "pointer",
                 background: "transparent",
@@ -354,8 +354,8 @@ function RateCallout({
         padding: "8px 10px",
         marginTop: 10,
         color,
-        fontSize: 10,
-        fontWeight: 300,
+        fontSize: 11,
+        fontWeight: 400,
         lineHeight: 1.5,
       }}
     >

@@ -163,7 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             return (
               <div key={g} className={cn("mt-1", showDivider && "mt-4 border-t border-border pt-3")}>
                 {!collapsed && GROUP_LABELS[g] && (
-                  <div className="px-3 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-ch/40">
+                  <div className="px-3 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.18em] text-ch/40">
                     {GROUP_LABELS[g]}
                   </div>
                 )}
@@ -199,7 +199,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {isSuper && !!data?.profile?.is_super_admin && (
             <div className="mt-4 border-t border-border pt-3">
               {!collapsed && (
-                <div className="px-3 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-[0.18em] text-gold">
+                <div className="px-3 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.18em] text-gold">
                   Internal
                 </div>
               )}

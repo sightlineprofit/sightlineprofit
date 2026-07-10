@@ -82,9 +82,9 @@ function Callout({
         borderRadius: 3,
         padding: "10px 12px",
         color: map.color,
-        fontSize: 10,
+        fontSize: 11,
         fontFamily: "Jost, sans-serif",
-        fontWeight: 300,
+        fontWeight: 400,
         lineHeight: 1.7,
       }}
     >
@@ -97,7 +97,7 @@ function SectionHead({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontSize: 8,
+        fontSize: 11,
         fontWeight: 600,
         letterSpacing: "0.16em",
         textTransform: "uppercase",
@@ -151,7 +151,7 @@ function RowLine({
         </span>
       </div>
       {hint && (
-        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{hint}</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>{hint}</div>
       )}
     </div>
   );
@@ -182,10 +182,10 @@ function Paragraph({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontSize: 10,
+        fontSize: 11,
         color: "rgba(255,255,255,0.65)",
         fontFamily: "Jost, sans-serif",
-        fontWeight: 300,
+        fontWeight: 400,
         lineHeight: 1.7,
         marginTop: 6,
       }}
@@ -329,7 +329,7 @@ function HealthContent({ c, targetMarginPct }: { c: Calc; targetMarginPct: numbe
         <div style={{ fontSize: 11, color: TERRA, fontWeight: 500, marginTop: 4 }}>
           Rate health: Below break-even
         </div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 2, fontStyle: "italic" }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 2, fontStyle: "italic" }}>
           The most urgent financial signal in your firm.
         </div>
         <Paragraph>
@@ -439,7 +439,7 @@ function MarginContent({ c, targetMarginPct }: { c: Calc; targetMarginPct: numbe
         <Divider />
         <RowLine label="Annual shortfall" value={`-${fmtUsd(gapAnnual)}/yr`} valueColor={TERRA} border={false} />
         <SectionHead>To reach break-even</SectionHead>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.8 }}>
           • Raise rate by <span style={{ color: "white" }}>{fmtUsd(gapPerHr)}/hr</span><br />
           • Reduce cost floor by <span style={{ color: "white" }}>{fmtUsd(gapAnnual)}/yr</span><br />
           {additionalHrs > 0 && (
@@ -464,7 +464,7 @@ function MarginContent({ c, targetMarginPct }: { c: Calc; targetMarginPct: numbe
         <RowLine label="Margin at target rate" value={`+${fmtUsd(aligned - be)}/hr`} />
         <RowLine label="Gap to target" value={`-${fmtUsd(gap)}/hr`} valueColor={TERRA} border={false} />
         <SectionHead>To reach your {Math.round(targetMarginPct || 0)}% target</SectionHead>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", lineHeight: 1.7 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.7 }}>
           Raise rate by <span style={{ color: "white" }}>{fmtUsd(gap)}/hr</span> to{" "}
           <span style={{ color: GOLD }}>{fmtUsd(aligned)}/hr</span>.
         </div>
@@ -509,7 +509,7 @@ function BreakevenContent({ c, cfg }: { c: Calc; cfg: any }) {
         No profit. No loss. Every dollar in, every dollar out.
       </Paragraph>
       <SectionHead>The math</SectionHead>
-      <div style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", display: "flex", padding: "0 0 4px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", display: "flex", padding: "0 0 4px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
         <span style={{ flex: 1 }}></span>
         <span style={{ width: 90, textAlign: "right" }}>Annual</span>
         <span style={{ width: 70, textAlign: "right" }}>Per hr</span>
@@ -531,7 +531,7 @@ function BreakevenContent({ c, cfg }: { c: Calc; cfg: any }) {
           <RowLine label={`If you bill ${Math.round(hrs) + 200} hrs`} value={`${fmtUsd(beLow)}/hr`} border={false} />
         </div>
       )}
-      <div style={{ marginTop: 10, fontSize: 10, fontStyle: "italic", color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
+      <div style={{ marginTop: 10, fontSize: 11, fontStyle: "italic", color: "rgba(255,255,255,0.4)", lineHeight: 1.6 }}>
         Your break-even has always been {fmtUsd(be)}/hr. The number didn't change when you saw it here.
       </div>
     </>
@@ -610,15 +610,15 @@ function CostFloorContent({
         {team > 0 && <span style={{ width: `${pct(team)}%`, background: TEAL }} />}
         {opex > 0 && <span style={{ width: `${pct(opex)}%`, background: CREAM_MUTED }} />}
       </div>
-      <div style={{ display: "flex", gap: 8, marginTop: 6, fontSize: 9, color: "rgba(255,255,255,0.6)" }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
         <span><span style={{ display: "inline-block", width: 8, height: 8, background: GOLD, marginRight: 4, borderRadius: 1 }} />Owner {pct(owner)}%</span>
         {team > 0 && <span><span style={{ display: "inline-block", width: 8, height: 8, background: TEAL, marginRight: 4, borderRadius: 1 }} />Team {pct(team)}%</span>}
         <span><span style={{ display: "inline-block", width: 8, height: 8, background: CREAM_MUTED, marginRight: 4, borderRadius: 1 }} />Opex {pct(opex)}%</span>
       </div>
 
       <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 10, color: "white", fontWeight: 500 }}>Owner compensation</div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(owner)}/yr · {pct(owner)}% of your cost floor</div>
+        <div style={{ fontSize: 11, color: "white", fontWeight: 500 }}>Owner compensation</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(owner)}/yr · {pct(owner)}% of your cost floor</div>
         <SubRows
           rows={[
             ["Draw / salary", c.draw],
@@ -641,15 +641,15 @@ function CostFloorContent({
                 if (r.equipment > 0) rows.push(["Equipment & overhead", r.equipment]);
                 return (
                   <div key={r.id} style={{ marginTop: i === 0 ? 10 : 12 }}>
-                    <div style={{ fontSize: 10, color: "white", fontWeight: 500 }}>
+                    <div style={{ fontSize: 11, color: "white", fontWeight: 500 }}>
                       {r.name}
                       <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}> · {r.role}</span>
                     </div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
                       {fmtUsd(r.total)}/yr · {pct(r.total)}% of your cost floor
                     </div>
                     <SubRows rows={rows} />
-                    <div style={{ display: "flex", padding: "4px 0 0", marginTop: 4, fontSize: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ display: "flex", padding: "4px 0 0", marginTop: 4, fontSize: 11, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                       <span style={{ flex: 1, color: "rgba(255,255,255,0.75)", fontWeight: 500 }}>{first} total</span>
                       <span style={{ color: GOLD, fontWeight: 500 }}>{fmtUsd(r.total)}/yr</span>
                     </div>
@@ -663,14 +663,14 @@ function CostFloorContent({
             </>
           ) : (
             <>
-              <div style={{ marginTop: 10, fontSize: 10, color: "white", fontWeight: 500 }}>Team cost</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(team)}/yr · {pct(team)}%</div>
+              <div style={{ marginTop: 10, fontSize: 11, color: "white", fontWeight: 500 }}>Team cost</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(team)}/yr · {pct(team)}%</div>
             </>
           )
         )}
 
-        <div style={{ marginTop: 10, fontSize: 10, color: "white", fontWeight: 500 }}>Operating expenses</div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(opex)}/yr · {pct(opex)}%</div>
+        <div style={{ marginTop: 10, fontSize: 11, color: "white", fontWeight: 500 }}>Operating expenses</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(opex)}/yr · {pct(opex)}%</div>
         <SubRows
           rows={opexRows.slice(0, 3).map((r) => [r.name, r.annual] as [string, number])}
           more={opexRows.length > 3 ? opexRows.length - 3 : 0}
@@ -699,13 +699,13 @@ function SubRows({
   return (
     <div style={{ marginTop: 4, paddingLeft: 10, borderLeft: "1px solid rgba(255,255,255,0.08)" }}>
       {rows.filter(([, v]) => v > 0).map(([label, value]) => (
-        <div key={label} style={{ display: "flex", padding: "2px 0", fontSize: 10 }}>
+        <div key={label} style={{ display: "flex", padding: "2px 0", fontSize: 11 }}>
           <span style={{ flex: 1, color: "rgba(255,255,255,0.6)" }}>{label}</span>
           <span style={{ color: "rgba(255,255,255,0.85)" }}>{fmtUsd(value)}/yr</span>
         </div>
       ))}
       {more && more > 0 ? (
-        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
           + {more} {moreLabel}
         </div>
       ) : null}
@@ -744,7 +744,7 @@ function BudgetRevenueContent({
             >
               <div
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   letterSpacing: "0.14em",
                   textTransform: "uppercase",
                   color: "rgba(255,255,255,0.65)",
@@ -755,7 +755,7 @@ function BudgetRevenueContent({
               <div style={{ fontSize: 11, color: "white", fontWeight: 500, marginTop: 1 }}>
                 {cn.label}
               </div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
                 {fmtUsd(cn.rate)}/hr × {cn.hrs} hrs × {cn.weeks} wks
               </div>
               <div style={{ fontSize: 11, color: "white", fontWeight: 500, marginTop: 2 }}>
@@ -782,7 +782,7 @@ function BudgetRevenueContent({
       >
         <span
           style={{
-            fontSize: 10,
+            fontSize: 11,
             letterSpacing: "0.16em",
             textTransform: "uppercase",
             color: "rgba(255,255,255,0.35)",

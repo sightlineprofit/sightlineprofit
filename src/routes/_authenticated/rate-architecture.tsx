@@ -55,7 +55,7 @@ function Page() {
   return (
     <div className="mx-auto max-w-6xl px-8 py-10" style={{ fontFamily: "Jost, sans-serif" }}>
       <div className="mb-6">
-        <Link to="/dashboard" className="text-[10px] uppercase tracking-[0.16em] hover:underline" style={{ color: MUTED }}>
+        <Link to="/dashboard" className="text-[11px] uppercase tracking-[0.16em] hover:underline" style={{ color: MUTED }}>
           ← Dashboard
         </Link>
         <h1 className="font-display text-4xl tracking-tight mt-2" style={{ color: CHARCOAL }}>
@@ -309,7 +309,7 @@ function LayerCard({
     >
       <div className="flex items-start justify-between">
         <div>
-          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
             {tag}
           </div>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: CHARCOAL, marginTop: 2 }}>
@@ -317,7 +317,7 @@ function LayerCard({
           </div>
         </div>
         <div className="text-right">
-          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED }}>Annual</div>
+          <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED }}>Annual</div>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: totalColor, marginTop: 2 }}>
             {fmtUsd(total, { decimals: 0 })}
           </div>
@@ -380,7 +380,7 @@ function TeamLayerCard({
     >
       <div className="flex items-start justify-between">
         <div>
-          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
             {tag}
           </div>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: CHARCOAL, marginTop: 2 }}>
@@ -388,7 +388,7 @@ function TeamLayerCard({
           </div>
         </div>
         <div className="text-right">
-          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED }}>Annual</div>
+          <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: MUTED }}>Annual</div>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: CHARCOAL, marginTop: 2 }}>
             {fmtUsd(total, { decimals: 0 })}
           </div>
@@ -416,7 +416,7 @@ function TeamLayerCard({
                     <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 15, color: CHARCOAL }}>
                       {r.name}
                     </span>
-                    <span style={{ fontSize: 8, letterSpacing: "0.16em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+                    <span style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
                       {r.role}
                     </span>
                   </div>
@@ -499,7 +499,7 @@ function RateBuildPanel({ c, targetMarginPct }: { c: Calc; targetMarginPct: numb
     >
       <div
         style={{
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: 600,
           letterSpacing: "0.18em",
           textTransform: "uppercase",
@@ -546,7 +546,7 @@ function RateBuildPanel({ c, targetMarginPct }: { c: Calc; targetMarginPct: numb
       >
         <div>
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.50)" }}>Your current billed rate</div>
-          <div style={{ fontSize: 10, fontWeight: 500, color: billed < aligned ? TERRA : SAGE, marginTop: 2 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: billed < aligned ? TERRA : SAGE, marginTop: 2 }}>
             {billed <= 0
               ? "No rate set yet"
               : billed < aligned
@@ -560,7 +560,7 @@ function RateBuildPanel({ c, targetMarginPct }: { c: Calc; targetMarginPct: numb
           </span>
           <span
             style={{
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 500,
               padding: "3px 8px",
               borderRadius: 3,
@@ -699,7 +699,7 @@ function ModelTab({
       >
         <div
           style={{
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: 600,
             letterSpacing: "0.18em",
             textTransform: "uppercase",
@@ -710,7 +710,7 @@ function ModelTab({
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ marginTop: 10 }}>
           <div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.50)" }}>Scenario aligned rate</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.50)" }}>Scenario aligned rate</div>
             <div className="flex items-baseline gap-2" style={{ marginTop: 4 }}>
               <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, color: GOLD }}>
                 {fmtUsd(scAligned, { decimals: 0 })}/hr
@@ -729,14 +729,14 @@ function ModelTab({
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.50)" }}>Scenario billed rate</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.50)" }}>Scenario billed rate</div>
             <div className="flex items-baseline gap-2" style={{ marginTop: 4 }}>
               <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 32, color: billedColor }}>
                 {fmtUsd(scBilled, { decimals: 0 })}/hr
               </span>
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 11,
                   fontWeight: 500,
                   padding: "3px 8px",
                   borderRadius: 3,
@@ -747,7 +747,7 @@ function ModelTab({
                 {pillLabel}
               </span>
             </div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 3 }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 3 }}>
               {gap > 0
                 ? `${fmtUsd(gap, { decimals: 0 })}/hr still to close`
                 : "Gap closed"}
@@ -932,7 +932,7 @@ function LeverCard({
         </div>
         <div
           style={{
-            fontSize: 10,
+            fontSize: 11,
             fontWeight: 500,
             padding: "3px 8px",
             borderRadius: 3,
@@ -1128,7 +1128,7 @@ function CommitTab({
       >
         <ProgressRing ratio={ratio} />
         <div>
-          <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
             Commitments kept
           </div>
           <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 20, color: CHARCOAL, marginTop: 2 }}>

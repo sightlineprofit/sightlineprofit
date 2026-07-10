@@ -158,7 +158,7 @@ export function RateArchitecturePanel({
         <div>
           <div
             style={{
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 600,
               letterSpacing: "0.16em",
               textTransform: "uppercase",
@@ -179,10 +179,10 @@ export function RateArchitecturePanel({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span style={{ fontSize: 9, color: MUTED }}>{agoLabel(configUpdatedAt)}</span>
+          <span style={{ fontSize: 11, color: MUTED }}>{agoLabel(configUpdatedAt)}</span>
           <Link
             to="/settings"
-            style={{ fontSize: 9, color: GOLD, letterSpacing: "0.06em" }}
+            style={{ fontSize: 11, color: GOLD, letterSpacing: "0.06em" }}
             className="hover:underline"
           >
             Edit inputs →
@@ -194,7 +194,7 @@ export function RateArchitecturePanel({
       <div style={{ marginTop: 18 }}>
         <div
           style={{
-            fontSize: 8,
+            fontSize: 11,
             fontWeight: 600,
             letterSpacing: "0.2em",
             textTransform: "uppercase",
@@ -220,7 +220,7 @@ export function RateArchitecturePanel({
           <span
             style={{
               marginLeft: 10,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: 500,
               padding: "3px 8px",
               borderRadius: 3,
@@ -235,7 +235,7 @@ export function RateArchitecturePanel({
         <div
           style={{
             fontSize: 11,
-            fontWeight: 300,
+            fontWeight: 400,
             color: MUTED,
             marginTop: 6,
           }}
@@ -331,7 +331,7 @@ export function RateArchitecturePanel({
               left: `${billedPct}%`,
               top: -22,
               transform: "translateX(-50%)",
-              fontSize: 9,
+              fontSize: 11,
               fontWeight: 500,
               color: rateColor(c.rateHealth),
               whiteSpace: "nowrap",
@@ -340,7 +340,7 @@ export function RateArchitecturePanel({
             {fmtUsd(billed, { decimals: 0 })}/hr ▾
           </div>
         </div>
-        <div className="flex justify-between" style={{ marginTop: 4, fontSize: 8, color: MUTED }}>
+        <div className="flex justify-between" style={{ marginTop: 4, fontSize: 11, color: MUTED }}>
           <span>{fmtUsd(be, { decimals: 0 })}</span>
           <span style={{ color: GOLD }}>{fmtUsd(aligned, { decimals: 0 })}</span>
         </div>
@@ -349,7 +349,7 @@ export function RateArchitecturePanel({
       {/* Annual impact row */}
       <div className="grid grid-cols-2 gap-6" style={{ marginTop: 22 }}>
         <div>
-          <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
             Cost floor (annual)
           </div>
           <div className="flex items-baseline gap-1" style={{ marginTop: 4 }}>
@@ -367,10 +367,10 @@ export function RateArchitecturePanel({
               />
             </span>
           </div>
-          <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>What the firm must earn</div>
+          <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>What the firm must earn</div>
         </div>
         <div>
-          <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
             Budget revenue (annual)
           </div>
           <div className="flex items-baseline gap-1" style={{ marginTop: 4 }}>
@@ -396,11 +396,11 @@ export function RateArchitecturePanel({
             </span>
           </div>
           {contributorCount > 0 && (
-            <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
               {contributorCount} billable contributor{contributorCount === 1 ? "" : "s"} · see breakdown
             </div>
           )}
-          <div style={{ fontSize: 10, marginTop: 2, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>
             {budgetRevenue < costFloor ? (
               <>
                 <span style={{ color: TERRA }}>-{fmtUsd(revShortfall, { decimals: 0 })}/yr shortfall vs cost floor</span>
@@ -426,7 +426,7 @@ export function RateArchitecturePanel({
             padding: "10px 14px",
             borderRadius: "0 4px 4px 0",
             fontSize: 11,
-            fontWeight: 300,
+            fontWeight: 400,
             lineHeight: 1.7,
             background:
               c.rateHealth === "critical" ? "rgba(196,113,74,0.06)" : "rgba(184,134,11,0.06)",
@@ -463,14 +463,14 @@ export function RateArchitecturePanel({
           type="button"
           onClick={() => setHistoryOpen((v) => !v)}
           className="flex items-center gap-1 hover:opacity-80"
-          style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}
+          style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}
         >
           {historyOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           Rate history
         </button>
         <Link
           to="/knowledge-base/rate-architecture"
-          style={{ fontSize: 10, color: GOLD }}
+          style={{ fontSize: 11, color: GOLD }}
           className="hover:underline"
         >
           How is this built? →
@@ -480,7 +480,7 @@ export function RateArchitecturePanel({
       <div className="flex items-center gap-4" style={{ marginTop: 8 }}>
         <Link
           to="/rate-architecture"
-          style={{ fontSize: 10, color: GOLD, letterSpacing: "0.02em" }}
+          style={{ fontSize: 11, color: GOLD, letterSpacing: "0.02em" }}
           className="hover:underline"
         >
           Understand my numbers →
@@ -488,7 +488,7 @@ export function RateArchitecturePanel({
         <Link
           to="/rate-architecture"
           search={{ tab: "model" } as any}
-          style={{ fontSize: 10, color: GOLD, letterSpacing: "0.02em" }}
+          style={{ fontSize: 11, color: GOLD, letterSpacing: "0.02em" }}
           className="hover:underline"
         >
           Model a change →
@@ -496,7 +496,7 @@ export function RateArchitecturePanel({
       </div>
 
       {historyOpen && (
-        <div style={{ marginTop: 10, fontSize: 10, color: MUTED }}>
+        <div style={{ marginTop: 10, fontSize: 11, color: MUTED }}>
           {history.length === 0 ? (
             <div style={{ fontStyle: "italic" }}>No changes recorded yet.</div>
           ) : (
@@ -548,7 +548,7 @@ function NumCell({
 }) {
   return (
     <div style={divider ? { borderRight: `1px solid ${BORDER}`, paddingRight: 16 } : { paddingLeft: 16 }}>
-      <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600, textAlign: center ? "center" : undefined }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600, textAlign: center ? "center" : undefined }}>
         {label}
       </div>
       <div className={`flex items-baseline gap-1 ${center ? "justify-center" : ""}`} style={{ marginTop: 4 }}>
@@ -557,7 +557,7 @@ function NumCell({
         </span>
         {trailing}
       </div>
-      {hint && <div style={{ fontSize: 10, color: hintColor, marginTop: 4, textAlign: center ? "center" : undefined }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11, color: hintColor, marginTop: 4, textAlign: center ? "center" : undefined }}>{hint}</div>}
     </div>
   );
 }
@@ -595,12 +595,12 @@ export function WeeklyPulse({
           <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: CHARCOAL }}>
             {weekBillable.toFixed(1)}/{targetHrs} hrs
           </span>
-          <Link to="/time-calendar" style={{ fontSize: 9, color: GOLD }} className="hover:underline">
+          <Link to="/time-calendar" style={{ fontSize: 11, color: GOLD }} className="hover:underline">
             Enter hours →
           </Link>
         </div>
         <MiniBar pct={hoursPct} />
-        <div style={{ fontSize: 10, color: remaining <= 0 ? SAGE : MUTED, marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: remaining <= 0 ? SAGE : MUTED, marginTop: 4 }}>
           {remaining <= 0 ? "Target reached" : `${remaining.toFixed(1)} hrs to target`}
         </div>
       </PulseCard>
@@ -610,7 +610,7 @@ export function WeeklyPulse({
           {trendAvg.toFixed(1)}/{targetHrs} hrs/wk
         </div>
         <MiniBar pct={trendUtil} />
-        <div className="mt-1 flex items-center justify-between" style={{ fontSize: 10, color: MUTED }}>
+        <div className="mt-1 flex items-center justify-between" style={{ fontSize: 11, color: MUTED }}>
           <span>Utilization {Math.round(trendUtil)}%</span>
           <span style={{ color: trendColor }}>{weeksOnTarget} of 4 on target</span>
         </div>
@@ -621,11 +621,11 @@ export function WeeklyPulse({
           <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: CHARCOAL }}>
             {activeProjects.length} projects
           </span>
-          <Link to="/projects" style={{ fontSize: 9, color: GOLD }} className="hover:underline">
+          <Link to="/projects" style={{ fontSize: 11, color: GOLD }} className="hover:underline">
             See all →
           </Link>
         </div>
-        <div className="flex items-center gap-3" style={{ fontSize: 10, color: MUTED, marginTop: 8 }}>
+        <div className="flex items-center gap-3" style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
           <span className="flex items-center gap-1">
             <Dot color={SAGE} /> {healthy} healthy
           </span>
@@ -651,7 +651,7 @@ function PulseCard({ label, children }: { label: string; children: React.ReactNo
         padding: "14px 18px",
       }}
     >
-      <div style={{ fontSize: 8, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600, marginBottom: 6 }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600, marginBottom: 6 }}>
         {label}
       </div>
       {children}
@@ -708,7 +708,7 @@ export function PricingStrip({
         <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 16, color: CHARCOAL }}>
           Your aligned rate is {fmtUsd(aligned, { decimals: 0 })}/hr.
         </div>
-        <div style={{ fontSize: 11, fontWeight: 300, color: MUTED, marginTop: 2 }}>
+        <div style={{ fontSize: 11, fontWeight: 400, color: MUTED, marginTop: 2 }}>
           Any project priced below this rate costs you money to deliver.
         </div>
       </div>
@@ -725,11 +725,11 @@ export function PricingStrip({
               flexShrink: 0,
             }}
           >
-            <div style={{ fontSize: 9, fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: MUTED, textTransform: "uppercase", letterSpacing: "0.06em" }}>
               {t.name}
             </div>
-            <div style={{ fontSize: 10, color: CHARCOAL, marginTop: 2 }}>~{Math.round(t.total_hrs)} hrs</div>
-            <div style={{ fontSize: 10, color: GOLD }}>
+            <div style={{ fontSize: 11, color: CHARCOAL, marginTop: 2 }}>~{Math.round(t.total_hrs)} hrs</div>
+            <div style={{ fontSize: 11, color: GOLD }}>
               = {fmtUsd(t.total_hrs * aligned, { decimals: 0 })} at floor
             </div>
           </div>

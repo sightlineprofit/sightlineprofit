@@ -353,7 +353,7 @@ function WeekView({
         <div />
         {days.map((d) => (
           <div key={d.toISOString()} className="border-l border-border px-2 py-2 text-center">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-ch/50">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">
               {d.toLocaleDateString(undefined, { weekday: "short" })}
             </div>
             <div className="font-display text-2xl text-ch leading-tight">{d.getDate()}</div>
@@ -402,7 +402,7 @@ function Grid({
       {/* time labels */}
       <div>
         {Array.from({ length: HOURS }).map((_, i) => (
-          <div key={i} className="border-t border-border text-right pr-2 pt-1 text-[10px] text-ch/40" style={{ height: rowH }}>
+          <div key={i} className="border-t border-border text-right pr-2 pt-1 text-[11px] text-ch/40" style={{ height: rowH }}>
             {formatHour(HOUR_START + i)}
           </div>
         ))}
@@ -726,7 +726,7 @@ function EntryBlock({
           <div className="opacity-80 truncate">{durLabel} · {entry.billable ? "Billable" : "Non-Bill"}</div>
         )}
         {mode === "resize" && (
-          <div className="absolute bottom-0 left-0 right-0 text-center text-[10px] bg-black/30 num">
+          <div className="absolute bottom-0 left-0 right-0 text-center text-[11px] bg-black/30 num">
             {liveLabel}
           </div>
         )}
@@ -758,7 +758,7 @@ function DayFooters({ days, entries, myId }: { days: Date[]; entries: Entry[]; m
             <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-creamd">
               <div className="h-full bg-success" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-1 text-[10px] text-ch/50">
+            <div className="mt-1 text-[11px] text-ch/50">
               <span className="text-success">{b.toFixed(1)}</span>/<span className="text-terra">{nb.toFixed(1)}</span>
             </div>
           </div>
@@ -892,7 +892,7 @@ function TeamView({
           const total = team.reduce((s, m) => s + dayMemberHrs(d, m), 0);
           return (
             <div key={d.toISOString()} className="rounded-lg border border-border bg-white p-3">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-ch/50">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">
                 {d.toLocaleDateString(undefined, { weekday: "short" })}
               </div>
               <div className="font-display text-2xl text-ch">{d.getDate()}</div>
@@ -902,7 +902,7 @@ function TeamView({
                   const pct = Math.min(100, (hrs / 8) * 100);
                   return (
                     <div key={m.id} title={`${m.name || m.email}: ${hrs.toFixed(1)}h`}>
-                      <div className="flex items-center justify-between text-[10px] text-ch/55">
+                      <div className="flex items-center justify-between text-[11px] text-ch/55">
                         <span className="truncate">{(m.name || m.email).split(" ")[0]}</span>
                         <span className="num">{hrs.toFixed(1)}</span>
                       </div>
@@ -914,7 +914,7 @@ function TeamView({
                 })}
               </div>
               <div className="mt-3 border-t border-border pt-2 text-center">
-                <div className="text-[10px] uppercase tracking-[0.15em] text-ch/50">Team</div>
+                <div className="text-[11px] uppercase tracking-[0.15em] text-ch/50">Team</div>
                 <div className="num text-lg text-ch">{total.toFixed(1)}h</div>
               </div>
             </div>
@@ -957,7 +957,7 @@ function TeamView({
                 <tr key={m.id}>
                   <td className="py-2.5">
                     <div className="text-ch">{m.name || m.email}</div>
-                    <div className="text-[10px] text-ch/50 capitalize">{m.role}</div>
+                    <div className="text-[11px] text-ch/50 capitalize">{m.role}</div>
                   </td>
                   <td className="py-2.5 text-right num">{total.toFixed(1)}</td>
                   <td className="py-2.5 text-right num text-success">{bill.toFixed(1)}</td>
@@ -997,7 +997,7 @@ function TeamCalendarGrid({
         <div />
         {days.map((d) => (
           <div key={d.toISOString()} className="border-l border-border px-2 py-2 text-center">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-ch/50">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-ch/50">
               {d.toLocaleDateString(undefined, { weekday: "short" })}
             </div>
             <div className="font-display text-2xl text-ch leading-tight">{d.getDate()}</div>
@@ -1007,7 +1007,7 @@ function TeamCalendarGrid({
       <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(7, minmax(0, 1fr))` }}>
         <div>
           {Array.from({ length: HOURS }).map((_, i) => (
-            <div key={i} className="border-t border-border text-right pr-2 pt-1 text-[10px] text-ch/40" style={{ height: rowH }}>
+            <div key={i} className="border-t border-border text-right pr-2 pt-1 text-[11px] text-ch/40" style={{ height: rowH }}>
               {formatHour(HOUR_START + i)}
             </div>
           ))}
@@ -1041,7 +1041,7 @@ function TeamCalendarGrid({
                     key={e.id}
                     type="button"
                     onClick={(ev) => { ev.stopPropagation(); onEntryClick(e); }}
-                    className="absolute rounded px-1.5 py-0.5 text-left text-[10px] leading-tight overflow-hidden border shadow-sm"
+                    className="absolute rounded px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden border shadow-sm"
                     style={{
                       top, height: h,
                       left: `calc(${leftPct}% + 2px)`,
@@ -1137,11 +1137,11 @@ function SidebarStats({
         {editing ? (
           <div className="mt-2 space-y-2">
             <div>
-              <Label className="text-[10px] text-ch/60">Billable hrs/week</Label>
+              <Label className="text-[11px] text-ch/60">Billable hrs/week</Label>
               <Input type="number" value={targetHrs} onChange={(e) => setTargetHrs(Number(e.target.value) || 0)} className="num h-8" />
             </div>
             <div>
-              <Label className="text-[10px] text-ch/60">Billed rate</Label>
+              <Label className="text-[11px] text-ch/60">Billed rate</Label>
               <Input type="number" value={billRate} onChange={(e) => setBillRate(Number(e.target.value) || 0)} className="num h-8" />
             </div>
             <div className="text-[11px] text-ch/55">
@@ -1189,7 +1189,7 @@ function ProjectTaskPicker({
             <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
             Link to project task (optional)
           </span>
-          {selected && <span className="rounded bg-goldp/40 px-2 py-0.5 text-[10px] text-ch">Linked: {selected.name}</span>}
+          {selected && <span className="rounded bg-goldp/40 px-2 py-0.5 text-[11px] text-ch">Linked: {selected.name}</span>}
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-2 rounded-md border border-border bg-cream/40 p-2">
@@ -1287,15 +1287,15 @@ function EntryForm({
     <div className={cn("space-y-3", compact ? "mt-3" : "mt-2")}>
       <div className="grid grid-cols-3 gap-2">
         <div className="col-span-3">
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Date</Label>
+          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Date</Label>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" />
         </div>
         <div>
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Start</Label>
+          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Start</Label>
           <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="h-9" />
         </div>
         <div>
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">End</Label>
+          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">End</Label>
           <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="h-9" />
         </div>
         <div className="flex items-end justify-end gap-2">
@@ -1307,7 +1307,7 @@ function EntryForm({
       </div>
 
       <div>
-        <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Project</Label>
+        <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Project</Label>
         <Select
           value={projectId || "_none"}
           onValueChange={(v) => {
@@ -1326,7 +1326,7 @@ function EntryForm({
       </div>
 
       <div>
-        <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Activity</Label>
+        <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Activity</Label>
         <Select
           value={atId || "_none"}
           onValueChange={(v) => {
@@ -1344,7 +1344,7 @@ function EntryForm({
                 <span className="inline-flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
                   {a.name}
-                  <span className="text-[10px] text-ch/40">{a.is_billable ? "· billable" : "· non-bill"}</span>
+                  <span className="text-[11px] text-ch/40">{a.is_billable ? "· billable" : "· non-bill"}</span>
                 </span>
               </SelectItem>
             ))}
@@ -1353,7 +1353,7 @@ function EntryForm({
       </div>
 
       <div>
-        <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Description</Label>
+        <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Description</Label>
         <Input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -1373,7 +1373,7 @@ function EntryForm({
 
       {isAdmin && team.length > 1 && (
         <div>
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Team member</Label>
+          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Team member</Label>
           <Select value={userId} onValueChange={setUserId}>
             <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -1387,7 +1387,7 @@ function EntryForm({
 
       {!compact && (
         <div>
-          <Label className="text-[10px] uppercase tracking-[0.16em] text-ch/60">Notes</Label>
+          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Notes</Label>
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
       )}

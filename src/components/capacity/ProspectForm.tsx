@@ -232,7 +232,7 @@ export function ProspectFormSheet({
           )}
 
           <div className="rounded-lg border border-border bg-cream/40 p-3 text-xs">
-            <div className="mb-1 text-[10px] uppercase tracking-wider text-ch/50">
+            <div className="mb-1 text-[11px] uppercase tracking-wider text-ch/50">
               In your capacity view this prospect will show as:
             </div>
             <div className="text-ch">

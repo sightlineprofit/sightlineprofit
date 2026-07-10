@@ -74,7 +74,7 @@ export function BurdenedCostCalculator({
   const set = (patch: Partial<BurdenedCostValue>) => onChange({ ...value, ...patch });
 
   const labelCls =
-    "block text-[10px] font-medium uppercase tracking-[0.14em] text-ch/60 mb-1";
+    "block text-[11px] font-medium uppercase tracking-[0.14em] text-ch/60 mb-1";
   const inputCls =
     "w-full rounded border border-border bg-white px-3 py-2 text-sm text-ch focus:outline-none focus:ring-1 focus:ring-gold/40";
 
@@ -218,7 +218,7 @@ export function BurdenedCostCalculator({
         <div
           style={{
             fontFamily: "Jost, sans-serif",
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: 600,
             letterSpacing: "0.14em",
             textTransform: "uppercase",
@@ -249,7 +249,7 @@ export function BurdenedCostCalculator({
         </div>
         <ul
           className="mt-2 space-y-[3px]"
-          style={{ fontFamily: "Jost, sans-serif", fontSize: 10, color: "#2C2C2C" }}
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#2C2C2C" }}
         >
           <Row label="Base wages" value={est.base} />
           <Row
@@ -273,7 +273,7 @@ export function BurdenedCostCalculator({
           className="mt-2 italic"
           style={{
             fontFamily: "Jost, sans-serif",
-            fontSize: 10,
+            fontSize: 11,
             color: "#8A7F75",
             lineHeight: 1.5,
           }}

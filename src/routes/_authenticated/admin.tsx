@@ -218,7 +218,7 @@ function UsersTab() {
               <td className="px-4 py-2 font-medium">
                 {u.name || "—"}
                 {u.is_super_admin && (
-                  <span className="ml-2 rounded bg-gold/20 px-1.5 py-0.5 text-[10px] uppercase text-gold">
+                  <span className="ml-2 rounded bg-gold/20 px-1.5 py-0.5 text-[11px] uppercase text-gold">
                     Super
                   </span>
                 )}
@@ -294,7 +294,7 @@ function WebhooksTab() {
                 <td className="px-4 py-2 text-ch/70">{r.recipient_email ?? "—"}</td>
                 <td className="px-4 py-2">
                   <span className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px] uppercase",
+                    "rounded px-1.5 py-0.5 text-[11px] uppercase",
                     r.status === "delivered" ? "bg-emerald-100 text-emerald-700" :
                     r.status === "pending" ? "bg-amber-100 text-amber-700" :
                     "bg-rose-100 text-rose-700",
@@ -394,7 +394,7 @@ function KbTab() {
                 <td className="px-4 py-2 text-xs text-ch/60">{(it.tier_visibility ?? []).join(", ")}</td>
                 <td className="px-4 py-2">
                   <span className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px] uppercase",
+                    "rounded px-1.5 py-0.5 text-[11px] uppercase",
                     it.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-stone-100 text-stone-600",
                   )}>{it.status}</span>
                 </td>
@@ -657,7 +657,7 @@ function DemoTab() {
         </h2>
         <p
           className="text-ch/60"
-          style={{ fontFamily: "Jost, system-ui, sans-serif", fontSize: 13, fontWeight: 300 }}
+          style={{ fontFamily: "Jost, system-ui, sans-serif", fontSize: 13, fontWeight: 400 }}
         >
           Manage the demo firm used for testing and demonstrations.
         </p>

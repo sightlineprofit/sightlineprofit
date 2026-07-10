@@ -30,7 +30,7 @@ export function CapacityTile({
       >
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-gold">Capacity</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-gold">Capacity</p>
             <h3 className="mt-1 font-display text-xl tracking-tight text-ch">Firm capacity</h3>
           </div>
           <ArrowUpRight className="h-4 w-4 text-ch/30 group-hover:text-gold" />
@@ -61,7 +61,7 @@ export function CapacityTile({
     >
       <div className="flex items-start justify-between gap-3">
         <span
-          className="rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+          className="rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider"
           style={{ color: meta.color, background: meta.bg }}
         >
           {meta.label}
@@ -69,7 +69,7 @@ export function CapacityTile({
         <ArrowUpRight className="h-4 w-4 text-ch/30 group-hover:text-gold group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
       </div>
       <div className="mt-3">
-        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-gold">Capacity</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-gold">Capacity</p>
         <h3 className="mt-1 font-display text-xl tracking-tight text-ch">Firm capacity</h3>
       </div>
 

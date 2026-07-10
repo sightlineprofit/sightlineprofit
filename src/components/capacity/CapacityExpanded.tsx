@@ -94,7 +94,7 @@ export function CapacityExpanded({ data }: { data: CapacityExpandedData }) {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <span
-          className="rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+          className="rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider"
           style={{ color: meta.color, background: meta.bg }}
         >
           {meta.label}
@@ -225,7 +225,7 @@ function OverviewTab({ data, summary }: { data: CapacityExpandedData; summary: C
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-ch/50">{label}</div>
+      <div className="text-[11px] uppercase tracking-wider text-ch/50">{label}</div>
       <div className="num font-display text-2xl text-ch">{value}</div>
     </div>
   );
@@ -233,7 +233,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 function KeyStat({ label, value, large, gold }: { label: string; value: string; large?: boolean; gold?: boolean }) {
   return (
     <div className="rounded-xl border border-border bg-white p-4">
-      <div className="text-[10px] uppercase tracking-wider text-ch/50">{label}</div>
+      <div className="text-[11px] uppercase tracking-wider text-ch/50">{label}</div>
       <div
         className={cn("num font-display", large ? "text-3xl" : "text-2xl")}
         style={{ color: gold ? "#B8860B" : "#2C2C2C" }}
@@ -260,7 +260,7 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
     <div className="space-y-8 pt-4" style={{ fontFamily: "Jost, sans-serif" }}>
       {/* Section A: Framing */}
       <header>
-        <div className="text-[9px] font-semibold uppercase" style={{ letterSpacing: "0.2em", color: "#B8860B" }}>
+        <div className="text-[11px] font-semibold uppercase" style={{ letterSpacing: "0.2em", color: "#B8860B" }}>
           Firm capacity
         </div>
         <h2 className="mt-2 text-[34px] font-normal leading-tight" style={{ fontFamily: "Cormorant Garamond, serif", color: "#2C2C2C" }}>
@@ -271,7 +271,7 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
         </p>
         <div className="mt-3 flex items-center gap-2 text-[11px] font-light" style={{ color: "#777" }}>
           <span
-            className="rounded-full px-2 py-0.5 text-[10px]"
+            className="rounded-full px-2 py-0.5 text-[11px]"
             style={{ color: meta.color, background: meta.bg }}
           >
             {meta.label}
@@ -295,7 +295,7 @@ function TimelineTab({ data, summary }: { data: CapacityExpandedData; summary: C
           target={target}
           milestones={data.inputs.milestones ?? []}
         />
-        <div className="mt-3 flex flex-wrap gap-4 text-[10px]" style={{ color: "#777" }}>
+        <div className="mt-3 flex flex-wrap gap-4 text-[11px]" style={{ color: "#777" }}>
           <LegendSwatch color="#5C8A6E" label="Within target" />
           <LegendSwatch color="#B8860B" label="Approaching limit" />
           <LegendSwatch color="#C4714A" label="Over committed" />
@@ -442,7 +442,7 @@ function ProspectsSection({
                     </div>
                   </div>
                   <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+                    className="rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider"
                     style={{ color: "#B8860B", background: "#F5EDD6" }}
                   >
                     Prospect
@@ -496,7 +496,7 @@ export function WeeklyPressureChart({
                 style={{ left: `${leftPct}%`, top: 0 }}
                 title={`${m.label} · ${m.milestone_date}`}
               >
-                <div className="whitespace-nowrap text-[8px]" style={{ color: "#777" }}>{m.label}</div>
+                <div className="whitespace-nowrap text-[11px]" style={{ color: "#777" }}>{m.label}</div>
               </div>
             );
           })}
@@ -554,7 +554,7 @@ export function WeeklyPressureChart({
       </div>
       <div className="mt-1 flex gap-[2px] px-[6px]">
         {weeks.map((_, i) => (
-          <div key={i} className="flex-1 text-center" style={{ fontSize: 8, color: "#ccc" }}>
+          <div key={i} className="flex-1 text-center" style={{ fontSize: 11, color: "#ccc" }}>
             W{i + 1}
           </div>
         ))}
@@ -587,7 +587,7 @@ export function ProjectTimeline({
   return (
     <div className="mt-3">
       {/* Month labels */}
-      <div className="grid items-center text-[8px]" style={{ gridTemplateColumns: "160px 1fr 80px", color: "#ccc" }}>
+      <div className="grid items-center text-[11px]" style={{ gridTemplateColumns: "160px 1fr 80px", color: "#ccc" }}>
         <div />
         <div className="grid" style={{ gridTemplateColumns: `repeat(16, 1fr)` }}>
           {weekTicks.map((_, i) => (
@@ -613,7 +613,7 @@ export function ProjectTimeline({
           const projMilestones = milestones.filter((m) => m.project_id === p.id);
           return (
             <div key={p.id} className="grid items-center" style={{ gridTemplateColumns: "160px 1fr 80px" }}>
-              <div className="truncate pr-2 text-[10px]" style={{ color: "#555" }}>
+              <div className="truncate pr-2 text-[11px]" style={{ color: "#555" }}>
                 {p.name}
               </div>
               <div className="relative h-4">
@@ -629,7 +629,7 @@ export function ProjectTimeline({
                   }}
                 >
                   {widthPct > 8 && (
-                    <span className="block truncate px-1 text-[8px] text-white">{p.name}</span>
+                    <span className="block truncate px-1 text-[11px] text-white">{p.name}</span>
                   )}
                 </div>
                 {projMilestones.map((m, mi) => {
@@ -711,7 +711,7 @@ function OpenWindowsSection({ windows, hasForwardData }: { windows: CapacityWind
             style={{ border: "0.5px solid rgba(44,44,44,0.1)", borderRadius: 4 }}
           >
             <div
-              className="text-[9px] font-medium uppercase"
+              className="text-[11px] font-medium uppercase"
               style={{ letterSpacing: "0.1em", color: colorOf(w) }}
             >
               {w.label}
@@ -719,7 +719,7 @@ function OpenWindowsSection({ windows, hasForwardData }: { windows: CapacityWind
             <div className="mt-2 text-[24px] font-normal" style={{ fontFamily: "Cormorant Garamond, serif", color: colorOf(w) }}>
               {w.available} hrs
             </div>
-            <p className="mt-2 text-[10px] font-light leading-[1.5]" style={{ color: "#aaa" }}>
+            <p className="mt-2 text-[11px] font-light leading-[1.5]" style={{ color: "#aaa" }}>
               {description(w)}
             </p>
           </div>
@@ -850,7 +850,7 @@ function WhatIfTool({
 
       {sopTemplates.length > 0 && (
         <div className="mt-4">
-          <div className="text-[9px] uppercase" style={{ letterSpacing: "0.12em", color: "#aaa", marginBottom: 10 }}>
+          <div className="text-[11px] uppercase" style={{ letterSpacing: "0.12em", color: "#aaa", marginBottom: 10 }}>
             Quick reference — tap a project type
           </div>
           <div className="flex flex-wrap gap-[6px]">
@@ -865,7 +865,7 @@ function WhatIfTool({
                   border: "0.5px solid rgba(44,44,44,0.1)",
                   borderRadius: 2,
                   background: "#FAF7F2",
-                  fontSize: 10,
+                  fontSize: 11,
                   color: "#555",
                 }}
               >
@@ -873,7 +873,7 @@ function WhatIfTool({
               </button>
             ))}
           </div>
-          <p className="mt-2 text-[10px] italic" style={{ color: "#aaa" }}>
+          <p className="mt-2 text-[11px] italic" style={{ color: "#aaa" }}>
             Hours are SOP benchmarks. Actual scope varies per project.
           </p>
         </div>
@@ -1006,7 +1006,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
         style={{ border: "0.5px solid var(--border)" }}
       >
         <div
-          className="mb-2 text-[9px] uppercase"
+          className="mb-2 text-[11px] uppercase"
           style={{ letterSpacing: "0.14em", color: "#8A8578", fontFamily: "Jost, sans-serif" }}
         >
           Firm this week — combined
@@ -1017,7 +1017,7 @@ function TeamTab({ data }: { data: CapacityExpandedData }) {
         >
           <div className="h-full" style={{ width: `${summaryPct}%`, background: "#5C8A6E" }} />
         </div>
-        <div className="mt-2 text-[10px]" style={{ color: "#777", fontFamily: "Jost, sans-serif" }}>
+        <div className="mt-2 text-[11px]" style={{ color: "#777", fontFamily: "Jost, sans-serif" }}>
           {totalLogged.toFixed(1)} of {totalTarget.toFixed(0)} hrs logged across {rows.length}{" "}
           {rows.length === 1 ? "person" : "people"} this week
         </div>
@@ -1227,7 +1227,7 @@ export function MemberCard({
             <div
               className="mt-0.5"
               style={{
-                fontSize: 9,
+                fontSize: 11,
                 letterSpacing: "0.14em",
                 textTransform: "uppercase",
                 color: "#8A8578",
@@ -1240,7 +1240,7 @@ export function MemberCard({
         <span
           className="rounded-full px-2 py-0.5"
           style={{
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: "0.06em",
             background: freshBg,
             color: freshColor,
@@ -1294,7 +1294,7 @@ export function MemberCard({
             <div className="pl-4">
               <div
                 style={{
-                  fontSize: 8,
+                  fontSize: 11,
                   letterSpacing: "0.14em",
                   textTransform: "uppercase",
                   color: "#8A8578",
@@ -1306,7 +1306,7 @@ export function MemberCard({
                 <span
                   className="rounded-full px-2.5 py-1"
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     background: statusBg,
                     color: statusColor,
                     fontWeight: 500,
@@ -1325,7 +1325,7 @@ export function MemberCard({
                 <div>
                   <div
                     style={{
-                      fontSize: 8,
+                      fontSize: 11,
                       letterSpacing: "0.14em",
                       textTransform: "uppercase",
                       color: "#8A8578",
@@ -1333,7 +1333,7 @@ export function MemberCard({
                   >
                     NON-BILLABLE THIS WEEK
                   </div>
-                  <div style={{ fontSize: 10, color: "#8A8578" }}>
+                  <div style={{ fontSize: 11, color: "#8A8578" }}>
                     Ideation, admin, learning — already in your rate.
                   </div>
                 </div>
@@ -1382,14 +1382,14 @@ export function MemberCard({
               />
             </div>
             <div className="mt-1 flex items-center justify-between">
-              <span style={{ fontSize: 8, color: "#8A8578" }}>0 hrs</span>
+              <span style={{ fontSize: 11, color: "#8A8578" }}>0 hrs</span>
               <div className="flex items-center gap-2">
                 {overHrs > 0 && (
-                  <span style={{ fontSize: 9, color: "#5C8A6E" }}>
+                  <span style={{ fontSize: 11, color: "#5C8A6E" }}>
                     +{overHrs.toFixed(1)} hrs over
                   </span>
                 )}
-                <span style={{ fontSize: 8, color: "#8A8578" }}>
+                <span style={{ fontSize: 11, color: "#8A8578" }}>
                   {target > 0 ? `${target.toFixed(0)} hrs target` : "no target set"}
                 </span>
               </div>
@@ -1401,7 +1401,7 @@ export function MemberCard({
             type="button"
             onClick={() => setShowAnnual((v) => !v)}
             className="mt-3 cursor-pointer"
-            style={{ fontSize: 9, color: "#B8860B", background: "transparent" }}
+            style={{ fontSize: 11, color: "#B8860B", background: "transparent" }}
           >
             {showAnnual ? "Hide annual picture ›" : "See annual picture ›"}
           </button>
@@ -1414,7 +1414,7 @@ export function MemberCard({
                 <div>
                   <div
                     style={{
-                      fontSize: 8,
+                      fontSize: 11,
                       letterSpacing: "0.14em",
                       textTransform: "uppercase",
                       color: "#8A8578",
@@ -1436,7 +1436,7 @@ export function MemberCard({
                 <div>
                   <div
                     style={{
-                      fontSize: 8,
+                      fontSize: 11,
                       letterSpacing: "0.14em",
                       textTransform: "uppercase",
                       color: "#8A8578",
@@ -1459,8 +1459,8 @@ export function MemberCard({
               <div
                 className="mt-2"
                 style={{
-                  fontSize: 10,
-                  fontWeight: 300,
+                  fontSize: 11,
+                  fontWeight: 400,
                   color: onPace ? "#5C8A6E" : "#B8860B",
                 }}
               >
@@ -1495,7 +1495,7 @@ function StatCol({
     <div className={inline ? "text-center" : ""}>
       <div
         style={{
-          fontSize: 8,
+          fontSize: 11,
           letterSpacing: "0.14em",
           textTransform: "uppercase",
           color: "#8A8578",
@@ -1517,7 +1517,7 @@ function StatCol({
       {sub && (
         <div
           className="mt-0.5"
-          style={{ fontSize: 10, color: subColor ?? "#8A8578" }}
+          style={{ fontSize: 11, color: subColor ?? "#8A8578" }}
         >
           {sub}
         </div>

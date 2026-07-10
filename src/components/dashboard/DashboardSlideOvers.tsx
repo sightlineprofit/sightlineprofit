@@ -37,7 +37,7 @@ function SectionLabel({ children, tip }: { children: React.ReactNode; tip?: stri
   return (
     <div className="flex items-center gap-1.5">
       <span
-        className="text-[9px] font-semibold uppercase text-ch/50"
+        className="text-[11px] font-semibold uppercase text-ch/50"
         style={{ letterSpacing: "0.14em" }}
       >
         {children}
@@ -182,7 +182,7 @@ function Shell({
         >
           <div>
             <div
-              className="text-[9px] font-semibold uppercase text-gold"
+              className="text-[11px] font-semibold uppercase text-gold"
               style={{ letterSpacing: "0.16em", marginBottom: 6 }}
             >
               {eyebrow}
@@ -232,7 +232,7 @@ function EditPromptFooter({
           {secondary.label}
         </button>
       </div>
-      <div className="mt-2 text-[10px] text-ch/50">
+      <div className="mt-2 text-[11px] text-ch/50">
         Changes save automatically. Dashboard updates immediately.
       </div>
     </div>
@@ -353,7 +353,7 @@ export function RateBreakdownSlideOver({
           <SectionLabel>RATE HEALTH</SectionLabel>
           <span className="flex items-center">
             <span
-              className="rounded-[2px] px-2 py-[3px] text-[9px] font-semibold uppercase tracking-wider"
+              className="rounded-[2px] px-2 py-[3px] text-[11px] font-semibold uppercase tracking-wider"
               style={pill.style}
             >
               {pill.label}
@@ -367,7 +367,7 @@ export function RateBreakdownSlideOver({
           <select
             value={marginUnit}
             onChange={(e) => setMarginUnit(e.target.value as "hr" | "week")}
-            className="bg-transparent text-[10px] uppercase tracking-wider text-ch/60 hover:text-ch focus:outline-none cursor-pointer"
+            className="bg-transparent text-[11px] uppercase tracking-wider text-ch/60 hover:text-ch focus:outline-none cursor-pointer"
           >
             <option value="hr">/hr</option>
             <option value="week">/week</option>
@@ -437,7 +437,7 @@ export function RateBreakdownSlideOver({
           tip="Annual revenue if you bill your target hours at your current rate every week."
           last
         />
-        <div className="mt-3 flex items-center gap-3 text-[10px] text-ch/50">
+        <div className="mt-3 flex items-center gap-3 text-[11px] text-ch/50">
           <span className="flex items-center">Break-even<MetricBreakdown metric="breakeven" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
           <span className="flex items-center">Cost floor<MetricBreakdown metric="cost_floor" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
           <span className="flex items-center">Budget revenue<MetricBreakdown metric="budget_revenue" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>

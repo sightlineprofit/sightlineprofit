@@ -76,7 +76,7 @@ export function FirmCapacitySection({
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-gold">Firm capacity</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gold">Firm capacity</p>
           <h2
             className="mt-1 text-[24px] font-normal leading-tight"
             style={{ fontFamily: "Cormorant Garamond, serif", color: "#2C2C2C" }}
@@ -86,7 +86,7 @@ export function FirmCapacitySection({
         </div>
         <div className="flex items-center gap-2">
           <span
-            className="rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider"
             style={{ color: meta.color, background: meta.bg }}
           >
             {meta.label}
@@ -124,7 +124,7 @@ export function FirmCapacitySection({
       <div className="mt-4">
         <div className="flex items-baseline justify-between">
           <div>
-            <span className="text-[10px] uppercase tracking-[0.14em] text-ch/50">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-ch/50">
               Non-billable capacity
             </span>
             <p className="mt-0.5 text-[11px] font-light" style={{ color: "#8A8578" }}>
@@ -154,7 +154,7 @@ export function FirmCapacitySection({
           />
         </div>
         {nonBillableBudgetAnnual === 0 && (
-          <p className="mt-1 text-[10px] italic" style={{ color: "#aaa" }}>
+          <p className="mt-1 text-[11px] italic" style={{ color: "#aaa" }}>
             Set each member's total working hours (vs their billable target) so we can show the non-billable envelope.
           </p>
         )}
@@ -172,7 +172,7 @@ export function FirmCapacitySection({
           Hours committed per week against your {target.toFixed(0)}-hr target.
         </p>
         <WeeklyPressureChart weeks={summary.weeks} target={target} />
-        <div className="mt-3 flex flex-wrap gap-4 text-[10px]" style={{ color: "#777" }}>
+        <div className="mt-3 flex flex-wrap gap-4 text-[11px]" style={{ color: "#777" }}>
           <Legend color="#5C8A6E" label="Within target" />
           <Legend color="#B8860B" label="Approaching limit" />
           <Legend color="#C4714A" label="Over committed" />
@@ -250,7 +250,7 @@ function SummaryRow({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <span className="text-[10px] uppercase tracking-[0.14em] text-ch/50">{label}</span>
+        <span className="text-[11px] uppercase tracking-[0.14em] text-ch/50">{label}</span>
         <span
           className="num"
           style={{ fontFamily: "Cormorant Garamond, serif", fontSize: 20, color: "#2C2C2C" }}

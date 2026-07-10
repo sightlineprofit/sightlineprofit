@@ -60,7 +60,7 @@ const darkBtn =
 const dangerGhostBtn =
   "inline-flex items-center rounded-[4px] border border-danger/60 bg-white px-3 py-[6px] text-[11px] text-danger hover:bg-danger/5";
 
-const fieldLabel = "mb-1 block text-[10px] font-medium uppercase tracking-[0.09em] text-ch/60";
+const fieldLabel = "mb-1 block text-[11px] font-medium uppercase tracking-[0.09em] text-ch/60";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -106,7 +106,7 @@ function EmployerTaxField({
       {def.state_code ? (
         <div
           className="mt-1 leading-[1.5]"
-          style={{ fontFamily: "Jost, sans-serif", fontSize: 9, color: "#888" }}
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#888" }}
         >
           Federal FICA: {FEDERAL_FICA_PCT}% · {stateLabel} SUI:{" "}
           {def.state_sui}% · Total (yours): {Number(current).toFixed(2)}%
@@ -114,7 +114,7 @@ function EmployerTaxField({
             type="button"
             onClick={() => onChange(def.total)}
             className="ml-2 cursor-pointer text-gold hover:opacity-80"
-            style={{ fontFamily: "Jost, sans-serif", fontSize: 9 }}
+            style={{ fontFamily: "Jost, sans-serif", fontSize: 11 }}
           >
             Reset to {stateLabel} default ({def.total}%)
           </button>
@@ -122,7 +122,7 @@ function EmployerTaxField({
       ) : (
         <div
           className="mt-1 leading-[1.5]"
-          style={{ fontFamily: "Jost, sans-serif", fontSize: 9, color: "#888" }}
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#888" }}
         >
           Add your state in Firm settings to include state unemployment tax.
         </div>
@@ -163,7 +163,7 @@ function SettingsPage() {
     // Team / view_only: profile only, no tile grid.
     return (
       <div className="min-h-screen bg-cream px-8 pt-7 pb-16">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-gold">Settings</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold">Settings</p>
         <h1 className="mt-1 font-display text-[28px] font-normal text-ch">Your profile</h1>
         <p className="mt-1 mb-5 text-[12px] font-light text-ch/60">Your name and contact info.</p>
         <div className="max-w-2xl rounded-[8px] border border-border bg-white p-6">
@@ -196,7 +196,7 @@ function AdminSettings() {
 
   return (
     <div className="min-h-screen bg-cream px-8 pt-7 pb-16">
-      <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-gold">Settings</p>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold">Settings</p>
       <h1 className="mt-1 font-display text-[28px] font-normal leading-tight text-ch">Your account</h1>
       <p className="mt-1 mb-5 text-[12px] font-light text-ch/60">
         Click any section to view or update it.
@@ -236,7 +236,7 @@ function AdminSettings() {
 
 function GroupLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("mt-5 mb-2.5 border-b border-border pb-1.5 text-[9px] font-medium uppercase tracking-[0.1em] text-ch/60", className)}>
+    <div className={cn("mt-5 mb-2.5 border-b border-border pb-1.5 text-[11px] font-medium uppercase tracking-[0.1em] text-ch/60", className)}>
       {children}
     </div>
   );
@@ -333,10 +333,10 @@ function Tile({ t, active, onOpen }: { t: TileDef; active: PanelId | null; onOpe
     >
       <Icon size={18} className={cn("mb-2 block", t.gold ? "text-gold" : "text-ch/60")} />
       <div className="text-[12px] font-medium text-ch">{t.name}</div>
-      <div className="mt-0.5 text-[10px] font-light leading-[1.4] text-ch/60">{t.desc}</div>
+      <div className="mt-0.5 text-[11px] font-light leading-[1.4] text-ch/60">{t.desc}</div>
       <div className="mt-2.5 flex items-center gap-1.5 border-t border-border pt-2.5">
         <span className="h-[5px] w-[5px] rounded-full" style={{ backgroundColor: dot }} />
-        <span className="text-[10px] font-medium" style={{ color: textColor }}>{t.status.text}</span>
+        <span className="text-[11px] font-medium" style={{ color: textColor }}>{t.status.text}</span>
       </div>
     </button>
   );
@@ -530,14 +530,14 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
         <div>{left}</div>
         <aside>
           <div className="rounded-[7px] border border-border bg-cream p-3.5 lg:sticky lg:top-5">
-            <p className="text-[9px] font-medium uppercase tracking-[0.14em] text-gold">Live output</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-gold">Live output</p>
             <h3 className="mt-0.5 mb-3 font-display text-[18px] text-ch">Your numbers</h3>
-            <div className="text-[9px] uppercase tracking-[0.1em] text-ch/60">Aligned rate</div>
+            <div className="text-[11px] uppercase tracking-[0.1em] text-ch/60">Aligned rate</div>
             <div className="font-display text-[32px] leading-none text-ch flex items-center">
               <span>${Math.round(c.alignedRate)}</span>
               <AlignedRateBreakdown c={c} targetMarginPct={Number(cfg?.target_gross_margin_pct) || 0} side="left" />
             </div>
-            <div className="mt-1 text-[10px] text-ch/60 mb-2.5">Your floor.</div>
+            <div className="mt-1 text-[11px] text-ch/60 mb-2.5">Your floor.</div>
             <div className="border-t border-border">
               {rows.map((r, i) => (
                 <div key={r.label} className={cn("flex items-center justify-between py-1 text-[11px]", i < rows.length - 1 && "border-b border-border")}>
@@ -558,7 +558,7 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
                 </div>
               ))}
             </div>
-            <p className="mt-2.5 text-[10px] text-ch/60">Changes save automatically.</p>
+            <p className="mt-2.5 text-[11px] text-ch/60">Changes save automatically.</p>
           </div>
         </aside>
       </div>
@@ -764,7 +764,7 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
         <>
           <div className="mb-2.5 flex items-center justify-between">
             <span className="text-[11px] font-medium text-ch">Principal compensation</span>
-            <div className="inline-flex overflow-hidden rounded-[4px] border border-border text-[10px]">
+            <div className="inline-flex overflow-hidden rounded-[4px] border border-border text-[11px]">
               <button
                 type="button"
                 onClick={() => toggleMode("simple")}
@@ -791,9 +791,9 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
                 <option value="partnership">Partnership</option>
                 <option value="c_corp">C-Corporation</option>
               </select>
-              <p className="mt-2 text-[10px] leading-[1.5] text-ch/60">{structureExplainer(structure)}</p>
+              <p className="mt-2 text-[11px] leading-[1.5] text-ch/60">{structureExplainer(structure)}</p>
               {reviewNote && (
-                <p className="mt-2 text-[10px] leading-[1.5] text-gold">
+                <p className="mt-2 text-[11px] leading-[1.5] text-gold">
                   We've pre-filled these fields from your initial setup. Review each value — especially if your structure splits salary from distributions.
                 </p>
               )}
@@ -816,7 +816,7 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
             ))}
           </div>
           {principals.length === 1 && (
-            <p className="mt-3 text-[10px] leading-[1.5] text-ch/55">
+            <p className="mt-3 text-[11px] leading-[1.5] text-ch/55">
               Co-owned firm? A second principal can join using the invite flow in{" "}
               <button
                 type="button"
@@ -939,16 +939,16 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
           isMe ? "cursor-pointer hover:bg-cream/50" : "cursor-default",
         )}
       >
-        <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials}</div>
+        <div className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border border-gold bg-cream text-[11px] font-medium text-gold">{initials}</div>
         <div className="min-w-0 flex-1">
           <div className="text-[12px] font-medium text-ch">
             {principal.name || principal.email}
-            <span className="ml-1.5 text-[10px] font-normal text-ch/60">
+            <span className="ml-1.5 text-[11px] font-normal text-ch/60">
               · Principal{isMe && " · (You)"}
             </span>
           </div>
           <div
-            className="mt-0.5 text-[10px]"
+            className="mt-0.5 text-[11px]"
             style={{ color: configured ? "rgba(44,44,44,0.6)" : "#BA7517" }}
           >
             {configured
@@ -957,7 +957,7 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
           </div>
         </div>
         {isMe && (
-          <span className="text-[10px] text-ch/40">{open ? "▲" : "▼"}</span>
+          <span className="text-[11px] text-ch/40">{open ? "▲" : "▼"}</span>
         )}
       </button>
 
@@ -1214,7 +1214,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
                   <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, color: "#2C2C2C" }}>
                     Total team cost: ${Math.round(teamTotals.totalCost).toLocaleString()}/yr
                   </div>
-                  <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "rgba(44,44,44,0.6)", marginTop: 2 }}>
+                  <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: "rgba(44,44,44,0.6)", marginTop: 2 }}>
                     {teamTotals.perHour > 0
                       ? `Adds $${teamTotals.perHour.toFixed(2)}/hr to your aligned rate`
                       : "Set billable hours on principal or team to see per-hour impact"}
@@ -1261,7 +1261,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
                     <input className={inputCls} type="email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} placeholder="Only needed to invite later" />
                   </Field>
                 </Row2>
-                <p className="mb-2 text-[10px] text-ch/60">
+                <p className="mb-2 text-[11px] text-ch/60">
                   Only needed if you want to invite them to Sightline later. You can add cost data now without an email.
                 </p>
                 <div className="flex justify-end gap-2">
@@ -1391,19 +1391,19 @@ function MemberCard({
         className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-cream/50"
       >
         <span className="h-[6px] w-[6px] shrink-0 rounded-full" style={{ backgroundColor: status.dot }} />
-        <div className={cn("grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border bg-cream text-[9px] font-medium text-gold", status.border)}>
+        <div className={cn("grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border bg-cream text-[11px] font-medium text-gold", status.border)}>
           {initials(m.name, m.email)}
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[12px] font-medium text-ch">
             {m.name}
-            <span className="ml-1.5 text-[10px] font-normal text-ch/60 capitalize">· {String(m.role_type).replace("_", " ")}</span>
+            <span className="ml-1.5 text-[11px] font-normal text-ch/60 capitalize">· {String(m.role_type).replace("_", " ")}</span>
           </div>
-          <div className="mt-0.5 text-[10px] text-ch/60">
+          <div className="mt-0.5 text-[11px] text-ch/60">
             {status.label}{configured ? ` · ${summary}` : ""}
           </div>
         </div>
-        <span className="text-[10px] text-ch/40">{open ? "▲" : "▼"}</span>
+        <span className="text-[11px] text-ch/40">{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className="border-t border-border px-3.5 py-3">
@@ -1424,7 +1424,7 @@ function MemberCard({
             </Field>
           </Row2>
 
-          <div className="mt-1 mb-2 text-[9px] font-medium uppercase tracking-[0.12em] text-ch/50">
+          <div className="mt-1 mb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-ch/50">
             Compensation
           </div>
 
@@ -1439,7 +1439,7 @@ function MemberCard({
               <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-ch/70">
                 Quick estimate
               </span>
-              <span className="text-[10px] text-ch/45">{quickOpen ? "Hide ▲" : "Show ▼"}</span>
+              <span className="text-[11px] text-ch/45">{quickOpen ? "Hide ▲" : "Show ▼"}</span>
             </button>
             {quickOpen && (
               <div className="border-t border-border/60 p-3">
@@ -1450,7 +1450,7 @@ function MemberCard({
                 />
                 <div className="mt-3 flex items-center justify-between">
                   <p
-                    className="text-[10px] italic text-ch/55"
+                    className="text-[11px] italic text-ch/55"
                     style={{ fontFamily: "Jost, sans-serif" }}
                   >
                     Applying overwrites wage, payroll tax, and benefits below.
@@ -1493,7 +1493,7 @@ function MemberCard({
               <Field label="Other annual costs">
                 <NumInput value={d.other_annual_costs?.toString() ?? ""} onChange={(v) => setD({ ...d, other_annual_costs: v === "" ? null : Number(v) })} prefix="$" placeholder="0" />
               </Field>
-              <p className="mb-2 text-[10px] leading-[1.5] text-ch/60">
+              <p className="mb-2 text-[11px] leading-[1.5] text-ch/60">
                 Contractor costs are not subject to employer payroll tax. Ensure you are correctly classifying this worker — misclassification carries significant legal and tax risk.
               </p>
             </>
@@ -1547,7 +1547,7 @@ function MemberCard({
             className="mt-2.5"
             style={{ background: "rgba(184,134,11,0.04)", borderRadius: 6, padding: "10px 14px" }}
           >
-            <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(44,44,44,0.55)" }}>
+            <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(44,44,44,0.55)" }}>
               Fully burdened annual cost
             </div>
             <div className="mt-0.5 flex items-baseline justify-between gap-3">
@@ -1557,13 +1557,13 @@ function MemberCard({
               <button
                 type="button"
                 onClick={() => setBreakdownOpen((v) => !v)}
-                className="text-[10px] text-ch/55 hover:text-ch"
+                className="text-[11px] text-ch/55 hover:text-ch"
               >
                 {breakdownOpen ? "Hide breakdown ▲" : "Show breakdown ▼"}
               </button>
             </div>
             {breakdownOpen ? (
-              <div className="mt-2 space-y-[3px]" style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "#2C2C2C" }}>
+              <div className="mt-2 space-y-[3px]" style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: "#2C2C2C" }}>
                 <BurdenRow label="Base compensation" value={burden.base} />
                 {!contract ? <BurdenRow label="Employer payroll tax" value={burden.tax} /> : null}
                 {!contract ? <BurdenRow label="Benefits" value={burden.benefits} /> : null}
@@ -1574,7 +1574,7 @@ function MemberCard({
                 </div>
               </div>
             ) : null}
-            <div className="mt-1.5" style={{ fontFamily: "'Jost', sans-serif", fontSize: 10 }}>
+            <div className="mt-1.5" style={{ fontFamily: "'Jost', sans-serif", fontSize: 11 }}>
               {Number(m.expected_hrs_per_week) > 0 ? (
                 <span style={{ color: "#B8860B" }}>
                   Per billable hour: ${perBillable.toFixed(2)}/hr
@@ -1588,10 +1588,10 @@ function MemberCard({
           </div>
 
           <div className="mt-2.5 flex items-center justify-between">
-            <button type="button" onClick={onDelete} className="text-[10px] text-danger/70 hover:text-danger inline-flex items-center gap-1">
+            <button type="button" onClick={onDelete} className="text-[11px] text-danger/70 hover:text-danger inline-flex items-center gap-1">
               <Trash2 size={11} /> Remove
             </button>
-            <span className="text-[10px]" style={{ color: savedAt ? "#5C8A6E" : "rgba(44,44,44,0.45)" }}>
+            <span className="text-[11px]" style={{ color: savedAt ? "#5C8A6E" : "rgba(44,44,44,0.45)" }}>
               {savedAt ? "Saved" : "Auto-saves as you type"}
             </span>
           </div>
@@ -1671,7 +1671,7 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
       left={
         <>
           <div className="mb-2.5 overflow-hidden rounded-[6px] border border-border bg-white">
-            <div className="grid grid-cols-[1fr_100px_100px_28px] bg-creamd/60 px-3 py-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-ch/60">
+            <div className="grid grid-cols-[1fr_100px_100px_28px] bg-creamd/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-ch/60">
               <span>Expense</span><span>Amount</span><span>Frequency</span><span></span>
             </div>
             {expenses.map((e, i) => (
@@ -1839,7 +1839,7 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
       </h3>
       <p
         className="mt-1 mb-3"
-        style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300, color: "rgba(44,44,44,0.6)" }}
+        style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400, color: "rgba(44,44,44,0.6)" }}
       >
         Set each team member's expected billable hours and rate. These feed your budget revenue and aligned rate calculation.
       </p>
@@ -1863,13 +1863,13 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div className="min-w-0">
                     <div className="truncate text-[12px] font-medium text-ch">{m.name}</div>
-                    <div className="text-[10px] text-ch/55 capitalize">
+                    <div className="text-[11px] text-ch/55 capitalize">
                       {String(m.role_type || "team").replace(/_/g, " ")}
                     </div>
                   </div>
                   {flashed ? (
                     <span
-                      style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: "#5C8A6E" }}
+                      style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: "#5C8A6E" }}
                     >
                       Saved
                     </span>
@@ -2131,12 +2131,12 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
         {/* Principals (from profiles) — shown first, no editing here */}
         {(data?.members ?? []).filter(m => m.role === "principal").map((m) => (
           <div key={`p-${m.id}`} className="flex items-center gap-2.5 border-b border-border px-3 py-2.5">
-            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-gold bg-cream text-[9px] font-medium text-gold">{initials(m.name || "", m.email)}</div>
+            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-gold bg-cream text-[11px] font-medium text-gold">{initials(m.name || "", m.email)}</div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] font-medium text-ch">{m.name || m.email}</div>
-              <div className="truncate text-[10px] text-ch/60">{m.email}</div>
+              <div className="truncate text-[11px] text-ch/60">{m.email}</div>
             </div>
-            <span className="text-[10px] text-ch/60">Principal</span>
+            <span className="text-[11px] text-ch/60">Principal</span>
           </div>
         ))}
         {rows.map((m, i) => {
@@ -2147,20 +2147,20 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
           );
           return (
             <div key={m.id} className={cn("flex items-center gap-2.5 px-3 py-2.5", i < rows.length - 1 && "border-b border-border")}>
-              <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-cream text-[9px] font-medium text-ch/70">
+              <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-cream text-[11px] font-medium text-ch/70">
                 {initials(m.name || "", m.email || "")}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-medium text-ch">{m.name || m.email || "Unnamed"}</div>
-                <div className="truncate text-[10px] text-ch/60">{m.email || "No email"}</div>
+                <div className="truncate text-[11px] text-ch/60">{m.email || "No email"}</div>
               </div>
-              <div className="flex items-center gap-1.5 text-[10px]">
+              <div className="flex items-center gap-1.5 text-[11px]">
                 <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: st.dot }} />
                 <span className="text-ch/60">{st.label}</span>
               </div>
               {profile ? (
                 <select
-                  className={cn(selectCls, "w-[110px] py-[3px] text-[10px]")}
+                  className={cn(selectCls, "w-[110px] py-[3px] text-[11px]")}
                   value={profile.role}
                   onChange={(e) => changeRole(profile.id, e.target.value, profile.name || profile.email)}
                 >
@@ -2176,34 +2176,34 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
                     try { await resend({ data: { id: pendingInvite.id } }); toast.success("Resent."); refresh(); }
                     catch { toast.error("Could not resend."); }
                   }}
-                  className="text-[10px] text-ch/60 hover:text-gold"
+                  className="text-[11px] text-ch/60 hover:text-gold"
                 >Resend</button>
               ) : m.email ? (
                 <button
                   type="button"
                   onClick={() => inviteExisting(m)}
-                  className="rounded-[3px] border border-gold px-2 py-[3px] text-[10px] font-medium text-gold hover:bg-gold hover:text-white transition-colors"
+                  className="rounded-[3px] border border-gold px-2 py-[3px] text-[11px] font-medium text-gold hover:bg-gold hover:text-white transition-colors"
                 >
                   Invite to Sightline
                 </button>
               ) : (
-                <span className="text-[10px] italic text-ch/40">Add email to invite</span>
+                <span className="text-[11px] italic text-ch/40">Add email to invite</span>
               )}
             </div>
           );
         })}
         {orphanInvites.map((i: any) => (
           <div key={i.id} className="flex items-center gap-2.5 border-t border-border bg-cream/50 px-3 py-2.5">
-            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-creamd/50 text-[9px] text-ch/50">{initials("", i.email)}</div>
+            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-creamd/50 text-[11px] text-ch/50">{initials("", i.email)}</div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12px] text-ch/60">{i.email}</div>
-              <div className="truncate text-[10px] text-ch/50">{i.role}</div>
+              <div className="truncate text-[11px] text-ch/50">{i.role}</div>
             </div>
-            <span className="rounded-[3px] bg-[#FAEEDA] px-1.5 py-[2px] text-[10px] font-medium text-[#633806]">Pending</span>
+            <span className="rounded-[3px] bg-[#FAEEDA] px-1.5 py-[2px] text-[11px] font-medium text-[#633806]">Pending</span>
             <button
               type="button"
               onClick={async () => { try { await resend({ data: { id: i.id } }); toast.success("Resent."); refresh(); } catch { toast.error("Could not resend."); } }}
-              className="text-[10px] text-ch/60 hover:text-gold"
+              className="text-[11px] text-ch/60 hover:text-gold"
             >Resend</button>
           </div>
         ))}
@@ -2224,11 +2224,11 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
           </select>
         </div>
         {inviteName && (
-          <div className="mb-2 text-[10px] text-ch/60">
+          <div className="mb-2 text-[11px] text-ch/60">
             Inviting <span className="font-medium text-ch">{inviteName}</span> — their cost data will link on accept.
           </div>
         )}
-        <p className="mb-2.5 text-[10px] leading-[1.5] text-ch/60">
+        <p className="mb-2.5 text-[11px] leading-[1.5] text-ch/60">
           Principal: full ownership access, own compensation settings, and billing. Team: time calendar and assigned projects only. Admin: full access except billing. View only: read-only.
         </p>
         <button type="button" onClick={send} disabled={sending} className={darkBtn}>
@@ -2352,7 +2352,7 @@ function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string;
     <div className="flex items-center justify-between border-b border-border py-2 last:border-0">
       <div className="pr-4">
         <div className="text-[12px] text-ch">{label}</div>
-        <div className="text-[10px] text-ch/60">{desc}</div>
+        <div className="text-[11px] text-ch/60">{desc}</div>
       </div>
       <button
         type="button" onClick={() => onChange(!on)}
@@ -2460,7 +2460,7 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="mt-4 border-t border-danger/40 pt-3.5">
-        <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-danger">Danger zone</div>
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.1em] text-danger">Danger zone</div>
         <p className="mb-2.5 text-[11px] leading-[1.5] text-ch/60">
           Deleting your account removes all firm data, projects, and time entries permanently. This cannot be undone.
         </p>
@@ -2593,7 +2593,7 @@ function HistoryPanel({ onClose }: { onClose: () => void }) {
                       {isOpen ? <ChevronDown size={12} className="text-ch/50" /> : <ChevronRight size={12} className="text-ch/50" />}
                       <span className="truncate text-[12px] font-medium text-ch">{r.entity_label}</span>
                     </div>
-                    <div className="mt-0.5 pl-[18px] text-[10px] text-ch/50">
+                    <div className="mt-0.5 pl-[18px] text-[11px] text-ch/50">
                       {formatWhen(r.created_at)}
                       {r.changed_by_name ? ` · ${r.changed_by_name}` : ""}
                       {` · ${count} field${count === 1 ? "" : "s"} updated`}

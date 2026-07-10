@@ -303,7 +303,7 @@ function FrequencyToggle({ value, onChange }: { value: Frequency; onChange: (v: 
               style={{
                 background: value === "annual" ? "rgba(255,255,255,0.25)" : "rgba(92,138,110,0.15)",
                 color: value === "annual" ? "white" : "#5C8A6E",
-                fontSize: 9,
+                fontSize: 11,
               }}
             >
               2 months free
