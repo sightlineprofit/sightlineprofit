@@ -229,6 +229,15 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 function TourOverlay() {
   const { currentStep, previousStep, nextStep, skipTour, completeTour } = useTour();
   const isMobile = useIsMobile();
+  const location = useLocation();
+  // While the project setup wizard is auto-opening on /sightline, keep the
+  // tour mounted (so realtime listeners for `projects` / `project_phases`
+  // keep firing) but hide it visually so the wizard is fully usable. The
+  // Sightline route strips `?new=1` from the URL when the wizard closes.
+  const suppressed =
+    location.pathname === "/sightline" &&
+    (location.search as Record<string, unknown> | undefined)?.new != null &&
+    String((location.search as Record<string, unknown>).new) !== "";
 
   const cardStyle: React.CSSProperties = isMobile
     ? {
@@ -271,7 +280,15 @@ function TourOverlay() {
       };
 
   return (
-    <div style={wrapStyle}>
+    <div
+      style={{
+        ...wrapStyle,
+        ...(suppressed
+          ? { background: "transparent", pointerEvents: "none", visibility: "hidden" as const }
+          : null),
+      }}
+      aria-hidden={suppressed || undefined}
+    >
       <style>{`@keyframes tourSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes tourPulseGold { 0% { box-shadow: 0 0 0 0 rgba(184,134,11,0.4);} 100% { box-shadow: 0 0 0 8px rgba(184,134,11,0);} }`}</style>
       <div style={cardStyle}>
