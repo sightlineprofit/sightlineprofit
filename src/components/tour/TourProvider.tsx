@@ -489,6 +489,7 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const upsert = useServerFn(upsertFirmConfig);
+  const upsertOwnerComp = useServerFn(upsertOwnerCompensation);
 
   const total = (Number(salary) || 0) + (Number(distributions) || 0) + (Number(health) || 0) + (Number(retire) || 0);
 
@@ -510,6 +511,22 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
           comp_retire_annual: Number(retire) || 0,
         },
       });
+      // Also persist to owner_compensation so Settings → Compensation and
+      // finance.calc() (which prefers owner_compensation rows over
+      // firm_config when any exist) see the same values entered here.
+      try {
+        await upsertOwnerComp({
+          data: {
+            comp_draw_annual: s,
+            comp_distribution_annual: d,
+            health_insurance_annual: Number(health) || 0,
+            retirement_annual: Number(retire) || 0,
+          },
+        });
+      } catch (ownerErr) {
+        // Non-fatal: firm_config still holds the values for the aligned rate.
+        console.warn("upsertOwnerCompensation from tour failed", ownerErr);
+      }
       await onAdvance();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save");
