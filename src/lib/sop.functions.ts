@@ -433,3 +433,41 @@ export const reorderProjectPhases = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+// Read-only: return a template's phases so the project setup wizard can
+// append them into its scope draft without creating a project first.
+export const getSopTemplatePhases = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ template_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return { template: null, phases: [] };
+    const { data: tpl } = await supabase
+      .from("sop_templates")
+      .select("id, name, firm_id")
+      .eq("id", data.template_id)
+      .maybeSingle();
+    if (!tpl || tpl.firm_id !== profile.firm_id) {
+      return { template: null, phases: [] };
+    }
+    const { data: phases } = await supabase
+      .from("sop_phases")
+      .select("id, name, expected_hrs, billable, sort_order")
+      .eq("template_id", data.template_id)
+      .order("sort_order");
+    return {
+      template: { id: tpl.id, name: tpl.name },
+      phases: (phases ?? []).map((p) => ({
+        name: p.name,
+        expected_hrs: Number(p.expected_hrs) || 0,
+        billable: !!p.billable,
+      })),
+    };
+  });
