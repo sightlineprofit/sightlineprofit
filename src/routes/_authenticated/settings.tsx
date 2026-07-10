@@ -211,6 +211,8 @@ function AdminSettings() {
         <AccountTiles active={active} onOpen={open} />
       </div>
 
+      <GettingStartedSection />
+
       {active && (
         <div className="mt-3 rounded-[8px] border border-border bg-white px-7 pt-6 pb-6">
           {active === "comp" && <CompPanel onClose={close} onOpenPanel={open} />}
