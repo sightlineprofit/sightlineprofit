@@ -1,27 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
-async function getFirmId(supabase: any, userId: string) {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("firm_id, impersonated_firm_id")
-    .eq("id", userId)
-    .maybeSingle();
-  return (profile?.impersonated_firm_id ?? profile?.firm_id) as string | null;
-}
-
-async function ensureRow(supabase: any, firmId: string) {
-  await supabase
-    .from("firm_preferences" as any)
-    .upsert({ firm_id: firmId }, { onConflict: "firm_id", ignoreDuplicates: true });
-}
+import { getTourFirmId, ensureTourRow } from "@/lib/tour.server";
 
 export const getFirmPreferences = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const firmId = await getFirmId(supabase, userId);
+    const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) return null;
     const { data } = await supabase
       .from("firm_preferences" as any)
@@ -29,7 +15,7 @@ export const getFirmPreferences = createServerFn({ method: "GET" })
       .eq("firm_id", firmId)
       .maybeSingle();
     if (!data) {
-      await ensureRow(supabase, firmId);
+      await ensureTourRow(supabase, firmId);
       const { data: fresh } = await supabase
         .from("firm_preferences" as any)
         .select("*")
@@ -45,9 +31,9 @@ export const setTourStep = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ step: z.number().int().min(0).max(7) }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const firmId = await getFirmId(supabase, userId);
+    const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) throw new Error("No firm");
-    await ensureRow(supabase, firmId);
+    await ensureTourRow(supabase, firmId);
     const { error } = await supabase
       .from("firm_preferences" as any)
       .update({ tour_step: data.step })
@@ -60,9 +46,9 @@ export const skipTourFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const firmId = await getFirmId(supabase, userId);
+    const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) throw new Error("No firm");
-    await ensureRow(supabase, firmId);
+    await ensureTourRow(supabase, firmId);
     const { error } = await supabase
       .from("firm_preferences" as any)
       .update({ tour_completed: true, tour_skipped_at: new Date().toISOString() })
@@ -75,9 +61,9 @@ export const completeTourFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const firmId = await getFirmId(supabase, userId);
+    const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) throw new Error("No firm");
-    await ensureRow(supabase, firmId);
+    await ensureTourRow(supabase, firmId);
     const { error } = await supabase
       .from("firm_preferences" as any)
       .update({ tour_completed: true, tour_step: 7 })
@@ -90,9 +76,9 @@ export const resetTourFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const firmId = await getFirmId(supabase, userId);
+    const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) throw new Error("No firm");
-    await ensureRow(supabase, firmId);
+    await ensureTourRow(supabase, firmId);
     const { error } = await supabase
       .from("firm_preferences" as any)
       .update({ tour_completed: false, tour_step: 0, tour_skipped_at: null })
@@ -105,9 +91,9 @@ export const dismissTourWelcomeBanner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const firmId = await getFirmId(supabase, userId);
+    const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) throw new Error("No firm");
-    await ensureRow(supabase, firmId);
+    await ensureTourRow(supabase, firmId);
     const { error } = await supabase
       .from("firm_preferences" as any)
       .update({ welcome_banner_dismissed: true })
