@@ -1006,3 +1006,112 @@ function ResumePrompt({ onClick, step }: { onClick: () => void; step: number }) 
     </button>
   );
 }
+
+/* ─────────────────────────── Skip Confirmation ─────────────────────────── */
+
+function SkipConfirm({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void | Promise<void> }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(44,44,44,0.65)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#FAF7F2", borderRadius: 10, padding: 24, maxWidth: 380, width: "100%", fontFamily: "Jost, system-ui, sans-serif", boxShadow: "0 8px 40px rgba(44,44,44,0.24)" }}>
+        <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22, color: "#2C2C2C", margin: 0, marginBottom: 10 }}>Are you sure?</h3>
+        <p style={{ fontSize: 13, color: "#6B6259", lineHeight: 1.6, marginTop: 0, marginBottom: 20 }}>
+          You'll need to enter your compensation and capacity in Settings to see your aligned rate.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onCancel} style={ghostBtn}>Continue setup</button>
+          <button type="button" onClick={() => { void onConfirm(); }} style={primaryBtn}>Skip anyway</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Completion Banner ─────────────────────────── */
+
+function CompletionBanner({ onDismiss }: { onDismiss: () => void | Promise<void> }) {
+  const [paused, setPaused] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const remainingRef = useRef(10_000);
+  const startedRef = useRef<number>(Date.now());
+
+  const finish = useCallback(async () => {
+    setHidden(true);
+    setTimeout(() => { void onDismiss(); }, 200);
+  }, [onDismiss]);
+
+  useEffect(() => {
+    if (paused) return;
+    startedRef.current = Date.now();
+    const remaining = remainingRef.current;
+    const t = setTimeout(finish, remaining);
+    return () => {
+      const elapsed = Date.now() - startedRef.current;
+      remainingRef.current = Math.max(0, remaining - elapsed);
+      clearTimeout(t);
+    };
+  }, [paused, finish]);
+
+  return (
+    <div
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      style={{
+        position: "fixed",
+        top: 24,
+        right: 24,
+        zIndex: 95,
+        background: "#FAF7F2",
+        border: "0.5px solid rgba(44,44,44,0.14)",
+        borderRadius: 10,
+        boxShadow: "0 6px 24px rgba(44,44,44,0.14)",
+        padding: 16,
+        width: 360,
+        maxWidth: "calc(100vw - 32px)",
+        fontFamily: "Jost, system-ui, sans-serif",
+        overflow: "hidden",
+        opacity: hidden ? 0 : 1,
+        transition: "opacity 200ms",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div>
+          <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 18, color: "#2C2C2C" }}>You're all set.</div>
+          <div style={{ fontSize: 13, color: "#6B6259", marginTop: 2, lineHeight: 1.5 }}>
+            Your aligned rate is live — add projects and log time to start tracking profitability.
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => {
+              document.querySelector('[data-tour="rate-panel"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            style={{ background: "none", border: "none", color: "#B8860B", fontSize: 13, cursor: "pointer", padding: 0 }}
+          >
+            Explore →
+          </button>
+          <button
+            type="button"
+            onClick={finish}
+            aria-label="Dismiss"
+            style={{ background: "none", border: "none", color: "#8A7F75", fontSize: 18, cursor: "pointer", padding: 0, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <div style={{ height: 2, background: "rgba(92,138,110,0.3)", marginTop: 12, borderRadius: 1, overflow: "hidden" }}>
+        <div
+          style={{
+            height: "100%",
+            background: "#5C8A6E",
+            width: "100%",
+            transformOrigin: "left center",
+            animation: paused ? "none" : `tourBannerBar ${remainingRef.current}ms linear forwards`,
+          }}
+        />
+      </div>
+      <style>{`@keyframes tourBannerBar { from { transform: scaleX(1);} to { transform: scaleX(0);} }`}</style>
+    </div>
+  );
+}
