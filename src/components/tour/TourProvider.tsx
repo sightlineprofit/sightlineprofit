@@ -867,7 +867,8 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
     return () => clearTimeout(t);
   }, [sopAttached, scopeReviewed, location.pathname]);
 
-  const goToProjectCreate = () => navigate({ to: "/projects" as any });
+  const goToProjectCreate = () =>
+    navigate({ to: "/sightline", search: { new: 1 } as any });
   const goToSopLibrary = () => {
     if (projectId) navigate({ to: "/projects/$id", params: { id: projectId } } as any);
   };
