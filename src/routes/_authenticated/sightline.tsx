@@ -230,9 +230,10 @@ function marginHealthState(m: MarginInfo): MarginHealth {
   if (!m || m.mode === "none" || m.projectFee <= 0 || m.remaining == null) return "none";
   if (m.remaining < 0) return "critical";
   const pct = (m.remaining / m.projectFee) * 100;
-  if (pct < 10) return "critical";
-  if (pct < 20) return "at_risk";
-  if (pct < 40) return "watch";
+  // Thresholds match the spec: >20% sage (healthy), 10-20% gold (watch),
+  // <10% terra (at risk), negative = critical.
+  if (pct < 10) return "at_risk";
+  if (pct < 20) return "watch";
   return "healthy";
 }
 
