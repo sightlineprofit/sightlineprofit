@@ -11,6 +11,7 @@ const FREQUENCY_TO_PRICE = {
 
 type SupabaseAdmin = {
   from: (table: string) => any;
+  rpc: (fn: string, args?: Record<string, unknown>) => any;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -46,6 +47,18 @@ export function billingFrequencyFromSubscription(sub: any): BillingFrequency | n
   if (interval === "month") return "monthly";
   if (interval === "year") return "annual";
   return null;
+}
+
+export async function updateFirmBillingFromBackend(
+  admin: SupabaseAdmin,
+  firmId: string,
+  patch: Record<string, unknown>,
+) {
+  const { error } = await admin.rpc("update_firm_billing_from_backend", {
+    p_firm_id: firmId,
+    p_patch: patch,
+  });
+  if (error) throw error;
 }
 
 export function resolvePriceKey(frequency: BillingFrequency, currentPriceId: string | null): string {
@@ -175,8 +188,7 @@ export async function syncFirmBillingFromSubscription(
     patch.past_due_since = null;
   }
 
-  const { error } = await admin.from("firms").update(patch as any).eq("id", firmId);
-  if (error) throw error;
+  await updateFirmBillingFromBackend(admin, firmId, patch);
 
   if (lookup && FOUNDING_PRICE_KEYS.has(lookup)) {
     const { error: foundingError } = await admin
@@ -192,15 +204,11 @@ export async function markFirmBillingCanceled(admin: SupabaseAdmin, sub: any, cu
   const firmId = await resolveFirmIdForBillingSync(admin, { subscription: sub, customer });
   if (!firmId) return { ok: false as const, reason: "firm_not_found" as const };
   const periodEnd = sub?.items?.data?.[0]?.current_period_end ?? sub?.current_period_end;
-  const { error } = await admin
-    .from("firms")
-    .update({
+  await updateFirmBillingFromBackend(admin, firmId, {
       subscription_status: "canceled",
       past_due_since: null,
       ...(periodEnd ? { current_period_end: new Date(periodEnd * 1000).toISOString() } : {}),
-    } as any)
-    .eq("id", firmId);
-  if (error) throw error;
+    });
   return { ok: true as const, firmId };
 }
 
@@ -213,14 +221,10 @@ export async function markFirmBillingPastDue(admin: SupabaseAdmin, invoice: any)
     .eq("stripe_subscription_id", subId)
     .maybeSingle();
   if (!existing) return { ok: false as const, reason: "firm_not_found" as const };
-  const { error } = await admin
-    .from("firms")
-    .update({
+  await updateFirmBillingFromBackend(admin, existing.id, {
       subscription_status: "past_due",
       past_due_since: existing.past_due_since ?? new Date().toISOString(),
-    } as any)
-    .eq("id", existing.id);
-  if (error) throw error;
+    });
   return { ok: true as const, firmId: existing.id };
 }
 
