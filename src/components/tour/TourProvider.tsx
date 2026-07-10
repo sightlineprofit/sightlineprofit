@@ -398,6 +398,8 @@ function NavRow({
   nextLabel: string;
   nextDisabled?: boolean;
 }) {
+  // Back only on steps 2, 3, 4 (data-entry). Never on 1 (first) or 5/6/7 (orientation).
+  const showBack = step === 2 || step === 3 || step === 4;
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
       <button
@@ -408,7 +410,7 @@ function NavRow({
         Skip tour
       </button>
       <div style={{ display: "flex", gap: 8 }}>
-        {step > 1 && onBack ? (
+        {showBack && onBack ? (
           <button type="button" onClick={onBack} style={ghostBtn}>
             Back
           </button>
