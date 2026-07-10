@@ -76,10 +76,8 @@ export const setFirmOverrides = createServerFn({ method: "POST" })
     if (data.subscription_tier) patch.subscription_tier = data.subscription_tier;
     if (data.subscription_status) patch.subscription_status = data.subscription_status;
     if (data.trial_ends_at !== undefined) patch.trial_ends_at = data.trial_ends_at;
-    // Use the authenticated (super-admin) client so the
-    // prevent_firm_billing_changes trigger's is_super_admin() check passes.
-    // supabaseAdmin runs as service_role via sb_secret_ keys, which do not
-    // populate request.jwt.claim.role and would trip the trigger.
+    // Use the authenticated super-admin client so manual overrides remain
+    // tied to the admin user who made the change.
     const { error } = await context.supabase.from("firms").update(patch as any).eq("id", data.firm_id);
     if (error) throw new Error(error.message);
     return { ok: true };
