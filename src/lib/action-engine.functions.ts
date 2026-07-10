@@ -180,7 +180,7 @@ export const getActionEngineState = createServerFn({ method: "GET" })
       actions = [
         {
           priority: 1,
-          text: `Raise your rate to ${fmt(newRate)}/hr on your next new client proposal`,
+          text: `Increase your rate by ${fmt(increment)} or more on your next new client proposal`,
           why: `Your billed rate is ${fmt(rateBilled)}/hr against a ${fmt(alignedRate)}/hr aligned rate. A ${fmt(increment)} raise doesn't close the full gap but gets you to or above break-even. One proposal at the new rate is all it takes to start.`,
           linkLabel: "Draft a proposal at this rate →",
           linkTo: "/rate-architecture",

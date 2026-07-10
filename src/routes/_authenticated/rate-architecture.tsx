@@ -989,7 +989,7 @@ function buildCommitments(baseBilled: number, baseHrs: number, scenario: Scenari
       key: "rate",
       action_type: "rate_increase",
       target_value: newRate,
-      heading: `Raise your rate to ${fmtUsd(newRate, { decimals: 0 })}/hr on your next new client proposal`,
+      heading: `Increase your rate by ${fmtUsd(scenario.rateIncrease, { decimals: 0 })} or more on your next new client proposal`,
       detail:
         "Not existing clients. Not retroactively. The next proposal you send goes out at the new rate. One proposal is enough to start.",
       linkTo: "/projects",
