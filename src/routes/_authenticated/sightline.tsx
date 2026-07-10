@@ -137,7 +137,7 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
       title="Sightline"
       description="Project profitability, finally answered."
       actions={
-        <Button onClick={() => setWizardOpen(true)} className="bg-gold text-white hover:bg-goldl">
+        <Button data-tour="new-project-btn" onClick={() => setWizardOpen(true)} className="bg-gold text-white hover:bg-goldl">
           <Plus className="mr-1.5 h-4 w-4" /> New project
         </Button>
       }
@@ -187,7 +187,7 @@ function ProjectList({ onOpen }: { onOpen: (id: string) => void }) {
           <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
             Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library.
           </p>
-          <Button onClick={() => setWizardOpen(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
+          <Button data-tour="new-project-btn" onClick={() => setWizardOpen(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
             <Plus className="mr-1.5 h-4 w-4" /> Create project
           </Button>
         </div>

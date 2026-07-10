@@ -307,6 +307,12 @@ type TileDef = {
 function Tile({ t, active, onOpen }: { t: TileDef; active: PanelId | null; onOpen: (id: PanelId) => void }) {
   const isActive = active === t.id;
   const Icon = t.icon;
+  const tourAttr =
+    t.id === "comp" ? "settings-compensation"
+    : t.id === "opex" ? "settings-expenses"
+    : t.id === "rate" ? "settings-capacity"
+    : t.id === "team_cost" ? "settings-team"
+    : undefined;
   const dot =
     t.status.tone === "ok" ? "#639922"
     : t.status.tone === "warn" ? "#BA7517"
@@ -318,6 +324,7 @@ function Tile({ t, active, onOpen }: { t: TileDef; active: PanelId | null; onOpe
   return (
     <button
       type="button"
+      data-tour={tourAttr}
       onClick={() => onOpen(t.id)}
       className={cn(
         "text-left rounded-[8px] border border-border bg-white px-4 pt-3.5 pb-3 transition-colors hover:border-gold",

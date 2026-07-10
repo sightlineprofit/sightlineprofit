@@ -144,6 +144,7 @@ export function RateArchitecturePanel({
 
   return (
     <div
+      data-tour="rate-panel"
       style={{
         background: "white",
         border: `0.5px solid ${BORDER}`,
@@ -204,6 +205,7 @@ export function RateArchitecturePanel({
         </div>
         <div className="flex items-baseline gap-2 flex-wrap" style={{ marginTop: 4 }}>
           <span
+            data-tour="aligned-rate-value"
             style={{
               fontFamily: "'Cormorant Garamond', serif",
               fontSize: "clamp(44px, 6vw, 56px)",
@@ -244,6 +246,7 @@ export function RateArchitecturePanel({
 
       {/* Three-number row */}
       <div
+        data-tour="rate-stats-row"
         className="grid grid-cols-3"
         style={{ marginTop: 22, borderTop: `1px solid ${BORDER}`, paddingTop: 18 }}
       >
@@ -289,6 +292,7 @@ export function RateArchitecturePanel({
       {/* Rate position bar */}
       <div style={{ marginTop: 20 }}>
         <div
+          data-tour="rate-bar"
           style={{
             position: "relative",
             height: 8,
@@ -352,14 +356,16 @@ export function RateArchitecturePanel({
             <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: CHARCOAL }}>
               {fmtUsd(costFloor, { decimals: 0 })}
             </span>
-            <MetricBreakdown
-              metric="cost_floor"
-              c={c}
-              members={members}
-              expenses={expenses}
-              side="bottom"
-              iconSize={12}
-            />
+            <span data-tour="cost-floor-icon" style={{ display: "inline-flex" }}>
+              <MetricBreakdown
+                metric="cost_floor"
+                c={c}
+                members={members}
+                expenses={expenses}
+                side="bottom"
+                iconSize={12}
+              />
+            </span>
           </div>
           <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>What the firm must earn</div>
         </div>
@@ -378,14 +384,16 @@ export function RateArchitecturePanel({
             >
               {fmtUsd(budgetRevenue, { decimals: 0 })}
             </span>
-            <MetricBreakdown
-              metric="budget_revenue"
-              c={c}
-              cfg={cfg}
-              contributors={contributors}
-              side="bottom"
-              iconSize={12}
-            />
+            <span data-tour="budget-revenue-icon" style={{ display: "inline-flex" }}>
+              <MetricBreakdown
+                metric="budget_revenue"
+                c={c}
+                cfg={cfg}
+                contributors={contributors}
+                side="bottom"
+                iconSize={12}
+              />
+            </span>
           </div>
           {contributorCount > 0 && (
             <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
