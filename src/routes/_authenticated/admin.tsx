@@ -25,7 +25,7 @@ import {
 import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { cn } from "@/lib/utils";
-import { Shield, Eye, RotateCcw, Trash2, Plus, X } from "lucide-react";
+import { Shield, Eye, RotateCcw, Trash2, Plus, X, CalendarClock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Admin — Sightline" }] }),
@@ -172,7 +172,14 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
                   </select>
                 </td>
                 <td className="px-4 py-2 text-xs text-ch/60">
-                  {f.trial_ends_at ? new Date(f.trial_ends_at).toLocaleDateString() : "—"}
+                  <TrialExtender
+                    firmId={f.id}
+                    trialEndsAt={f.trial_ends_at}
+                    onExtend={(iso) =>
+                      overrideMut.mutate({ firm_id: f.id, trial_ends_at: iso })
+                    }
+                    pending={overrideMut.isPending}
+                  />
                 </td>
                 <td className="px-4 py-2 text-right">
                   <button
