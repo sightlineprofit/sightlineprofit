@@ -51,6 +51,7 @@ import {
 
 import { TeamHoursTile } from "@/components/dashboard/TeamHoursTile";
 import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
+import { useTour } from "@/components/tour/TourProvider";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -739,17 +740,29 @@ function FooterLink({ to, children }: { to: string; children: React.ReactNode })
 }
 
 function SetupPrompt() {
+  const { startTour } = useTour();
   return (
-    <div className="rounded-[6px] bg-cream p-6" style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}>
-      <p className="text-[13px] font-light text-ch">
-        Complete your rate and cost setup to see your weekly targets.
+    <div className="rounded-[6px] bg-cream p-6 text-center" style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B8860B" strokeWidth="1.25" className="mx-auto">
+        <path d="M3 21V9l9-6 9 6v12" />
+        <path d="M9 21v-6h6v6" />
+      </svg>
+      <p className="mx-auto mt-3 max-w-sm text-[13px] font-normal text-ch/60">
+        Your aligned rate will appear here once you complete setup.
       </p>
-      <div className="mt-3">
+      <div className="mt-3 flex justify-center gap-2">
+        <button
+          type="button"
+          onClick={startTour}
+          className="rounded-[6px] bg-ch px-5 py-2.5 text-[12px] font-medium text-cream hover:opacity-90"
+        >
+          Start setup →
+        </button>
         <Link
           to={"/settings?panel=rate" as any}
-          className="inline-block rounded-[2px] bg-gold px-4 py-2 text-[11px] font-medium text-white hover:opacity-90"
+          className="rounded-[6px] border border-ch/20 px-5 py-2.5 text-[12px] font-medium text-ch hover:bg-ch/5"
         >
-          Finish setup →
+          Or set up manually
         </Link>
       </div>
     </div>
