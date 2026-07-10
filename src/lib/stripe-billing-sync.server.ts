@@ -4,6 +4,11 @@ import { FOUNDING_PRICE_KEYS, type createStripeClient } from "@/lib/stripe.serve
 export type SubStatus = "trialing" | "active" | "past_due" | "canceled" | "incomplete";
 export type BillingFrequency = "monthly" | "annual";
 
+const FREQUENCY_TO_PRICE = {
+  monthly: { founding: "sightline_founding_monthly", standard: "sightline_standard_monthly" },
+  annual: { founding: "sightline_founding_annual", standard: "sightline_standard_annual" },
+} as const;
+
 type SupabaseAdmin = {
   from: (table: string) => any;
 };
@@ -41,6 +46,12 @@ export function billingFrequencyFromSubscription(sub: any): BillingFrequency | n
   if (interval === "month") return "monthly";
   if (interval === "year") return "annual";
   return null;
+}
+
+export function resolvePriceKey(frequency: BillingFrequency, currentPriceId: string | null): string {
+  const isFounding = currentPriceId ? FOUNDING_PRICE_KEYS.has(currentPriceId) : false;
+  const row = FREQUENCY_TO_PRICE[frequency];
+  return isFounding ? row.founding : row.standard;
 }
 
 async function firmExists(admin: SupabaseAdmin, firmId: string): Promise<boolean> {

@@ -9,7 +9,7 @@ import {
   PRICE_TO_TIER,
   FOUNDING_PRICE_KEYS,
 } from "@/lib/stripe.server";
-import { resolveOrCreateCustomerForFirm } from "@/lib/stripe-billing-sync.server";
+import { resolveOrCreateCustomerForFirm, resolvePriceKey } from "@/lib/stripe-billing-sync.server";
 
 const envSchema = z.enum(["sandbox", "live"]);
 const priceKeySchema = z.enum(CHECKOUT_PRICE_KEYS);
@@ -175,18 +175,6 @@ export const getBillingSummary = createServerFn({ method: "GET" })
     }
     return { ...firm, card, nextChargeAmountCents };
   });
-
-// -- Activation: subscribe an existing customer using the payment method captured at registration.
-const FREQUENCY_TO_PRICE = {
-  monthly: { founding: "sightline_founding_monthly", standard: "sightline_standard_monthly" },
-  annual: { founding: "sightline_founding_annual", standard: "sightline_standard_annual" },
-} as const;
-
-function resolvePriceKey(frequency: "monthly" | "annual", currentPriceId: string | null): string {
-  const isFounding = currentPriceId ? FOUNDING_PRICE_KEYS.has(currentPriceId) : false;
-  const row = FREQUENCY_TO_PRICE[frequency];
-  return isFounding ? row.founding : row.standard;
-}
 
 export const activateSubscription = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
