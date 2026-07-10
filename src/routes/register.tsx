@@ -613,7 +613,7 @@ function StepPayment(props: {
           lineHeight: 1.5,
         }}
       >
-        Your card will not be charged today. Your 14-day free trial starts now. We'll charge $
+        Your card will not be charged today. Your 27-day free trial starts now. We'll charge $
         {dollars} on {props.trialEndDate} unless you cancel before then.
       </div>
 
