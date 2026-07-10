@@ -38,7 +38,7 @@ export const Route = createFileRoute("/api/public/payments/webhook")({
             .from("stripe_webhook_events")
             .insert({ event_id: event.id, type: event.type });
           if (dupErr && dupErr.code === "23505") {
-            return Response.json({ received: true, duplicate: true });
+            console.warn("[stripe-webhook] duplicate receipt; reprocessing idempotently", event.id);
           }
         } catch (e) {
           console.error("[stripe-webhook] dedup insert failed", e);
