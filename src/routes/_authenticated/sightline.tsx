@@ -25,7 +25,9 @@ import {
 import { attachTemplateToProject } from "@/lib/sop.functions";
 import { deleteTimeEntry } from "@/lib/time.functions";
 import { toast } from "sonner";
-import { fmtUsd, fmtPct, formatHours, calc as calcFinance } from "@/lib/finance";
+import {
+  fmtUsd, fmtPct, formatHours, calc as calcFinance, getProjectMarginCalc,
+} from "@/lib/finance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -710,6 +712,14 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const firmMetrics = (data as unknown as {
+    firmMetrics?: {
+      breakEvenRate: number;
+      alignedRate: number;
+      billedRate: number;
+      perHour: { comp: number; opexRecurring: number; opexOneTime: number };
+    };
+  }).firmMetrics ?? { breakEvenRate: 0, alignedRate: 0, billedRate: 0, perHour: { comp: 0, opexRecurring: 0, opexOneTime: 0 } };
   const milestones = ((data as unknown) as { milestones?: Array<{ id: string; label: string; milestone_date: string }> }).milestones ?? [];
   const activityLog = (data as unknown as {
     activityLog?: Array<{ event_type: string; occurred_at: string; note: string | null }>;
