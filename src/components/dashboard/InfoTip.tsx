@@ -1,22 +1,211 @@
-import { Info } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Info, X } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useState } from "react";
 
-export function InfoTip({ term, definition, why }: { term: string; definition: string; why?: string }) {
+/**
+ * A stable, click-triggered insight panel. Replaces the previous hover
+ * tooltip so the content can be read comfortably. The panel auto-flips
+ * (right → left → bottom) via Radix's collision-aware positioning, and
+ * closes on outside click, the × button, or clicking the trigger again.
+ */
+export type InsightRow = {
+  label: string;
+  /** Numeric weight used to render the proportion bar (0–1 of `max`). */
+  proportion?: number;
+  /** Formatted value string, e.g. "$142.00/hr". */
+  value: string;
+  /** Hex color for the proportion bar. Defaults to muted gold. */
+  color?: string;
+  /** Render as a dashed/ghost row (e.g. "gap" segments). */
+  ghost?: boolean;
+};
+
+export function InfoTip({
+  term,
+  definition,
+  why,
+  rows,
+  closingLine,
+}: {
+  term: string;
+  definition?: string;
+  why?: string;
+  rows?: InsightRow[];
+  closingLine?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasBreakdown = rows && rows.length > 0;
+  const maxProp = hasBreakdown
+    ? Math.max(1, ...rows!.map((r) => Math.abs(r.proportion ?? 0)))
+    : 1;
+
   return (
-    <TooltipProvider delayDuration={150}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button type="button" className="inline-flex items-center text-ch/30 hover:text-gold transition-colors" aria-label={`What is ${term}?`}>
-            <Info className="h-3 w-3" />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center text-ch/40 hover:text-gold transition-colors"
+          aria-label={`Insight: ${term}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen((o) => !o);
+          }}
+        >
+          <Info className="h-3 w-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={12}
+        collisionPadding={16}
+        avoidCollisions
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="p-0 border-0 shadow-none bg-transparent w-auto max-w-[92vw]"
+      >
+        <div
+          className="insight-panel"
+          style={{
+            width: 280,
+            maxWidth: "92vw",
+            background: "#2C2C2C",
+            borderRadius: 6,
+            boxShadow: "0 8px 32px rgba(44,44,44,0.25)",
+            border: "0.5px solid rgba(255,255,255,0.08)",
+            padding: 16,
+            position: "relative",
+            color: "#F4EFE8",
+            fontFamily: "Jost, sans-serif",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close"
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              color: "rgba(255,255,255,0.4)",
+              padding: 2,
+              lineHeight: 0,
+            }}
+            onMouseEnter={(e) => ((e.currentTarget.style.color = "rgba(255,255,255,0.85)"))}
+            onMouseLeave={(e) => ((e.currentTarget.style.color = "rgba(255,255,255,0.4)"))}
+          >
+            <X style={{ width: 12, height: 12 }} />
           </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs bg-ch text-cream border-ch px-3 py-2 text-xs">
-          <div className="font-display text-sm text-cream mb-1">{term}</div>
-          <div className="text-cream/85 leading-relaxed">{definition}</div>
-          {why && <div className="text-cream/60 mt-1.5 italic">{why}</div>}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+          <div
+            style={{
+              fontFamily: "'Cormorant Garamond', serif",
+              fontSize: 16,
+              color: "#FFFFFF",
+              marginBottom: 10,
+              paddingRight: 18,
+              lineHeight: 1.2,
+            }}
+          >
+            {term}
+          </div>
+          {definition && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: "rgba(244,239,232,0.85)",
+                marginBottom: hasBreakdown || why || closingLine ? 10 : 0,
+              }}
+            >
+              {definition}
+            </div>
+          )}
+          {hasBreakdown && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {rows!.map((r, i) => {
+                const pct = Math.min(100, Math.max(0, (Math.abs(r.proportion ?? 0) / maxProp) * 100));
+                const color = r.color ?? "#D4A017";
+                return (
+                  <div
+                    key={`${r.label}-${i}`}
+                    className="pop-row"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 60px auto",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: "rgba(244,239,232,0.75)" }}>{r.label}</span>
+                    <span
+                      aria-hidden
+                      style={{
+                        height: 4,
+                        borderRadius: 2,
+                        background: "rgba(255,255,255,0.08)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: "block",
+                          height: "100%",
+                          width: `${pct}%`,
+                          background: r.ghost ? "transparent" : color,
+                          backgroundImage: r.ghost
+                            ? `repeating-linear-gradient(45deg, ${color}88 0 4px, transparent 4px 8px)`
+                            : undefined,
+                        }}
+                      />
+                    </span>
+                    <span
+                      style={{
+                        fontVariantNumeric: "tabular-nums",
+                        color: r.ghost ? "#E8A78E" : "#F4EFE8",
+                        fontSize: 13,
+                      }}
+                    >
+                      {r.value}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {why && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "rgba(244,239,232,0.6)",
+                fontStyle: "italic",
+                marginTop: hasBreakdown ? 12 : 8,
+                lineHeight: 1.5,
+              }}
+            >
+              {why}
+            </div>
+          )}
+          {closingLine && (
+            <div
+              style={{
+                fontFamily: "'Cormorant Garamond', serif",
+                fontStyle: "italic",
+                fontSize: 13,
+                color: "rgba(244,239,232,0.6)",
+                marginTop: 12,
+                lineHeight: 1.4,
+              }}
+            >
+              {closingLine}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
