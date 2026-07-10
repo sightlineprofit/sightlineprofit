@@ -10,9 +10,12 @@ import {
   skipTourFn,
   completeTourFn,
   resetTourFn,
+  reconcileTour,
+  dismissTourWelcomeBanner,
 } from "@/lib/tour.functions";
 import { upsertFirmConfig, addExpense } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 type TourPrefs = {
   tour_completed: boolean;
@@ -50,6 +53,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const skipFn = useServerFn(skipTourFn);
   const completeFn = useServerFn(completeTourFn);
   const resetFn = useServerFn(resetTourFn);
+  const reconcileFn = useServerFn(reconcileTour);
+  const dismissBannerFn = useServerFn(dismissTourWelcomeBanner);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -61,7 +66,26 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const [isOpen, setOpen] = useState(false);
   const [currentStep, setCurrent] = useState(1);
+  const [skipConfirmOpen, setSkipConfirmOpen] = useState(false);
   const autoLaunchedRef = useRef(false);
+  const reconciledRef = useRef(false);
+
+  // Run reconciliation once per session, before any auto-launch decision.
+  useEffect(() => {
+    if (reconciledRef.current) return;
+    if (!prefs) return;
+    if (prefs.tour_completed) { reconciledRef.current = true; return; }
+    reconciledRef.current = true;
+    (async () => {
+      try {
+        await reconcileFn();
+      } catch (e) {
+        console.warn("reconcileTour failed", e);
+      } finally {
+        await refetch();
+      }
+    })();
+  }, [prefs, reconcileFn, refetch]);
 
   // Auto-launch on dashboard 1.5s after load if fresh state
   useEffect(() => {
@@ -70,7 +94,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (location.pathname !== "/dashboard") return;
     if (prefs.tour_completed) return;
     if (prefs.tour_skipped_at) return;
-    if (prefs.tour_step !== 0) return;
+    if (prefs.tour_step !== 0) return; // mid-tour users only see resume prompt
     autoLaunchedRef.current = true;
     const t = setTimeout(() => {
       setCurrent(1);
@@ -80,10 +104,11 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, [prefs, location.pathname]);
 
   const startTour = useCallback(() => {
-    setCurrent(1);
+    const resumeAt = Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
+    setCurrent(resumeAt);
     setOpen(true);
     if (location.pathname !== "/dashboard") navigate({ to: "/dashboard" });
-  }, [location.pathname, navigate]);
+  }, [prefs, location.pathname, navigate]);
 
   const resumeTour = useCallback(() => {
     const next = Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
@@ -107,21 +132,38 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       setOpen(false);
       return;
     }
+    // Step 4 → Step 5: ensure we're on /dashboard with rate visible before spotlighting.
+    if (currentStep === 4) {
+      if (location.pathname !== "/dashboard") {
+        await navigate({ to: "/dashboard" });
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    }
     setCurrent((s) => Math.min(7, s + 1));
-  }, [currentStep, setStep, refetch, completeFn, qc]);
+  }, [currentStep, setStep, refetch, completeFn, qc, location.pathname, navigate]);
 
   const previousStep = useCallback(() => {
     setCurrent((s) => Math.max(1, s - 1));
   }, []);
 
-  const skipTour = useCallback(async () => {
+  const performSkip = useCallback(async () => {
     try {
       await skipFn();
     } finally {
       qc.invalidateQueries({ queryKey: ["firm-preferences"] });
       setOpen(false);
+      setSkipConfirmOpen(false);
     }
   }, [skipFn, qc]);
+
+  // Split skip behavior: confirm only when skipping before Step 3 is complete.
+  const skipTour = useCallback(async () => {
+    if (currentStep < 3) {
+      setSkipConfirmOpen(true);
+      return;
+    }
+    await performSkip();
+  }, [currentStep, performSkip]);
 
   const completeTour = useCallback(async () => {
     try {
@@ -136,6 +178,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     await resetFn();
     await refetch();
     autoLaunchedRef.current = false;
+    reconciledRef.current = false;
     qc.invalidateQueries({ queryKey: ["firm-preferences"] });
   }, [resetFn, refetch, qc]);
 
@@ -144,12 +187,38 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [prefs, isOpen, currentStep, startTour, resumeTour, skipTour, nextStep, previousStep, completeTour, resetTour, refetch],
   );
 
+  const showCompletionBanner =
+    !!prefs &&
+    prefs.tour_completed &&
+    !prefs.welcome_banner_dismissed &&
+    !prefs.tour_skipped_at &&
+    location.pathname === "/dashboard";
+
   return (
     <Ctx.Provider value={value}>
       {children}
       {typeof document !== "undefined" && isOpen ? createPortal(<TourOverlay />, document.body) : null}
       {typeof document !== "undefined" && !isOpen && prefs && !prefs.tour_completed && prefs.tour_step > 0
         ? createPortal(<ResumePrompt onClick={resumeTour} step={prefs.tour_step} />, document.body)
+        : null}
+      {typeof document !== "undefined" && skipConfirmOpen
+        ? createPortal(
+            <SkipConfirm
+              onCancel={() => setSkipConfirmOpen(false)}
+              onConfirm={performSkip}
+            />,
+            document.body,
+          )
+        : null}
+      {typeof document !== "undefined" && showCompletionBanner
+        ? createPortal(
+            <CompletionBanner
+              onDismiss={async () => {
+                try { await dismissBannerFn(); } finally { qc.invalidateQueries({ queryKey: ["firm-preferences"] }); }
+              }}
+            />,
+            document.body,
+          )
         : null}
     </Ctx.Provider>
   );
@@ -159,10 +228,38 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
 function TourOverlay() {
   const { currentStep, previousStep, nextStep, skipTour, completeTour } = useTour();
+  const isMobile = useIsMobile();
 
-  return (
-    <div
-      style={{
+  const cardStyle: React.CSSProperties = isMobile
+    ? {
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "#FAF7F2",
+        borderRadius: "16px 16px 0 0",
+        boxShadow: "0 -4px 32px rgba(44,44,44,0.18)",
+        padding: "20px 20px 32px",
+        maxHeight: "75vh",
+        overflowY: "auto",
+        fontFamily: "Jost, system-ui, sans-serif",
+        animation: "tourSlideUp 320ms cubic-bezier(0.32, 0.72, 0, 1)",
+      }
+    : {
+        background: "#FAF7F2",
+        borderRadius: 10,
+        boxShadow: "0 8px 40px rgba(44,44,44,0.2)",
+        padding: 28,
+        width: 420,
+        maxWidth: "calc(100vw - 32px)",
+        maxHeight: "90vh",
+        overflowY: "auto",
+        fontFamily: "Jost, system-ui, sans-serif",
+      };
+
+  const wrapStyle: React.CSSProperties = isMobile
+    ? { position: "fixed", inset: 0, background: "rgba(44,44,44,0.65)", zIndex: 1000 }
+    : {
         position: "fixed",
         inset: 0,
         background: "rgba(44,44,44,0.60)",
@@ -171,21 +268,16 @@ function TourOverlay() {
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
-      }}
-    >
-      <div
-        style={{
-          background: "#FAF7F2",
-          borderRadius: 10,
-          boxShadow: "0 8px 40px rgba(44,44,44,0.2)",
-          padding: 28,
-          width: 420,
-          maxWidth: "calc(100vw - 32px)",
-          maxHeight: "90vh",
-          overflowY: "auto",
-          fontFamily: "Jost, system-ui, sans-serif",
-        }}
-      >
+      };
+
+  return (
+    <div style={wrapStyle}>
+      <style>{`@keyframes tourSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes tourPulseGold { 0% { box-shadow: 0 0 0 0 rgba(184,134,11,0.4);} 100% { box-shadow: 0 0 0 8px rgba(184,134,11,0);} }`}</style>
+      <div style={cardStyle}>
+        {isMobile ? (
+          <div style={{ width: 36, height: 4, background: "rgba(44,44,44,0.15)", borderRadius: 2, margin: "0 auto 16px" }} />
+        ) : null}
         <StepHeader step={currentStep} />
         <StepBody
           step={currentStep}
@@ -217,7 +309,8 @@ function StepHeader({ step }: { step: number }) {
                 height: 6,
                 borderRadius: "50%",
                 background: done ? "#B8860B" : current ? "#2C2C2C" : "transparent",
-                border: current || done ? "1.5px solid #2C2C2C" : "1.5px solid rgba(44,44,44,0.2)",
+                border: done ? "1.5px solid #B8860B" : "1.5px solid rgba(44,44,44,0.2)",
+                boxShadow: current ? "0 0 0 2px #B8860B" : "none",
                 display: "inline-block",
               }}
             />
@@ -226,6 +319,18 @@ function StepHeader({ step }: { step: number }) {
       </div>
     </div>
   );
+}
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 639px)");
+    const update = () => setMobile(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
+  return mobile;
 }
 
 /* ─────────────────────────── Shared UI ─────────────────────────── */
@@ -293,6 +398,8 @@ function NavRow({
   nextLabel: string;
   nextDisabled?: boolean;
 }) {
+  // Back only on steps 2, 3, 4 (data-entry). Never on 1 (first) or 5/6/7 (orientation).
+  const showBack = step === 2 || step === 3 || step === 4;
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
       <button
@@ -303,7 +410,7 @@ function NavRow({
         Skip tour
       </button>
       <div style={{ display: "flex", gap: 8 }}>
-        {step > 1 && onBack ? (
+        {showBack && onBack ? (
           <button type="button" onClick={onBack} style={ghostBtn}>
             Back
           </button>
@@ -514,7 +621,10 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
   const [margin, setMargin] = useState("40");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [calculating, setCalculating] = useState(false);
   const upsert = useServerFn(upsertFirmConfig);
+  const qc = useQueryClient();
+  const fetchDashDirect = useServerFn(getDashboardData);
 
   // Load current comp+expenses via dashboard fetch to preview aligned rate
   const fetchDash = useServerFn(getDashboardData);
@@ -557,11 +667,26 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
           target_gross_margin_pct: m,
         },
       });
+      // Race condition fix: wait for aligned rate to recalculate before Step 5.
+      setCalculating(true);
+      const start = Date.now();
+      // Poll dashboard config until rate_billed is present, capped at 3s.
+      while (Date.now() - start < 3000) {
+        try {
+          const fresh: any = await fetchDashDirect();
+          if (Number(fresh?.config?.rate_billed) > 0 && Number(fresh?.config?.target_billable_hrs_per_week) > 0) {
+            break;
+          }
+        } catch { /* keep polling */ }
+        await new Promise((r2) => setTimeout(r2, 300));
+      }
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
       await onAdvance();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save");
     } finally {
       setSaving(false);
+      setCalculating(false);
     }
   };
 
@@ -610,7 +735,14 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
         )}
       </div>
       {err ? <div style={{ color: "#B23B3B", fontSize: 12, marginTop: 10 }}>{err}</div> : null}
-      <NavRow step={3} onBack={onBack} onSkip={onSkip} onNext={save} nextLabel={saving ? "Saving…" : "Save & continue →"} nextDisabled={saving} />
+      <NavRow
+        step={3}
+        onBack={onBack}
+        onSkip={onSkip}
+        onNext={save}
+        nextLabel={calculating ? "Calculating your rate…" : saving ? "Saving…" : "Save & continue →"}
+        nextDisabled={saving || calculating}
+      />
     </>
   );
 }
@@ -669,24 +801,136 @@ function Step5RateOrientation({ onAdvance, onSkip, onBack }: { onAdvance: () => 
 }
 
 function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<void>; onSkip: () => void; onBack: () => void }) {
+  const [projectCreated, setProjectCreated] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [sopAttached, setSopAttached] = useState(false);
+  const [scopeReviewed, setScopeReviewed] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Realtime: watch for a new project row for this firm while Step 6 is active.
+  useEffect(() => {
+    if (projectCreated) return;
+    const ch = supabase
+      .channel("tour-projects")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "projects" },
+        (payload: any) => {
+          const id = payload?.new?.id as string | undefined;
+          if (id) {
+            setProjectCreated(true);
+            setProjectId(id);
+          }
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectCreated]);
+
+  // Realtime: watch for project_phases inserted against the created project.
+  useEffect(() => {
+    if (!projectId || sopAttached) return;
+    const ch = supabase
+      .channel(`tour-phases-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "project_phases", filter: `project_id=eq.${projectId}` },
+        () => setSopAttached(true),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, sopAttached]);
+
+  // Scope review: 3s timer once user is on the project page and SOP is attached.
+  useEffect(() => {
+    if (!sopAttached || scopeReviewed) return;
+    if (!location.pathname.startsWith("/projects/")) return;
+    const t = setTimeout(() => setScopeReviewed(true), 3000);
+    return () => clearTimeout(t);
+  }, [sopAttached, scopeReviewed, location.pathname]);
+
+  const goToProjectCreate = () => navigate({ to: "/projects" as any });
+  const goToSopLibrary = () => {
+    if (projectId) navigate({ to: "/projects/$id", params: { id: projectId } } as any);
+  };
+
+  const item = (label: string, done: boolean, doneLabel: string) => (
+    <li style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 0" }}>
+      <span
+        style={{
+          width: 14, height: 14, borderRadius: "50%",
+          border: "1.5px solid " + (done ? "#B8860B" : "rgba(44,44,44,0.25)"),
+          background: done ? "#B8860B" : "transparent",
+          color: "#FAF7F2", fontSize: 10, display: "inline-flex",
+          alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2,
+        }}
+      >{done ? "✓" : ""}</span>
+      <span>
+        <span style={{ fontSize: 13, color: "#2C2C2C", fontWeight: done ? 500 : 400 }}>{label}</span>
+        {done ? (
+          <div style={{ fontSize: 11, color: "#5C8A6E", marginTop: 2 }}>{doneLabel}</div>
+        ) : null}
+      </span>
+    </li>
+  );
+
+  const allDone = projectCreated && sopAttached && scopeReviewed;
+
   return (
     <>
       <h2 style={titleStyle}>Set up your first project.</h2>
       <p style={bodyStyle}>
-        Track whether your projects are profitable in real time — not after you've already closed them. Connect a project to an SOP workflow and Sightline scopes the hours for you.
+        Track whether your projects are profitable in real time — not after you've already closed them. Connect a project to an SOP workflow and Sightline scopes the hours automatically.{"\n\n"}Then as you log time, the margin needle moves.
       </p>
-      <ol style={{ paddingLeft: 18, color: "#6B6259", fontSize: 13, lineHeight: 1.9, margin: 0 }}>
-        <li>Create a project</li>
-        <li>Attach an SOP workflow</li>
-        <li>Review scoped hours</li>
-      </ol>
-      <NavRow step={6} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Next →" />
+      <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 12px" }}>
+        {item("Create a project", projectCreated, "Project created ✓")}
+        {item("Attach an SOP workflow", sopAttached, "Workflow attached ✓")}
+        {item("Review scoped hours", scopeReviewed, "Scope reviewed ✓")}
+      </ul>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
+          Skip for now →
+        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {!projectCreated ? (
+            <button type="button" onClick={goToProjectCreate} style={primaryBtn}>Create my first project →</button>
+          ) : !sopAttached ? (
+            <button type="button" onClick={goToSopLibrary} style={primaryBtn}>Go to SOP library →</button>
+          ) : null}
+          {projectCreated && sopAttached ? (
+            <button
+              type="button"
+              onClick={onAdvance}
+              style={{ ...primaryBtn, animation: allDone ? "tourPulseGold 600ms ease-out 1" : undefined }}
+            >
+              Next →
+            </button>
+          ) : null}
+        </div>
+      </div>
     </>
   );
 }
 
 function Step7TimeEntry({ onComplete, onSkip, onBack }: { onComplete: () => Promise<void>; onSkip: () => void; onBack: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [entrySaved, setEntrySaved] = useState(false);
+
+  // Realtime watcher for new time entries.
+  useEffect(() => {
+    if (entrySaved) return;
+    const ch = supabase
+      .channel("tour-time-entries")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "time_entries" },
+        () => setEntrySaved(true),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [entrySaved]);
+
   const finish = async () => {
     setSaving(true);
     try { await onComplete(); } finally { setSaving(false); }
@@ -704,7 +948,29 @@ function Step7TimeEntry({ onComplete, onSkip, onBack }: { onComplete: () => Prom
         <li>Assign to a project (or log as firm time)</li>
         <li>Hit Log time</li>
       </ol>
-      <NavRow step={7} onBack={onBack} onSkip={onSkip} onNext={finish} nextLabel={saving ? "Finishing…" : "Finish setup ✓"} nextDisabled={saving} />
+      {entrySaved ? (
+        <div style={{ background: "rgba(92,138,110,0.07)", borderLeft: "2px solid #5C8A6E", borderRadius: "0 4px 4px 0", padding: "6px 10px", marginTop: 10, fontSize: 12, color: "#5C8A6E" }}>
+          First entry logged ✓ You're ready to finish.
+        </div>
+      ) : null}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8 }}>
+        <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
+          or skip this step →
+        </button>
+        <button
+          type="button"
+          onClick={finish}
+          disabled={!entrySaved || saving}
+          title={!entrySaved ? "Log at least one hour to finish setup" : undefined}
+          style={
+            entrySaved
+              ? { ...primaryBtn, animation: "tourPulseGold 600ms ease-out 1" }
+              : { ...primaryBtn, background: "rgba(44,44,44,0.25)", color: "rgba(255,255,255,0.4)", cursor: "not-allowed" }
+          }
+        >
+          {saving ? "Finishing…" : "Finish setup ✓"}
+        </button>
+      </div>
     </>
   );
 }
@@ -738,5 +1004,114 @@ function ResumePrompt({ onClick, step }: { onClick: () => void; step: number }) 
         Step {next} of 7 remaining
       </div>
     </button>
+  );
+}
+
+/* ─────────────────────────── Skip Confirmation ─────────────────────────── */
+
+function SkipConfirm({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void | Promise<void> }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(44,44,44,0.65)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#FAF7F2", borderRadius: 10, padding: 24, maxWidth: 380, width: "100%", fontFamily: "Jost, system-ui, sans-serif", boxShadow: "0 8px 40px rgba(44,44,44,0.24)" }}>
+        <h3 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22, color: "#2C2C2C", margin: 0, marginBottom: 10 }}>Are you sure?</h3>
+        <p style={{ fontSize: 13, color: "#6B6259", lineHeight: 1.6, marginTop: 0, marginBottom: 20 }}>
+          You'll need to enter your compensation and capacity in Settings to see your aligned rate.
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onCancel} style={ghostBtn}>Continue setup</button>
+          <button type="button" onClick={() => { void onConfirm(); }} style={primaryBtn}>Skip anyway</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Completion Banner ─────────────────────────── */
+
+function CompletionBanner({ onDismiss }: { onDismiss: () => void | Promise<void> }) {
+  const [paused, setPaused] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const remainingRef = useRef(10_000);
+  const startedRef = useRef<number>(Date.now());
+
+  const finish = useCallback(async () => {
+    setHidden(true);
+    setTimeout(() => { void onDismiss(); }, 200);
+  }, [onDismiss]);
+
+  useEffect(() => {
+    if (paused) return;
+    startedRef.current = Date.now();
+    const remaining = remainingRef.current;
+    const t = setTimeout(finish, remaining);
+    return () => {
+      const elapsed = Date.now() - startedRef.current;
+      remainingRef.current = Math.max(0, remaining - elapsed);
+      clearTimeout(t);
+    };
+  }, [paused, finish]);
+
+  return (
+    <div
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      style={{
+        position: "fixed",
+        top: 24,
+        right: 24,
+        zIndex: 95,
+        background: "#FAF7F2",
+        border: "0.5px solid rgba(44,44,44,0.14)",
+        borderRadius: 10,
+        boxShadow: "0 6px 24px rgba(44,44,44,0.14)",
+        padding: 16,
+        width: 360,
+        maxWidth: "calc(100vw - 32px)",
+        fontFamily: "Jost, system-ui, sans-serif",
+        overflow: "hidden",
+        opacity: hidden ? 0 : 1,
+        transition: "opacity 200ms",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <div>
+          <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 18, color: "#2C2C2C" }}>You're all set.</div>
+          <div style={{ fontSize: 13, color: "#6B6259", marginTop: 2, lineHeight: 1.5 }}>
+            Your aligned rate is live — add projects and log time to start tracking profitability.
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => {
+              document.querySelector('[data-tour="rate-panel"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            style={{ background: "none", border: "none", color: "#B8860B", fontSize: 13, cursor: "pointer", padding: 0 }}
+          >
+            Explore →
+          </button>
+          <button
+            type="button"
+            onClick={finish}
+            aria-label="Dismiss"
+            style={{ background: "none", border: "none", color: "#8A7F75", fontSize: 18, cursor: "pointer", padding: 0, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <div style={{ height: 2, background: "rgba(92,138,110,0.3)", marginTop: 12, borderRadius: 1, overflow: "hidden" }}>
+        <div
+          style={{
+            height: "100%",
+            background: "#5C8A6E",
+            width: "100%",
+            transformOrigin: "left center",
+            animation: paused ? "none" : `tourBannerBar ${remainingRef.current}ms linear forwards`,
+          }}
+        />
+      </div>
+      <style>{`@keyframes tourBannerBar { from { transform: scaleX(1);} to { transform: scaleX(0);} }`}</style>
+    </div>
   );
 }
