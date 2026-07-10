@@ -524,7 +524,7 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
         await upsertOwnerComp({
           data: {
             comp_draw_annual: s,
-            comp_distribution_annual: d,
+            distribution_annual: d,
             health_insurance_annual: Number(health) || 0,
             retirement_annual: Number(retire) || 0,
           },

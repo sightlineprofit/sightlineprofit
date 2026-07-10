@@ -189,16 +189,33 @@ function UnderstandTab({
       const pct = Number(r.payroll_tax_pct ?? 15.3) || 0;
       if (d) l1Items.push({ label: "Owner draw / salary", amount: d });
       if (d && pct) l1Items.push({ label: "Self-employment tax", amount: d * (pct / 100) });
+      const dist = Number(r.distribution_annual) || 0;
+      if (dist) l1Items.push({ label: "Distributions", amount: dist });
       const h = Number(r.health_insurance_annual) || 0;
       if (h) l1Items.push({ label: "Health insurance", amount: h });
       const ret = Number(r.retirement_annual) || 0;
       if (ret) l1Items.push({ label: "Retirement", amount: ret });
+      const reserveMonths = Number(r.reserve_months) || 0;
+      const reserveTgt = Number(r.reserve_target) || 0;
+      if (reserveMonths > 0 || reserveTgt > 0) {
+        // Reserve target only contributes to compTotal for S-Corps; the
+        // finance layer applies that guard. Show the line whenever the
+        // principal has entered a reserve so the itemization reconciles.
+        const amt =
+          reserveMonths > 0
+            ? reserveMonths * ((c.opexRecurring + c.opexOneTime) / 12)
+            : reserveTgt;
+        if (amt > 0 && c.structure === "s_corp")
+          l1Items.push({ label: "Cash reserve target", amount: amt });
+      }
     }
   } else {
     if (c.draw) l1Items.push({ label: "Owner draw / salary", amount: c.draw });
     if (c.ptax) l1Items.push({ label: "Self-employment tax", amount: c.ptax });
+    if (c.distribution) l1Items.push({ label: "Distributions", amount: c.distribution });
     if (c.health) l1Items.push({ label: "Health insurance", amount: c.health });
     if (c.retire) l1Items.push({ label: "Retirement", amount: c.retire });
+    if (c.reserveTarget) l1Items.push({ label: "Cash reserve target", amount: c.reserveTarget });
   }
   const l1Total = c.compTotal;
 
