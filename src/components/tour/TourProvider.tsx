@@ -228,10 +228,38 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
 function TourOverlay() {
   const { currentStep, previousStep, nextStep, skipTour, completeTour } = useTour();
+  const isMobile = useIsMobile();
 
-  return (
-    <div
-      style={{
+  const cardStyle: React.CSSProperties = isMobile
+    ? {
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "#FAF7F2",
+        borderRadius: "16px 16px 0 0",
+        boxShadow: "0 -4px 32px rgba(44,44,44,0.18)",
+        padding: "20px 20px 32px",
+        maxHeight: "75vh",
+        overflowY: "auto",
+        fontFamily: "Jost, system-ui, sans-serif",
+        animation: "tourSlideUp 320ms cubic-bezier(0.32, 0.72, 0, 1)",
+      }
+    : {
+        background: "#FAF7F2",
+        borderRadius: 10,
+        boxShadow: "0 8px 40px rgba(44,44,44,0.2)",
+        padding: 28,
+        width: 420,
+        maxWidth: "calc(100vw - 32px)",
+        maxHeight: "90vh",
+        overflowY: "auto",
+        fontFamily: "Jost, system-ui, sans-serif",
+      };
+
+  const wrapStyle: React.CSSProperties = isMobile
+    ? { position: "fixed", inset: 0, background: "rgba(44,44,44,0.65)", zIndex: 1000 }
+    : {
         position: "fixed",
         inset: 0,
         background: "rgba(44,44,44,0.60)",
@@ -240,21 +268,16 @@ function TourOverlay() {
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
-      }}
-    >
-      <div
-        style={{
-          background: "#FAF7F2",
-          borderRadius: 10,
-          boxShadow: "0 8px 40px rgba(44,44,44,0.2)",
-          padding: 28,
-          width: 420,
-          maxWidth: "calc(100vw - 32px)",
-          maxHeight: "90vh",
-          overflowY: "auto",
-          fontFamily: "Jost, system-ui, sans-serif",
-        }}
-      >
+      };
+
+  return (
+    <div style={wrapStyle}>
+      <style>{`@keyframes tourSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes tourPulseGold { 0% { box-shadow: 0 0 0 0 rgba(184,134,11,0.4);} 100% { box-shadow: 0 0 0 8px rgba(184,134,11,0);} }`}</style>
+      <div style={cardStyle}>
+        {isMobile ? (
+          <div style={{ width: 36, height: 4, background: "rgba(44,44,44,0.15)", borderRadius: 2, margin: "0 auto 16px" }} />
+        ) : null}
         <StepHeader step={currentStep} />
         <StepBody
           step={currentStep}
@@ -286,7 +309,8 @@ function StepHeader({ step }: { step: number }) {
                 height: 6,
                 borderRadius: "50%",
                 background: done ? "#B8860B" : current ? "#2C2C2C" : "transparent",
-                border: current || done ? "1.5px solid #2C2C2C" : "1.5px solid rgba(44,44,44,0.2)",
+                border: done ? "1.5px solid #B8860B" : "1.5px solid rgba(44,44,44,0.2)",
+                boxShadow: current ? "0 0 0 2px #B8860B" : "none",
                 display: "inline-block",
               }}
             />
@@ -295,6 +319,18 @@ function StepHeader({ step }: { step: number }) {
       </div>
     </div>
   );
+}
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 639px)");
+    const update = () => setMobile(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
+  return mobile;
 }
 
 /* ─────────────────────────── Shared UI ─────────────────────────── */
