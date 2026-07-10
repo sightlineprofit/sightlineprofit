@@ -15,6 +15,7 @@ import {
   listKbItemsAdmin,
   upsertKbItem,
   deleteKbItem,
+  backfillFirmBillingFromStripe,
 } from "@/lib/admin.functions";
 import {
   getDemoFirmStatus,
@@ -26,7 +27,7 @@ import { getMyContext } from "@/lib/firm.functions";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { GoLiveChecklist } from "@/components/admin/GoLiveChecklist";
 import { cn } from "@/lib/utils";
-import { Shield, Eye, RotateCcw, Trash2, Plus, X, CalendarClock } from "lucide-react";
+import { Shield, Eye, RotateCcw, Trash2, Plus, X, CalendarClock, RefreshCw } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Admin — Sightline" }] }),
@@ -99,6 +100,7 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
   const list = useServerFn(listAllFirms);
   const setOv = useServerFn(setFirmOverrides);
   const setImp = useServerFn(setImpersonation);
+  const backfill = useServerFn(backfillFirmBillingFromStripe);
   const { data: firms = [] } = useQuery({ queryKey: ["admin-firms"], queryFn: () => list() });
 
   const overrideMut = useMutation({
@@ -111,6 +113,26 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
       qc.invalidateQueries();
       window.location.reload();
     },
+  });
+
+  const backfillMut = useMutation({
+    mutationFn: (firmId: string) =>
+      backfill({ data: { firmId, environment: "live" } }).then(async (r: any) => {
+        // If no live customer, try sandbox — useful during preview testing.
+        if (r && r.ok === false && (r.reason === "no_customer" || r.reason === "stripe_error")) {
+          return backfill({ data: { firmId, environment: "sandbox" } });
+        }
+        return r;
+      }),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["admin-firms"] });
+      if (r?.ok) {
+        alert(`Synced from Stripe: status=${r.status}, price=${r.priceLookup ?? "—"}`);
+      } else {
+        alert(`Backfill failed: ${r?.reason ?? "unknown"}${r?.error ? ` (${r.error})` : ""}`);
+      }
+    },
+    onError: (e: any) => alert(e?.message ?? "Backfill failed"),
   });
 
   return (
@@ -184,13 +206,25 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
                   />
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => impMut.mutate(f.id)}
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-creamd"
-                  >
-                    <Eye className="h-3 w-3" /> View as
-                  </button>
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => backfillMut.mutate(f.id)}
+                      disabled={backfillMut.isPending}
+                      title="Re-sync this firm's subscription from Stripe (use when webhook missed)"
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-creamd disabled:opacity-50"
+                    >
+                      <RefreshCw className={cn("h-3 w-3", backfillMut.isPending && backfillMut.variables === f.id && "animate-spin")} />
+                      Sync Stripe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => impMut.mutate(f.id)}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-creamd"
+                    >
+                      <Eye className="h-3 w-3" /> View as
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
