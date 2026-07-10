@@ -431,7 +431,7 @@ function Hero({ isMobile }: { isMobile: boolean }) {
           }}
         >
           {[
-            "14-day free trial",
+            "27-day free trial",
             "No credit card required to explore",
             "Founding rate locked at signup",
             "Cancel anytime",
@@ -811,7 +811,7 @@ function SocialProof() {
   const stats = [
     { n: "$311", l: "avg aligned rate revealed" },
     { n: "$72k", l: "avg annual gap at $100/hr" },
-    { n: "14 days", l: "free trial, full access" },
+    { n: "27 days", l: "free trial, full access" },
     { n: "5 min", l: "to see your aligned rate" },
   ];
   return (
@@ -2065,10 +2065,10 @@ function Pricing({ isMobile }: { isMobile: boolean }) {
             marginBottom: 10,
           }}
         >
-          Start my 14-day free trial →
+          Start my 27-day free trial →
         </button>
         <div style={{ fontFamily: FONT_SANS, fontSize: 12, color: C.mutedLight, textAlign: "center" }}>
-          No charge for 14 days · Card required to start trial · Cancel anytime
+          No charge for 27 days · Card required to start trial · Cancel anytime
         </div>
       </div>
 
@@ -2115,7 +2115,7 @@ function FAQ() {
       a: <>No. An aligned rate calculated from reasonable estimates is far more useful than no aligned rate at all. Start with your best approximations — your bank statement from the last 90 days is usually enough to get close on expenses. The picture gets more precise as you use the tool, not as a prerequisite to using it.</>,
     },
     {
-      q: "What happens when my 14-day trial ends?",
+      q: "What happens when my 27-day trial ends?",
       a: <>We'll remind you as your trial end date approaches. If you choose to continue, your card is charged at the rate you selected — $39.99/mo or $399.90/yr at founding pricing. If you decide not to continue, cancel before your trial ends and you won't be charged anything. Your data is preserved for 30 days after cancellation in case you change your mind.</>,
     },
     {
@@ -2286,7 +2286,7 @@ function FinalCTA({ isMobile }: { isMobile: boolean }) {
             cursor: "pointer",
           }}
         >
-          Start my free trial — it's free for 14 days →
+          Start my free trial — it's free for 27 days →
         </button>
         <div style={{ fontFamily: FONT_SANS, fontSize: 14, color: "rgba(255,255,255,0.3)", margin: "16px 0" }}>
           or join the waitlist if you're not ready yet

@@ -8,7 +8,7 @@ import { recordAlignedRate } from "@/lib/rate-history.server";
 import { logChange, diffFields, type ChangedField } from "@/lib/change-log.server";
 
 // Single-plan model: no tier parameter. All new firms are Practice-access
-// with a 14-day trial. Optional Stripe billing fields (billing_frequency,
+// with a 27-day trial. Optional Stripe billing fields (billing_frequency,
 // stripe_price_id) may be captured up-front from /register.
 const createFirmSchema = z.object({
   firmName: z.string().trim().min(1).max(120),
@@ -36,7 +36,7 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       return { firmId: profile.firm_id, alreadyExists: true };
     }
 
-    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const trialEndsAt = new Date(Date.now() + 27 * 24 * 60 * 60 * 1000).toISOString();
 
     // Bootstrap uses admin client: the firms_select policy requires
     // current_firm_id() to match, but the user's profile.firm_id is still

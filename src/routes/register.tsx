@@ -267,7 +267,7 @@ function RegisterPage() {
 
   // ─────────────── UI helpers ───────────────
   const trialEndDate = useMemo(() => {
-    const d = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const d = new Date(Date.now() + 27 * 24 * 60 * 60 * 1000);
     return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   }, []);
 
@@ -355,7 +355,7 @@ function StepAccount(props: {
         Create your account
       </h2>
       <p style={{ fontFamily: "Jost, sans-serif", fontSize: 13, color: "#6B6259", marginBottom: 24 }}>
-        Your 14-day free trial starts the moment you finish signing up.
+        Your 27-day free trial starts the moment you finish signing up.
       </p>
 
       <Field label="Your name">
@@ -613,7 +613,7 @@ function StepPayment(props: {
           lineHeight: 1.5,
         }}
       >
-        Your card will not be charged today. Your 14-day free trial starts now. We'll charge $
+        Your card will not be charged today. Your 27-day free trial starts now. We'll charge $
         {dollars} on {props.trialEndDate} unless you cancel before then.
       </div>
 
