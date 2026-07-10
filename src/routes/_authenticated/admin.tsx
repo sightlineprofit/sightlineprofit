@@ -657,7 +657,7 @@ function DemoTab() {
         </h2>
         <p
           className="text-ch/60"
-          style={{ fontFamily: "Jost, system-ui, sans-serif", fontSize: 13, fontWeight: 300 }}
+          style={{ fontFamily: "Jost, system-ui, sans-serif", fontSize: 13, fontWeight: 400 }}
         >
           Manage the demo firm used for testing and demonstrations.
         </p>

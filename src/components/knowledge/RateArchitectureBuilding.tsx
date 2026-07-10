@@ -228,7 +228,7 @@ export function RateArchitectureBuilding({ c }: { c: Calc }) {
         </div>
         <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{selectedLayer.subtitle}</div>
 
-        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.7, marginTop: 20, fontWeight: 300 }}>
+        <p style={{ fontSize: 14, color: CHARCOAL, lineHeight: 1.7, marginTop: 20, fontWeight: 400 }}>
           {selectedLayer.paragraph}
         </p>
 

@@ -467,7 +467,7 @@ function ProjectCard({ project: p, onOpen }: { project: ProjectListItem; onOpen:
               </div>
               <div
                 className="mt-0.5 text-[#aaa]"
-                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300 }}
+                style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400 }}
               >
                 {freshState === "stale"
                   ? `Based on hours logged ${daysSince} days ago. Actual may be lower.`

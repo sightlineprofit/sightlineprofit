@@ -77,7 +77,7 @@ export function ActionEnginePanel() {
           </h3>
           <p
             className="mt-1 text-ch/50"
-            style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300 }}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400 }}
           >
             Gap composition: {data.pricingGapPct.toFixed(0)}% pricing ·{" "}
             {data.utilGapPct.toFixed(0)}% utilization · {data.costGapPct.toFixed(0)}% cost structure
@@ -226,7 +226,7 @@ export function ActionEnginePanel() {
         )}
         <p
           className="mt-3 italic text-ch/40"
-          style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 300 }}
+          style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400 }}
         >
           {data.rotationNote}
         </p>
