@@ -114,6 +114,7 @@ function FirmsTab({ impersonatedFirmId }: { impersonatedFirmId: string | null })
 
   return (
     <div className="space-y-4">
+      <GoLiveChecklist />
       {impersonatedFirmId && (
         <div className="flex items-center justify-between rounded-md border border-gold/40 bg-goldp/40 px-4 py-2 text-sm">
           <span>Currently viewing as firm <code className="font-mono text-xs">{impersonatedFirmId}</code></span>
