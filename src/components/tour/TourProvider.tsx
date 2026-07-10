@@ -801,24 +801,136 @@ function Step5RateOrientation({ onAdvance, onSkip, onBack }: { onAdvance: () => 
 }
 
 function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<void>; onSkip: () => void; onBack: () => void }) {
+  const [projectCreated, setProjectCreated] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [sopAttached, setSopAttached] = useState(false);
+  const [scopeReviewed, setScopeReviewed] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Realtime: watch for a new project row for this firm while Step 6 is active.
+  useEffect(() => {
+    if (projectCreated) return;
+    const ch = supabase
+      .channel("tour-projects")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "projects" },
+        (payload: any) => {
+          const id = payload?.new?.id as string | undefined;
+          if (id) {
+            setProjectCreated(true);
+            setProjectId(id);
+          }
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectCreated]);
+
+  // Realtime: watch for project_phases inserted against the created project.
+  useEffect(() => {
+    if (!projectId || sopAttached) return;
+    const ch = supabase
+      .channel(`tour-phases-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "project_phases", filter: `project_id=eq.${projectId}` },
+        () => setSopAttached(true),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, sopAttached]);
+
+  // Scope review: 3s timer once user is on the project page and SOP is attached.
+  useEffect(() => {
+    if (!sopAttached || scopeReviewed) return;
+    if (!location.pathname.startsWith("/projects/")) return;
+    const t = setTimeout(() => setScopeReviewed(true), 3000);
+    return () => clearTimeout(t);
+  }, [sopAttached, scopeReviewed, location.pathname]);
+
+  const goToProjectCreate = () => navigate({ to: "/projects" as any });
+  const goToSopLibrary = () => {
+    if (projectId) navigate({ to: "/projects/$projectId" as any, params: { projectId } });
+  };
+
+  const item = (label: string, done: boolean, doneLabel: string) => (
+    <li style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "6px 0" }}>
+      <span
+        style={{
+          width: 14, height: 14, borderRadius: "50%",
+          border: "1.5px solid " + (done ? "#B8860B" : "rgba(44,44,44,0.25)"),
+          background: done ? "#B8860B" : "transparent",
+          color: "#FAF7F2", fontSize: 10, display: "inline-flex",
+          alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2,
+        }}
+      >{done ? "✓" : ""}</span>
+      <span>
+        <span style={{ fontSize: 13, color: "#2C2C2C", fontWeight: done ? 500 : 400 }}>{label}</span>
+        {done ? (
+          <div style={{ fontSize: 11, color: "#5C8A6E", marginTop: 2 }}>{doneLabel}</div>
+        ) : null}
+      </span>
+    </li>
+  );
+
+  const allDone = projectCreated && sopAttached && scopeReviewed;
+
   return (
     <>
       <h2 style={titleStyle}>Set up your first project.</h2>
       <p style={bodyStyle}>
-        Track whether your projects are profitable in real time — not after you've already closed them. Connect a project to an SOP workflow and Sightline scopes the hours for you.
+        Track whether your projects are profitable in real time — not after you've already closed them. Connect a project to an SOP workflow and Sightline scopes the hours automatically.{"\n\n"}Then as you log time, the margin needle moves.
       </p>
-      <ol style={{ paddingLeft: 18, color: "#6B6259", fontSize: 13, lineHeight: 1.9, margin: 0 }}>
-        <li>Create a project</li>
-        <li>Attach an SOP workflow</li>
-        <li>Review scoped hours</li>
-      </ol>
-      <NavRow step={6} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Next →" />
+      <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 12px" }}>
+        {item("Create a project", projectCreated, "Project created ✓")}
+        {item("Attach an SOP workflow", sopAttached, "Workflow attached ✓")}
+        {item("Review scoped hours", scopeReviewed, "Scope reviewed ✓")}
+      </ul>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8, flexWrap: "wrap" }}>
+        <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
+          Skip for now →
+        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {!projectCreated ? (
+            <button type="button" onClick={goToProjectCreate} style={primaryBtn}>Create my first project →</button>
+          ) : !sopAttached ? (
+            <button type="button" onClick={goToSopLibrary} style={primaryBtn}>Go to SOP library →</button>
+          ) : null}
+          {projectCreated && sopAttached ? (
+            <button
+              type="button"
+              onClick={onAdvance}
+              style={{ ...primaryBtn, animation: allDone ? "tourPulseGold 600ms ease-out 1" : undefined }}
+            >
+              Next →
+            </button>
+          ) : null}
+        </div>
+      </div>
     </>
   );
 }
 
 function Step7TimeEntry({ onComplete, onSkip, onBack }: { onComplete: () => Promise<void>; onSkip: () => void; onBack: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [entrySaved, setEntrySaved] = useState(false);
+
+  // Realtime watcher for new time entries.
+  useEffect(() => {
+    if (entrySaved) return;
+    const ch = supabase
+      .channel("tour-time-entries")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "time_entries" },
+        () => setEntrySaved(true),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [entrySaved]);
+
   const finish = async () => {
     setSaving(true);
     try { await onComplete(); } finally { setSaving(false); }
@@ -836,7 +948,29 @@ function Step7TimeEntry({ onComplete, onSkip, onBack }: { onComplete: () => Prom
         <li>Assign to a project (or log as firm time)</li>
         <li>Hit Log time</li>
       </ol>
-      <NavRow step={7} onBack={onBack} onSkip={onSkip} onNext={finish} nextLabel={saving ? "Finishing…" : "Finish setup ✓"} nextDisabled={saving} />
+      {entrySaved ? (
+        <div style={{ background: "rgba(92,138,110,0.07)", borderLeft: "2px solid #5C8A6E", borderRadius: "0 4px 4px 0", padding: "6px 10px", marginTop: 10, fontSize: 12, color: "#5C8A6E" }}>
+          First entry logged ✓ You're ready to finish.
+        </div>
+      ) : null}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8 }}>
+        <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
+          or skip this step →
+        </button>
+        <button
+          type="button"
+          onClick={finish}
+          disabled={!entrySaved || saving}
+          title={!entrySaved ? "Log at least one hour to finish setup" : undefined}
+          style={
+            entrySaved
+              ? { ...primaryBtn, animation: "tourPulseGold 600ms ease-out 1" }
+              : { ...primaryBtn, background: "rgba(44,44,44,0.25)", color: "rgba(255,255,255,0.4)", cursor: "not-allowed" }
+          }
+        >
+          {saving ? "Finishing…" : "Finish setup ✓"}
+        </button>
+      </div>
     </>
   );
 }
