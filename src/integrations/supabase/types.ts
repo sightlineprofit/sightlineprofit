@@ -559,6 +559,44 @@ export type Database = {
           },
         ]
       }
+      firm_preferences: {
+        Row: {
+          created_at: string
+          firm_id: string
+          tour_completed: boolean
+          tour_skipped_at: string | null
+          tour_step: number
+          updated_at: string
+          welcome_banner_dismissed: boolean
+        }
+        Insert: {
+          created_at?: string
+          firm_id: string
+          tour_completed?: boolean
+          tour_skipped_at?: string | null
+          tour_step?: number
+          updated_at?: string
+          welcome_banner_dismissed?: boolean
+        }
+        Update: {
+          created_at?: string
+          firm_id?: string
+          tour_completed?: boolean
+          tour_skipped_at?: string | null
+          tour_step?: number
+          updated_at?: string
+          welcome_banner_dismissed?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_preferences_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firm_signal_state: {
         Row: {
           cost_gap_pct: number | null
