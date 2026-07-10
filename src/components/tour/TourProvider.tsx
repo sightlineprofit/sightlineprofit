@@ -13,8 +13,7 @@ import {
   reconcileTour,
   dismissTourWelcomeBanner,
 } from "@/lib/tour.functions";
-import { upsertFirmConfig, addExpense } from "@/lib/firm.functions";
-import { upsertOwnerCompensation } from "@/lib/firm.functions";
+import { upsertFirmConfig, addExpense, upsertOwnerCompensation } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
 import { supabase } from "@/integrations/supabase/client";
 
