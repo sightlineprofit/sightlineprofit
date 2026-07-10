@@ -267,7 +267,7 @@ function RegisterPage() {
 
   // ─────────────── UI helpers ───────────────
   const trialEndDate = useMemo(() => {
-    const d = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const d = new Date(Date.now() + 27 * 24 * 60 * 60 * 1000);
     return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   }, []);
 
