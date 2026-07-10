@@ -307,3 +307,135 @@ export const getKbItemBySlug = createServerFn({ method: "GET" })
       .maybeSingle();
     return row;
   });
+
+type SubStatus = "trialing" | "active" | "past_due" | "canceled" | "incomplete";
+function normStatus(s: string): SubStatus {
+  if (s === "trialing" || s === "active" || s === "past_due" || s === "canceled" || s === "incomplete") return s;
+  if (s === "unpaid") return "past_due";
+  if (s === "incomplete_expired") return "canceled";
+  return "incomplete";
+}
+
+/**
+ * Super-admin manual backfill for firms whose Stripe subscription didn't get
+ * written to the DB (e.g. webhook was misrouted). Looks up the Stripe
+ * customer by firmId metadata (fallback: owner email), picks the most recent
+ * subscription, and mirrors it onto the firm row using the same shape the
+ * webhook uses.
+ */
+export const backfillFirmBillingFromStripe = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        firmId: z.string().uuid(),
+        environment: z.enum(["sandbox", "live"]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuper(context.supabase, context.userId);
+
+    const { data: firm } = await supabaseAdmin
+      .from("firms")
+      .select("id, owner_id, stripe_customer_id")
+      .eq("id", data.firmId)
+      .maybeSingle();
+    if (!firm) throw new Error("Firm not found");
+
+    let ownerEmail: string | null = null;
+    if (firm.owner_id) {
+      const { data: owner } = await supabaseAdmin
+        .from("profiles")
+        .select("email")
+        .eq("id", firm.owner_id)
+        .maybeSingle();
+      ownerEmail = owner?.email ?? null;
+    }
+
+    const env: StripeEnv = data.environment;
+    const stripe = createStripeClient(env);
+
+    try {
+      // 1. Find the Stripe customer.
+      let customerId: string | null = firm.stripe_customer_id ?? null;
+      if (!customerId) {
+        const found = await stripe.customers.search({
+          query: `metadata['firmId']:'${firm.id}'`,
+          limit: 1,
+        });
+        if (found.data.length) customerId = found.data[0].id;
+      }
+      if (!customerId && ownerEmail) {
+        const byEmail = await stripe.customers.list({ email: ownerEmail, limit: 10 });
+        if (byEmail.data.length) customerId = byEmail.data[0].id;
+      }
+      if (!customerId) {
+        return { ok: false, reason: "no_customer" as const };
+      }
+
+      // 2. Pick the most relevant subscription.
+      const subs = await stripe.subscriptions.list({
+        customer: customerId,
+        status: "all",
+        limit: 10,
+        expand: ["data.items.data.price"],
+      });
+      const rank = (s: string) =>
+        s === "active" ? 0 : s === "trialing" ? 1 : s === "past_due" ? 2 : s === "incomplete" ? 3 : 4;
+      const sub = subs.data.slice().sort((a, b) => rank(a.status) - rank(b.status))[0];
+      if (!sub) {
+        return { ok: false, reason: "no_subscription" as const, customerId };
+      }
+
+      // 3. Mirror onto firm using the webhook's write shape.
+      const item: any = (sub as any).items?.data?.[0];
+      const periodEnd = item?.current_period_end ?? (sub as any).current_period_end;
+      const trialEnd = (sub as any).trial_end ?? null;
+      const interval = item?.price?.recurring?.interval;
+      const freq: "monthly" | "annual" | null =
+        interval === "month" ? "monthly" : interval === "year" ? "annual" : null;
+      const lookup: string | null =
+        item?.price?.lookup_key || item?.price?.metadata?.lovable_external_id || null;
+
+      const patch: Record<string, unknown> = {
+        stripe_customer_id: customerId,
+        stripe_subscription_id: sub.id,
+        subscription_status: normStatus(sub.status),
+        subscription_tier: "practice",
+        trial_ends_at: trialEnd ? new Date(trialEnd * 1000).toISOString() : null,
+        past_due_since: sub.status === "past_due" ? new Date().toISOString() : null,
+      };
+      if (periodEnd) patch.current_period_end = new Date(periodEnd * 1000).toISOString();
+      if (freq) patch.billing_frequency = freq;
+      if (lookup) patch.stripe_price_id = lookup;
+
+      const { error: upErr } = await supabaseAdmin
+        .from("firms")
+        .update(patch as any)
+        .eq("id", firm.id);
+      if (upErr) throw upErr;
+
+      // 4. Ensure firmId metadata is on the sub so future webhooks resolve.
+      if (!sub.metadata?.firmId) {
+        try {
+          await stripe.subscriptions.update(sub.id, {
+            metadata: { ...(sub.metadata ?? {}), firmId: firm.id },
+          });
+        } catch (e) {
+          console.warn("[backfillFirmBillingFromStripe] failed to stamp sub metadata", e);
+        }
+      }
+
+      return {
+        ok: true as const,
+        customerId,
+        subscriptionId: sub.id,
+        status: patch.subscription_status,
+        priceLookup: lookup,
+      };
+    } catch (e) {
+      console.error("[backfillFirmBillingFromStripe]", e);
+      return { ok: false as const, reason: "stripe_error" as const, error: getStripeErrorMessage(e) };
+    }
+  });
