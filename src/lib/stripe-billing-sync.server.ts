@@ -283,7 +283,7 @@ export async function backfillFirmBillingFromStripeServer(
 
   let customer: Stripe.Customer | null = null;
   if (firm.stripe_customer_id) {
-    const retrieved = await stripe.customers.retrieve(firm.stripe_customer_id);
+    const retrieved: any = await stripe.customers.retrieve(firm.stripe_customer_id);
     if (!retrieved.deleted) customer = retrieved;
   }
   if (!customer) {
