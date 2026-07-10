@@ -205,7 +205,11 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     if (!profile?.firm_id) throw new Error("No firm");
     const isPrincipal = profile.role === "principal";
     const isAdmin = profile.role === "principal" || profile.role === "admin";
-    const [{ data: project }, { data: phases }, { data: entries }, { data: config }, { data: template }, { data: team }, { data: activityLog }, { data: milestones }] = await Promise.all([
+    const [
+      { data: project }, { data: phases }, { data: entries }, { data: config },
+      { data: template }, { data: team }, { data: activityLog }, { data: milestones },
+      { data: expenses }, { data: ownerComp }, { data: teamBurdens },
+    ] = await Promise.all([
       supabase.from("projects").select("*").eq("id", data.id).eq("firm_id", profile.firm_id).single(),
       supabase.from("project_phases").select("*").eq("project_id", data.id).order("sort_order"),
       supabase.from("time_entries").select("*").eq("project_id", data.id).order("date", { ascending: false }),
@@ -218,6 +222,14 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       supabase.from("profiles").select("id, name, email, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
       supabase.from("project_activity_log").select("*").eq("project_id", data.id).order("occurred_at", { ascending: false }),
       supabase.from("project_milestones").select("*").eq("project_id", data.id).order("milestone_date"),
+      supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
+      supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
+      supabase
+        .from("firm_members")
+        .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+        .eq("firm_id", profile.firm_id)
+        .eq("is_active", true)
+        .neq("role_type", "principal"),
     ]);
     if (!project) throw new Error("Project not found");
     const phaseIds = (phases ?? []).map((p) => p.id);
@@ -231,6 +243,20 @@ export const getProjectDetail = createServerFn({ method: "GET" })
           .eq("project_id", data.id)
           .order("changed_at", { ascending: false })
       : { data: [] as never[] };
+    const fin = calcFinance(
+      (config as FirmConfig | null) ?? null,
+      ((expenses as unknown) as Expense[]) ?? [],
+      {
+        ownerComp: (ownerComp as any) ?? [],
+        teamProfiles: (teamBurdens as any) ?? [],
+      },
+    );
+    const firmMetrics = {
+      breakEvenRate: Number(fin.breakEvenRate) || 0,
+      alignedRate: Number(fin.alignedRate) || 0,
+      billedRate: Number(fin.billedRate) || 0,
+      perHour: fin.perHour,
+    };
     return {
       project,
       phases: phases ?? [],
@@ -244,6 +270,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       milestones: milestones ?? [],
       isPrincipal,
       isAdmin,
+      firmMetrics,
     };
   });
 
