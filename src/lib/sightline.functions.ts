@@ -1,7 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { calc as calcFinance, type Expense, type FirmConfig } from "@/lib/finance";
+import {
+  calc as calcFinance,
+  getProjectMarginCalc,
+  type Expense,
+  type FirmConfig,
+} from "@/lib/finance";
 
 export const getProjectList = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -71,6 +76,7 @@ export const getProjectList = createServerFn({ method: "GET" })
     const fin = calcFinance(config as FirmConfig | null, (expenses ?? []) as unknown as Expense[]);
     const firmBreakEven = Number(fin.breakEvenRate) || 0;
     const firmBilledRate = Number((config as { rate_billed?: number } | null)?.rate_billed) || 0;
+    const firmAlignedRate = Number(fin.alignedRate) || 0;
 
     const now = Date.now();
     const weekAgo = now - 7 * 24 * 3600 * 1000;
@@ -106,6 +112,11 @@ export const getProjectList = createServerFn({ method: "GET" })
 
     return {
       config,
+      firmMetrics: {
+        breakEvenRate: firmBreakEven,
+        alignedRate: firmAlignedRate,
+        perHour: fin.perHour,
+      },
       projects: (projects ?? []).map((p) => {
         const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null };
         const fixedFee = Number((p as { fixed_fee?: number | null }).fixed_fee) || 0;
@@ -113,14 +124,22 @@ export const getProjectList = createServerFn({ method: "GET" })
         const scopedHrs = totals[p.id]?.scoped ?? Number(p.scoped_hrs || 0);
         const mode: "fixed" | "hourly" | "none" = fixedFee > 0 ? "fixed" : scopedRate > 0 ? "hourly" : "none";
         let projectFee = 0;
-        let marginRemaining: number | null = null;
         if (mode === "fixed") {
           projectFee = fixedFee;
-          marginRemaining = projectFee - a.totalCost;
         } else if (mode === "hourly") {
           projectFee = scopedRate * scopedHrs;
-          marginRemaining = (scopedRate * scopedHrs) - a.totalCost;
         }
+        const actualHrs = totals[p.id]?.actual ?? 0;
+        const marginCalc = mode === "none"
+          ? null
+          : getProjectMarginCalc({
+              projectFee,
+              scopedHours: scopedHrs,
+              hoursLogged: actualHrs,
+              breakEvenRate: firmBreakEven,
+              alignedRate: firmAlignedRate,
+            });
+        const marginRemaining = marginCalc ? marginCalc.remainingMargin : null;
         // Freshness computation.
         // lastActivityAt = MAX(most recent time entry, most recent
         // 'nothing_to_report' override). Real time entries live in
@@ -166,6 +185,7 @@ export const getProjectList = createServerFn({ method: "GET" })
             remaining: marginRemaining,
             hasAnyEntry: a.hasAnyEntry,
             usingFallbackCostRate: a.usingFallbackCostRate,
+            calc: marginCalc,
           },
         };
       }),
