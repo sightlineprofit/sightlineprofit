@@ -93,7 +93,7 @@ function PostAuth() {
         const next = await getCtx();
         const nextFirm = next?.firm as any;
         if (nextFirm?.stripe_subscription_id) {
-          const target = landingPathFor(next.profile, nextFirm);
+          const target = landingPathFor(next!.profile, nextFirm);
           nav({ to: target as any });
           return;
         }
