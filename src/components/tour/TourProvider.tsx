@@ -140,6 +140,13 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       }
       await new Promise((r) => setTimeout(r, 350));
     }
+    // Step 6 → Step 7: Step 7 spotlights the time calendar.
+    if (currentStep === 6) {
+      if (location.pathname !== "/time-calendar") {
+        await navigate({ to: "/time-calendar" });
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    }
     setCurrent((s) => Math.min(7, s + 1));
   }, [currentStep, setStep, refetch, completeFn, qc, location.pathname, navigate]);
 
