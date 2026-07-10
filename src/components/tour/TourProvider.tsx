@@ -10,9 +10,12 @@ import {
   skipTourFn,
   completeTourFn,
   resetTourFn,
+  reconcileTour,
+  dismissTourWelcomeBanner,
 } from "@/lib/tour.functions";
 import { upsertFirmConfig, addExpense } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 type TourPrefs = {
   tour_completed: boolean;
@@ -50,6 +53,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const skipFn = useServerFn(skipTourFn);
   const completeFn = useServerFn(completeTourFn);
   const resetFn = useServerFn(resetTourFn);
+  const reconcileFn = useServerFn(reconcileTour);
+  const dismissBannerFn = useServerFn(dismissTourWelcomeBanner);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -61,7 +66,26 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const [isOpen, setOpen] = useState(false);
   const [currentStep, setCurrent] = useState(1);
+  const [skipConfirmOpen, setSkipConfirmOpen] = useState(false);
   const autoLaunchedRef = useRef(false);
+  const reconciledRef = useRef(false);
+
+  // Run reconciliation once per session, before any auto-launch decision.
+  useEffect(() => {
+    if (reconciledRef.current) return;
+    if (!prefs) return;
+    if (prefs.tour_completed) { reconciledRef.current = true; return; }
+    reconciledRef.current = true;
+    (async () => {
+      try {
+        await reconcileFn();
+      } catch (e) {
+        console.warn("reconcileTour failed", e);
+      } finally {
+        await refetch();
+      }
+    })();
+  }, [prefs, reconcileFn, refetch]);
 
   // Auto-launch on dashboard 1.5s after load if fresh state
   useEffect(() => {
@@ -70,7 +94,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (location.pathname !== "/dashboard") return;
     if (prefs.tour_completed) return;
     if (prefs.tour_skipped_at) return;
-    if (prefs.tour_step !== 0) return;
+    if (prefs.tour_step !== 0) return; // mid-tour users only see resume prompt
     autoLaunchedRef.current = true;
     const t = setTimeout(() => {
       setCurrent(1);
@@ -80,10 +104,11 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   }, [prefs, location.pathname]);
 
   const startTour = useCallback(() => {
-    setCurrent(1);
+    const resumeAt = Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
+    setCurrent(resumeAt);
     setOpen(true);
     if (location.pathname !== "/dashboard") navigate({ to: "/dashboard" });
-  }, [location.pathname, navigate]);
+  }, [prefs, location.pathname, navigate]);
 
   const resumeTour = useCallback(() => {
     const next = Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
@@ -107,21 +132,38 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       setOpen(false);
       return;
     }
+    // Step 4 → Step 5: ensure we're on /dashboard with rate visible before spotlighting.
+    if (currentStep === 4) {
+      if (location.pathname !== "/dashboard") {
+        await navigate({ to: "/dashboard" });
+      }
+      await new Promise((r) => setTimeout(r, 350));
+    }
     setCurrent((s) => Math.min(7, s + 1));
-  }, [currentStep, setStep, refetch, completeFn, qc]);
+  }, [currentStep, setStep, refetch, completeFn, qc, location.pathname, navigate]);
 
   const previousStep = useCallback(() => {
     setCurrent((s) => Math.max(1, s - 1));
   }, []);
 
-  const skipTour = useCallback(async () => {
+  const performSkip = useCallback(async () => {
     try {
       await skipFn();
     } finally {
       qc.invalidateQueries({ queryKey: ["firm-preferences"] });
       setOpen(false);
+      setSkipConfirmOpen(false);
     }
   }, [skipFn, qc]);
+
+  // Split skip behavior: confirm only when skipping before Step 3 is complete.
+  const skipTour = useCallback(async () => {
+    if (currentStep < 3) {
+      setSkipConfirmOpen(true);
+      return;
+    }
+    await performSkip();
+  }, [currentStep, performSkip]);
 
   const completeTour = useCallback(async () => {
     try {
@@ -136,6 +178,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     await resetFn();
     await refetch();
     autoLaunchedRef.current = false;
+    reconciledRef.current = false;
     qc.invalidateQueries({ queryKey: ["firm-preferences"] });
   }, [resetFn, refetch, qc]);
 
@@ -144,12 +187,38 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [prefs, isOpen, currentStep, startTour, resumeTour, skipTour, nextStep, previousStep, completeTour, resetTour, refetch],
   );
 
+  const showCompletionBanner =
+    !!prefs &&
+    prefs.tour_completed &&
+    !prefs.welcome_banner_dismissed &&
+    !prefs.tour_skipped_at &&
+    location.pathname === "/dashboard";
+
   return (
     <Ctx.Provider value={value}>
       {children}
       {typeof document !== "undefined" && isOpen ? createPortal(<TourOverlay />, document.body) : null}
       {typeof document !== "undefined" && !isOpen && prefs && !prefs.tour_completed && prefs.tour_step > 0
         ? createPortal(<ResumePrompt onClick={resumeTour} step={prefs.tour_step} />, document.body)
+        : null}
+      {typeof document !== "undefined" && skipConfirmOpen
+        ? createPortal(
+            <SkipConfirm
+              onCancel={() => setSkipConfirmOpen(false)}
+              onConfirm={performSkip}
+            />,
+            document.body,
+          )
+        : null}
+      {typeof document !== "undefined" && showCompletionBanner
+        ? createPortal(
+            <CompletionBanner
+              onDismiss={async () => {
+                try { await dismissBannerFn(); } finally { qc.invalidateQueries({ queryKey: ["firm-preferences"] }); }
+              }}
+            />,
+            document.body,
+          )
         : null}
     </Ctx.Provider>
   );
