@@ -1224,6 +1224,10 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
             hasOwnerSalary={Number(config?.comp_draw_annual ?? 0) > 0}
             alignedRate={calcFinance(config ?? null, []).alignedRate}
             onOpenSettings={openMetaEdit}
+            breakEvenRate={firmMetrics.breakEvenRate}
+            firmAlignedRate={firmMetrics.alignedRate}
+            perHour={firmMetrics.perHour}
+            teamCount={team.length}
           />
 
           <HoursSummary
