@@ -355,7 +355,7 @@ function StepAccount(props: {
         Create your account
       </h2>
       <p style={{ fontFamily: "Jost, sans-serif", fontSize: 13, color: "#6B6259", marginBottom: 24 }}>
-        Your 14-day free trial starts the moment you finish signing up.
+        Your 27-day free trial starts the moment you finish signing up.
       </p>
 
       <Field label="Your name">
