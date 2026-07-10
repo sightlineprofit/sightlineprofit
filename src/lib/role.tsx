@@ -106,7 +106,6 @@ export function landingPathFor(
   if (profile.is_super_admin) return "/admin";
   const role = (profile.role as AppRole) ?? "team";
   if (role === "principal" || role === "admin") {
-    if (firm && firm.onboarding_completed === false) return "/onboarding";
     const key = firm?.default_landing_page ?? profile.preferred_home ?? "dashboard";
     return LANDING_PAGE_MAP[key] ?? "/dashboard";
   }

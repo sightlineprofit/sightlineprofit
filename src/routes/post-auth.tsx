@@ -66,8 +66,6 @@ function PostAuth() {
           const needsPayment = !firm?.stripe_subscription_id;
           if (needsPayment) {
             nav({ to: "/register", search: { step: "payment" } as any });
-          } else if (firm && firm.onboarding_completed !== true) {
-            nav({ to: "/onboarding" });
           } else {
             const target = landingPathFor(ctx.profile, firm);
             nav({ to: target as any });
