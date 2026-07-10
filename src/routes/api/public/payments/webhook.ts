@@ -153,7 +153,7 @@ async function markPastDue(invoice: any) {
   if (error) console.error("[stripe-webhook] past_due failed", error);
 }
 
-export const Route = createFileRoute("/api/public/stripe-webhook")({
+export const Route = createFileRoute("/api/public/payments/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
