@@ -8,7 +8,7 @@ import {
   CHECKOUT_PRICE_KEYS,
   PRICE_TO_TIER,
 } from "@/lib/stripe.server";
-import { resolveOrCreateCustomerForFirm, resolvePriceKey } from "@/lib/stripe-billing-sync.server";
+import { resolveOrCreateCustomerForFirm, resolvePriceKey, updateFirmBillingFromBackend } from "@/lib/stripe-billing-sync.server";
 
 const envSchema = z.enum(["sandbox", "live"]);
 const priceKeySchema = z.enum(CHECKOUT_PRICE_KEYS);
@@ -63,10 +63,7 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
         // while the webhook is still in flight.
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-          await supabaseAdmin
-            .from("firms")
-            .update({ stripe_customer_id: customerId })
-            .eq("id", firm.id);
+          await updateFirmBillingFromBackend(supabaseAdmin, firm.id, { stripe_customer_id: customerId });
         } catch (e) {
           console.warn("[createCheckoutSession] failed to cache customer id", e);
         }
@@ -239,16 +236,13 @@ export const activateSubscription = createServerFn({ method: "POST" })
       });
 
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin
-        .from("firms")
-        .update({
+      await updateFirmBillingFromBackend(supabaseAdmin, firm.id, {
           subscription_status: sub.status,
           billing_frequency: data.frequency,
           stripe_subscription_id: sub.id,
           stripe_price_id: priceKey,
           stripe_payment_method_id: paymentMethodId,
-        } as any)
-        .eq("id", firm.id);
+        });
 
       return { ok: true };
     } catch (error) {
@@ -325,10 +319,10 @@ export const switchBillingFrequency = createServerFn({ method: "POST" })
       });
 
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin
-        .from("firms")
-        .update({ billing_frequency: data.target, stripe_price_id: newPriceKey } as any)
-        .eq("id", firm.id);
+      await updateFirmBillingFromBackend(supabaseAdmin, firm.id, {
+        billing_frequency: data.target,
+        stripe_price_id: newPriceKey,
+      });
 
       return { ok: true };
     } catch (error) {
