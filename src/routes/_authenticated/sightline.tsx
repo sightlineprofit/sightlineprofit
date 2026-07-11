@@ -860,6 +860,9 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const detailSnapshot = (data as unknown as { snapshot?: any }).snapshot ?? null;
+  const detailHoursLogged = (entries ?? []).reduce((s, e) => s + Number(e.hrs || 0), 0);
+  const detailLastEntryIso = entries.length ? String(entries[0].date) : null;
   const firmMetrics = (data as unknown as {
     firmMetrics?: {
       breakEvenRate: number;
