@@ -5,6 +5,7 @@ import {
   calc as calcFinance,
   getProjectMarginCalc,
   buildSnapshotFromCalc,
+  getProjectFinancials,
   type Expense,
   type FirmConfig,
 } from "@/lib/finance";
@@ -258,6 +259,49 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       billedRate: Number(fin.billedRate) || 0,
       perHour: fin.perHour,
     };
+
+    // ─── Locked cost snapshot (retroactively backfilled on first load) ───
+    let snapshot: any = null;
+    {
+      const { data: existing } = await (supabase
+        .from("project_cost_snapshots") as any)
+        .select("*")
+        .eq("project_id", data.id)
+        .maybeSingle();
+      if (existing) {
+        snapshot = existing;
+      } else {
+        const body = buildSnapshotFromCalc(fin, (config as FirmConfig | null) ?? null, {
+          isRetroactive: true,
+        });
+        const { data: inserted } = await (supabase
+          .from("project_cost_snapshots") as any)
+          .insert({ project_id: data.id, firm_id: profile.firm_id, ...body })
+          .select("*")
+          .single();
+        snapshot = inserted ?? { project_id: data.id, firm_id: profile.firm_id, ...body };
+      }
+    }
+
+    // Compute snapshot-locked financials for this project
+    const hoursLogged = (entries ?? []).reduce(
+      (s: number, e: any) => s + (Number(e.hrs) || 0),
+      0,
+    );
+    const lastEntryDate = (entries ?? [])
+      .map((e: any) => e.date as string | null)
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0] ?? null;
+    const financials = snapshot
+      ? getProjectFinancials({
+          project: project as any,
+          snapshot: snapshot as any,
+          hoursLogged,
+          lastEntryDate,
+        })
+      : null;
+
     return {
       project,
       phases: phases ?? [],
@@ -272,6 +316,8 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       isPrincipal,
       isAdmin,
       firmMetrics,
+      snapshot,
+      financials,
     };
   });
 
