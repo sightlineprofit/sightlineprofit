@@ -4,6 +4,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   calc as calcFinance,
   getProjectMarginCalc,
+  buildSnapshotFromCalc,
+  getProjectFinancials,
   type Expense,
   type FirmConfig,
 } from "@/lib/finance";
@@ -257,6 +259,49 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       billedRate: Number(fin.billedRate) || 0,
       perHour: fin.perHour,
     };
+
+    // ─── Locked cost snapshot (retroactively backfilled on first load) ───
+    let snapshot: any = null;
+    {
+      const { data: existing } = await (supabase
+        .from("project_cost_snapshots") as any)
+        .select("*")
+        .eq("project_id", data.id)
+        .maybeSingle();
+      if (existing) {
+        snapshot = existing;
+      } else {
+        const body = buildSnapshotFromCalc(fin, (config as FirmConfig | null) ?? null, {
+          isRetroactive: true,
+        });
+        const { data: inserted } = await (supabase
+          .from("project_cost_snapshots") as any)
+          .insert({ project_id: data.id, firm_id: profile.firm_id, ...body })
+          .select("*")
+          .single();
+        snapshot = inserted ?? { project_id: data.id, firm_id: profile.firm_id, ...body };
+      }
+    }
+
+    // Compute snapshot-locked financials for this project
+    const hoursLogged = (entries ?? []).reduce(
+      (s: number, e: any) => s + (Number(e.hrs) || 0),
+      0,
+    );
+    const lastEntryDate = (entries ?? [])
+      .map((e: any) => e.date as string | null)
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0] ?? null;
+    const financials = snapshot
+      ? getProjectFinancials({
+          project: project as any,
+          snapshot: snapshot as any,
+          hoursLogged,
+          lastEntryDate,
+        })
+      : null;
+
     return {
       project,
       phases: phases ?? [],
@@ -271,6 +316,8 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       isPrincipal,
       isAdmin,
       firmMetrics,
+      snapshot,
+      financials,
     };
   });
 
@@ -370,6 +417,9 @@ const createProjectSchema = z.object({
   status: z.enum(["active", "pipeline", "completed", "on_hold"]).default("active"),
   scoped_rate: z.number().min(0).max(100000).optional().nullable(),
   fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
+  pricing_method: z.enum(["flat_fee", "hourly", "hybrid"]).optional().nullable(),
+  flat_fee_amount: z.number().min(0).max(100000000).optional().nullable(),
+  hourly_scoped_hours: z.number().min(0).max(100000).optional().nullable(),
   start_date: z.string().optional().nullable(),
   end_date: z.string().optional().nullable(),
   sop_template_id: z.string().uuid().optional().nullable(),
@@ -429,7 +479,17 @@ export const createProject = createServerFn({ method: "POST" })
         start_date: data.start_date || null,
         end_date: data.end_date || null,
         sop_template_id: data.sop_template_id ?? null,
-      })
+        // Explicit pricing method (falls back to legacy inference).
+        pricing_method:
+          data.pricing_method ??
+          ((Number(data.fixed_fee) || 0) > 0 && (Number(data.scoped_rate) || 0) > 0
+            ? "hybrid"
+            : (Number(data.scoped_rate) || 0) > 0
+              ? "hourly"
+              : "flat_fee"),
+        flat_fee_amount: data.flat_fee_amount ?? data.fixed_fee ?? null,
+        hourly_scoped_hours: data.hourly_scoped_hours ?? null,
+      } as any)
       .select("id")
       .single();
     if (error) throw new Error(error.message);
@@ -487,6 +547,48 @@ export const createProject = createServerFn({ method: "POST" })
         }
       }
     }
+
+    // ─── Lock in the firm's current cost structure as this project's
+    //     immutable snapshot. Never mutated after creation.
+    try {
+      const [
+        { data: firmConfig },
+        { data: firmExpenses },
+        { data: firmOwnerComp },
+        { data: firmTeam },
+      ] = await Promise.all([
+        supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+        supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
+        supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
+        supabase
+          .from("firm_members")
+          .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+          .eq("firm_id", profile.firm_id)
+          .eq("is_active", true)
+          .neq("role_type", "principal"),
+      ]);
+      const fin = calcFinance(
+        (firmConfig as FirmConfig | null) ?? null,
+        ((firmExpenses as unknown) as Expense[]) ?? [],
+        {
+          ownerComp: (firmOwnerComp as any) ?? [],
+          teamProfiles: (firmTeam as any) ?? [],
+        },
+      );
+      const snapshotBody = buildSnapshotFromCalc(fin, (firmConfig as FirmConfig | null) ?? null, {
+        isRetroactive: false,
+      });
+      await (supabase.from("project_cost_snapshots") as any).insert({
+        project_id: project.id,
+        firm_id: profile.firm_id,
+        ...snapshotBody,
+      });
+    } catch (e) {
+      // Don't fail project creation if snapshot insert races or errors — the
+      // retroactive backfill in getProjectDetail will create one on first load.
+      console.warn("[createProject] snapshot insert failed:", e);
+    }
+
     return { id: project.id };
   });
 

@@ -392,3 +392,237 @@ export function getProjectMarginCalc(args: {
     remainingMargin, remainingMarginPct,
   };
 }
+
+// ─── getProjectFinancials — snapshot-locked project math ────────────────────
+// Single source of truth for the redesigned project card + detail. Reads from
+// a project_cost_snapshots row (locked at project creation) instead of the
+// firm's current cost structure, so margin never shifts under a project after
+// it's quoted. Tax reserve is applied to gross margin (profit-only), per
+// spec: taxReserve = grossMargin × tax_reserve_pct.
+
+export type ProjectPricingMethod = "flat_fee" | "hourly" | "hybrid";
+
+export type ProjectCostSnapshot = {
+  annual_billable_hrs: number;
+  target_margin_pct: number;
+  weeks_per_year: number;
+  comp_per_hour: number;
+  opex_per_hour: number;
+  team_per_hour: number;
+  break_even_rate: number;
+  aligned_rate: number;
+  tax_reserve_pct: number;
+  total_owner_comp: number;
+  total_opex: number;
+  total_team_cost: number;
+  total_cost_floor: number;
+};
+
+export type ProjectFinancialsInput = {
+  project: {
+    pricing_method: ProjectPricingMethod | string | null | undefined;
+    flat_fee_amount?: number | null;
+    scoped_rate?: number | null;
+    scoped_hrs?: number | null;
+    hourly_scoped_hours?: number | null;
+  };
+  snapshot: ProjectCostSnapshot;
+  hoursLogged: number;
+  lastEntryDate?: Date | string | null;
+};
+
+export type ProjectFinancials = {
+  // Revenue
+  totalRevenue: number;
+  pricingMethod: ProjectPricingMethod;
+  flatFeeAmount: number;
+  hourlyRevenue: number;
+  scopedHours: number;
+  // Cost allocation (locked to snapshot)
+  compAllocation: number;
+  opexAllocation: number;
+  teamAllocation: number;
+  totalCostAllocation: number;
+  lockedMargin: number;
+  lockedMarginPct: number;
+  taxReserve: number;
+  netProfit: number;
+  netProfitPct: number;
+  // Hours
+  hoursLogged: number;
+  hoursRemaining: number;
+  overHours: number;
+  pctConsumed: number;
+  // Erosion
+  marginErosion: number;
+  marginRemaining: number;
+  marginRemainingPct: number;
+  // Targets
+  targetMarginPct: number;
+  targetMarginDollar: number;
+  marginVariance: number;
+  isAboveTarget: boolean;
+  isBelowTarget: boolean;
+  isBelowBreakEven: boolean;
+  // Rate
+  effectiveRate: number | null;
+  effectiveVsAligned: number;
+  effectiveVsBreakEven: number;
+  // Freshness
+  lastEntryDate: Date | null;
+  daysSinceEntry: number;
+  freshnessState: "current" | "stale" | "critical" | "none";
+  isReliable: boolean;
+};
+
+function normalizePricingMethod(v: unknown): ProjectPricingMethod {
+  return v === "hourly" || v === "hybrid" ? v : "flat_fee";
+}
+
+export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFinancials {
+  const { project, snapshot } = input;
+  const pricingMethod = normalizePricingMethod(project.pricing_method);
+  const flatFeeAmount = Number(project.flat_fee_amount) || 0;
+  const scopedRate = Number(project.scoped_rate) || 0;
+  const scopedHrsField = Number(project.scoped_hrs) || 0;
+  const hourlyScopedHours = Number(project.hourly_scoped_hours) || 0;
+
+  let totalRevenue = 0;
+  let hourlyRevenue = 0;
+  let scopedHours = 0;
+
+  if (pricingMethod === "flat_fee") {
+    totalRevenue = flatFeeAmount;
+    scopedHours = scopedHrsField;
+  } else if (pricingMethod === "hourly") {
+    scopedHours = scopedHrsField;
+    hourlyRevenue = scopedRate * scopedHours;
+    totalRevenue = hourlyRevenue;
+  } else {
+    // hybrid: flat portion + hourly portion
+    hourlyRevenue = scopedRate * hourlyScopedHours;
+    totalRevenue = flatFeeAmount + hourlyRevenue;
+    scopedHours = scopedHrsField; // total scoped (flat phase hrs + hourly hrs)
+  }
+
+  const breakEven = Number(snapshot.break_even_rate) || 0;
+  const aligned = Number(snapshot.aligned_rate) || 0;
+  const taxReservePct = Number(snapshot.tax_reserve_pct) || 0.25;
+  const targetMarginPct = Number(snapshot.target_margin_pct) || 0;
+
+  const compAllocation = (Number(snapshot.comp_per_hour) || 0) * scopedHours;
+  const opexAllocation = (Number(snapshot.opex_per_hour) || 0) * scopedHours;
+  const teamAllocation = (Number(snapshot.team_per_hour) || 0) * scopedHours;
+  const totalCostAllocation = breakEven * scopedHours;
+
+  const lockedMargin = totalRevenue - totalCostAllocation;
+  const lockedMarginPct = totalRevenue > 0 ? (lockedMargin / totalRevenue) * 100 : 0;
+  const taxReserve = lockedMargin > 0 ? lockedMargin * taxReservePct : 0;
+  const netProfit = lockedMargin - taxReserve;
+  const netProfitPct = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+  const hoursLogged = Math.max(0, Number(input.hoursLogged) || 0);
+  const hoursRemaining = Math.max(0, scopedHours - hoursLogged);
+  const overHours = Math.max(0, hoursLogged - scopedHours);
+  const pctConsumed = scopedHours > 0 ? (hoursLogged / scopedHours) * 100 : 0;
+
+  const marginErosion = overHours * breakEven;
+  const marginRemaining = lockedMargin - marginErosion;
+  const marginRemainingPct = totalRevenue > 0 ? (marginRemaining / totalRevenue) * 100 : 0;
+
+  const targetMarginDollar = totalRevenue * (targetMarginPct / 100);
+  const marginVariance = marginRemainingPct - targetMarginPct;
+  const isAboveTarget = marginVariance > 0.5;
+  const isBelowTarget = marginVariance < -0.5;
+
+  const effectiveRate = hoursLogged > 0 ? totalRevenue / hoursLogged : null;
+  const effectiveVsAligned = effectiveRate == null ? 0 : effectiveRate - aligned;
+  const effectiveVsBreakEven = effectiveRate == null ? 0 : effectiveRate - breakEven;
+  const isBelowBreakEven = effectiveRate != null && effectiveRate < breakEven;
+
+  // Freshness
+  let lastEntryDate: Date | null = null;
+  if (input.lastEntryDate) {
+    const d = input.lastEntryDate instanceof Date
+      ? input.lastEntryDate
+      : new Date(input.lastEntryDate);
+    if (!Number.isNaN(d.getTime())) lastEntryDate = d;
+  }
+  const now = Date.now();
+  const daysSinceEntry = lastEntryDate
+    ? Math.floor((now - lastEntryDate.getTime()) / (24 * 3600 * 1000))
+    : 0;
+  let freshnessState: ProjectFinancials["freshnessState"];
+  if (!lastEntryDate || hoursLogged === 0) freshnessState = "none";
+  else if (daysSinceEntry <= 6) freshnessState = "current";
+  else if (daysSinceEntry <= 20) freshnessState = "stale";
+  else freshnessState = "critical";
+  const isReliable = freshnessState === "current" || freshnessState === "none";
+
+  return {
+    totalRevenue,
+    pricingMethod,
+    flatFeeAmount,
+    hourlyRevenue,
+    scopedHours,
+    compAllocation,
+    opexAllocation,
+    teamAllocation,
+    totalCostAllocation,
+    lockedMargin,
+    lockedMarginPct,
+    taxReserve,
+    netProfit,
+    netProfitPct,
+    hoursLogged,
+    hoursRemaining,
+    overHours,
+    pctConsumed,
+    marginErosion,
+    marginRemaining,
+    marginRemainingPct,
+    targetMarginPct,
+    targetMarginDollar,
+    marginVariance,
+    isAboveTarget,
+    isBelowTarget,
+    isBelowBreakEven,
+    effectiveRate,
+    effectiveVsAligned,
+    effectiveVsBreakEven,
+    lastEntryDate,
+    daysSinceEntry,
+    freshnessState,
+    isReliable,
+  };
+}
+
+// Build a snapshot payload from a live calc() result. Used by createProject
+// and the retroactive backfill path in getProjectDetail.
+export function buildSnapshotFromCalc(
+  fin: ReturnType<typeof calc>,
+  config: FirmConfig | null,
+  opts: { isRetroactive?: boolean } = {},
+) {
+  const abh = Number(fin.annualBillableHrs) || 0;
+  const compPerHour = abh > 0 ? (Number(fin.compTotal) || 0) / abh : 0;
+  const opexTotal = (Number(fin.opexRecurring) || 0) + (Number(fin.opexOneTime) || 0);
+  const opexPerHour = abh > 0 ? opexTotal / abh : 0;
+  const teamPerHour = abh > 0 ? (Number(fin.teamCostTotal) || 0) / abh : 0;
+  return {
+    annual_billable_hrs: abh,
+    target_margin_pct: Number(config?.target_gross_margin_pct) || 0,
+    weeks_per_year: Number(fin.weeksPerYear) || 48,
+    comp_per_hour: compPerHour,
+    opex_per_hour: opexPerHour,
+    team_per_hour: teamPerHour,
+    break_even_rate: Number(fin.breakEvenRate) || 0,
+    aligned_rate: Number(fin.alignedRate) || 0,
+    tax_reserve_pct: 0.25,
+    total_owner_comp: Number(fin.compTotal) || 0,
+    total_opex: opexTotal,
+    total_team_cost: Number(fin.teamCostTotal) || 0,
+    total_cost_floor: Number(fin.totalCost) || 0,
+    is_retroactive: !!opts.isRetroactive,
+  };
+}

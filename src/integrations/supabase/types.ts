@@ -1217,6 +1217,87 @@ export type Database = {
           },
         ]
       }
+      project_cost_snapshots: {
+        Row: {
+          aligned_rate: number
+          annual_billable_hrs: number
+          break_even_rate: number
+          comp_per_hour: number
+          created_at: string
+          firm_id: string
+          id: string
+          is_retroactive: boolean
+          opex_per_hour: number
+          project_id: string
+          snapshotted_at: string
+          target_margin_pct: number
+          tax_reserve_pct: number
+          team_per_hour: number
+          total_cost_floor: number
+          total_opex: number
+          total_owner_comp: number
+          total_team_cost: number
+          weeks_per_year: number
+        }
+        Insert: {
+          aligned_rate: number
+          annual_billable_hrs: number
+          break_even_rate: number
+          comp_per_hour: number
+          created_at?: string
+          firm_id: string
+          id?: string
+          is_retroactive?: boolean
+          opex_per_hour: number
+          project_id: string
+          snapshotted_at?: string
+          target_margin_pct: number
+          tax_reserve_pct?: number
+          team_per_hour: number
+          total_cost_floor: number
+          total_opex: number
+          total_owner_comp: number
+          total_team_cost: number
+          weeks_per_year: number
+        }
+        Update: {
+          aligned_rate?: number
+          annual_billable_hrs?: number
+          break_even_rate?: number
+          comp_per_hour?: number
+          created_at?: string
+          firm_id?: string
+          id?: string
+          is_retroactive?: boolean
+          opex_per_hour?: number
+          project_id?: string
+          snapshotted_at?: string
+          target_margin_pct?: number
+          tax_reserve_pct?: number
+          team_per_hour?: number
+          total_cost_floor?: number
+          total_opex?: number
+          total_owner_comp?: number
+          total_team_cost?: number
+          weeks_per_year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_cost_snapshots_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_cost_snapshots_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_financial_audit: {
         Row: {
           changed_at: string
@@ -1414,9 +1495,12 @@ export type Database = {
           est_weekly_hrs: number | null
           firm_id: string
           fixed_fee: number | null
+          flat_fee_amount: number | null
+          hourly_scoped_hours: number | null
           id: string
           last_confirmed_at: string | null
           name: string
+          pricing_method: string
           scoped_hrs: number | null
           scoped_rate: number | null
           sop_template_id: string | null
@@ -1430,9 +1514,12 @@ export type Database = {
           est_weekly_hrs?: number | null
           firm_id: string
           fixed_fee?: number | null
+          flat_fee_amount?: number | null
+          hourly_scoped_hours?: number | null
           id?: string
           last_confirmed_at?: string | null
           name: string
+          pricing_method?: string
           scoped_hrs?: number | null
           scoped_rate?: number | null
           sop_template_id?: string | null
@@ -1446,9 +1533,12 @@ export type Database = {
           est_weekly_hrs?: number | null
           firm_id?: string
           fixed_fee?: number | null
+          flat_fee_amount?: number | null
+          hourly_scoped_hours?: number | null
           id?: string
           last_confirmed_at?: string | null
           name?: string
+          pricing_method?: string
           scoped_hrs?: number | null
           scoped_rate?: number | null
           sop_template_id?: string | null
