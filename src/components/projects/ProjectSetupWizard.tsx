@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { createProject } from "@/lib/sightline.functions";
 import { listSopTemplatesLite } from "@/lib/sightline.functions";
 import { getSopTemplatePhases } from "@/lib/sop.functions";
+import { getMyContext } from "@/lib/firm.functions";
 
 export type WizardPhase = {
   name: string;
@@ -39,12 +40,15 @@ export function ProjectSetupWizard({
   const createFn = useServerFn(createProject);
   const listTemplatesFn = useServerFn(listSopTemplatesLite);
   const getTemplatePhasesFn = useServerFn(getSopTemplatePhases);
+  const ctxFn = useServerFn(getMyContext);
+  const ctxQ = useQuery({ queryKey: ["me"], queryFn: () => ctxFn(), staleTime: 60_000 });
+  const firmRate = Number((ctxQ.data?.config as { rate_billed?: number | null } | null | undefined)?.rate_billed) || 0;
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
   const [pricing, setPricing] = useState<PricingMethod>("flat");
   const [fee, setFee] = useState("");
-  const [rate, setRate] = useState("");
+  const [hourlyHours, setHourlyHours] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [phases, setPhases] = useState<WizardPhase[]>(initialPhases ?? []);
@@ -91,7 +95,7 @@ export function ProjectSetupWizard({
   function reset() {
     setStep(1);
     setName(""); setClientName("");
-    setPricing("flat"); setFee(""); setRate("");
+    setPricing("flat"); setFee(""); setHourlyHours("");
     setStartDate(""); setEndDate("");
     setPhases(initialPhases ?? []);
     setLastSeed(null);
@@ -103,10 +107,20 @@ export function ProjectSetupWizard({
     setTimeout(reset, 200);
   }
 
+  const feeNum = Number(fee) || 0;
+  const hourlyHrsNum = Number(hourlyHours) || 0;
   const canAdvance =
     name.trim().length > 0 &&
-    (pricing === "hourly" || (Number(fee) > 0)) &&
-    (pricing === "flat" || pricing === "hybrid" || Number(rate) >= 0);
+    (pricing === "hourly"
+      ? true
+      : pricing === "flat"
+        ? feeNum > 0
+        : feeNum > 0 && hourlyHrsNum > 0);
+
+  // Live revenue preview for hybrid (flat + hourly_hrs × firm rate). Hourly
+  // revenue for hourly-only projects is scoped_hrs × rate, computed after
+  // Step 2 (phases), so we don't preview it here.
+  const hybridRevenue = feeNum + hourlyHrsNum * firmRate;
 
   const createMut = useMutation({
     mutationFn: async () => {
@@ -122,14 +136,19 @@ export function ProjectSetupWizard({
           name: name.trim(),
           client_name: clientName.trim() || null,
           status: "active",
+          // Rate for hourly + hybrid comes from the firm's billed rate — a
+          // single source of truth so a rate change updates unfinished work.
           scoped_rate:
-            pricing === "hourly" || pricing === "hybrid"
-              ? (rate ? Number(rate) : null)
-              : null,
+            pricing === "hourly" || pricing === "hybrid" ? firmRate || null : null,
+          // Legacy column kept in sync for older readers.
           fixed_fee:
-            pricing === "flat" || pricing === "hybrid"
-              ? (fee ? Number(fee) : null)
-              : null,
+            pricing === "flat" || pricing === "hybrid" ? (feeNum > 0 ? feeNum : null) : null,
+          pricing_method:
+            pricing === "flat" ? "flat_fee" : pricing === "hourly" ? "hourly" : "hybrid",
+          flat_fee_amount:
+            pricing === "flat" || pricing === "hybrid" ? (feeNum > 0 ? feeNum : null) : null,
+          hourly_scoped_hours:
+            pricing === "hybrid" ? (hourlyHrsNum > 0 ? hourlyHrsNum : null) : null,
           start_date: startDate || null,
           end_date: endDate || null,
           sop_template_id: templateId ?? null,
@@ -180,35 +199,91 @@ export function ProjectSetupWizard({
             </Field>
             <Field className="col-span-12" label="Pricing method *">
               <div className="grid grid-cols-3 gap-2">
-                {(["flat","hourly","hybrid"] as const).map((k) => (
+                {(
+                  [
+                    { k: "flat", title: "Flat fee", blurb: "A fixed total fee for defined scope" },
+                    { k: "hourly", title: "Hourly", blurb: "All time billed at your hourly rate" },
+                    { k: "hybrid", title: "Hybrid", blurb: "Flat fee for design phase, hourly for coordination" },
+                  ] as const
+                ).map((opt) => (
                   <button
-                    key={k}
+                    key={opt.k}
                     type="button"
-                    onClick={() => setPricing(k)}
+                    onClick={() => setPricing(opt.k)}
                     className={cn(
-                      "rounded-md border px-3 py-2 text-sm capitalize transition-colors",
-                      pricing === k ? "border-ch bg-ch text-white" : "border-border bg-white text-ch/80 hover:border-ch/40",
+                      "flex h-full flex-col items-start rounded-md border px-3 py-2 text-left transition-colors",
+                      pricing === opt.k
+                        ? "border-ch bg-ch text-white"
+                        : "border-border bg-white text-ch/80 hover:border-ch/40",
                     )}
                   >
-                    {k === "flat" ? "Flat fee" : k === "hourly" ? "Hourly" : "Hybrid"}
+                    <span className="text-sm font-medium">{opt.title}</span>
+                    <span
+                      className={cn(
+                        "mt-1 text-[11px] leading-snug",
+                        pricing === opt.k ? "text-white/75" : "text-ch/55",
+                      )}
+                    >
+                      {opt.blurb}
+                    </span>
                   </button>
                 ))}
               </div>
-              <p className="mt-1 text-[11px] text-ch/50">
-                {pricing === "flat" && "One fixed project fee."}
-                {pricing === "hourly" && "Billed at an hourly rate."}
-                {pricing === "hybrid" && "Flat fee plus hourly phases."}
-              </p>
             </Field>
-            {(pricing === "flat" || pricing === "hybrid") && (
-              <Field className="col-span-6" label="Project fee *">
-                <Input type="number" min={0} value={fee} onChange={(e) => setFee(e.target.value)} placeholder="$25,000" />
+            {pricing === "flat" && (
+              <Field className="col-span-12" label="Project fee *">
+                <Input
+                  type="number"
+                  min={0}
+                  value={fee}
+                  onChange={(e) => setFee(e.target.value)}
+                  placeholder="$0.00"
+                />
               </Field>
             )}
-            {(pricing === "hourly" || pricing === "hybrid") && (
-              <Field className="col-span-6" label={pricing === "hybrid" ? "Hourly rate (hybrid phases)" : "Hourly rate *"}>
-                <Input type="number" min={0} value={rate} onChange={(e) => setRate(e.target.value)} placeholder="$250" />
-              </Field>
+            {pricing === "hourly" && (
+              <div className="col-span-12 rounded-md border border-border bg-cream/40 px-3 py-2">
+                <p className="text-[11px]" style={{ color: "#8A7F75", fontFamily: "'Jost', sans-serif" }}>
+                  Revenue will calculate from scoped hours × your billed rate
+                  {firmRate > 0 ? ` ($${firmRate.toLocaleString("en-US")}/hr)` : " (set your billed rate in firm setup)"}.
+                </p>
+              </div>
+            )}
+            {pricing === "hybrid" && (
+              <>
+                <Field className="col-span-6" label="Flat fee amount *">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={fee}
+                    onChange={(e) => setFee(e.target.value)}
+                    placeholder="$0.00"
+                  />
+                </Field>
+                <Field className="col-span-6" label="Estimated hourly hours *">
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={hourlyHours}
+                    onChange={(e) => setHourlyHours(e.target.value)}
+                    placeholder="0"
+                  />
+                  <p className="mt-1 text-[11px] text-ch/50">
+                    Hours billed at ${firmRate ? firmRate.toLocaleString("en-US") : "—"}/hr after flat phase ends.
+                  </p>
+                </Field>
+                {(feeNum > 0 || hourlyHrsNum > 0) && (
+                  <div className="col-span-12 rounded-md border border-border bg-white px-3 py-2">
+                    <span
+                      className="text-[12px] font-medium"
+                      style={{ color: "#2C2C2C", fontFamily: "'Jost', sans-serif" }}
+                    >
+                      Total revenue: ${hybridRevenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
             <Field className="col-span-6" label="Estimated start date">
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
