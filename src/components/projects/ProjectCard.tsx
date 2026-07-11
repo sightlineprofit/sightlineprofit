@@ -31,7 +31,7 @@ type CardProject = {
   id: string;
   name: string;
   client_name?: string | null;
-  pricing_method?: ProjectPricingMethod | string | null;
+  pricing_method: ProjectPricingMethod | string | null | undefined;
   flat_fee_amount?: number | null;
   fixed_fee?: number | null;
   scoped_rate?: number | null;
