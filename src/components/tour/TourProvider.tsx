@@ -15,6 +15,7 @@ import {
 } from "@/lib/tour.functions";
 import { upsertFirmConfig, addExpense, upsertOwnerCompensation } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
+import { getMyContext } from "@/lib/firm.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 type TourPrefs = {
