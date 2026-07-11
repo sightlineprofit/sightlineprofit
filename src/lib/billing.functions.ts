@@ -330,3 +330,72 @@ export const switchBillingFrequency = createServerFn({ method: "POST" })
       return { error: getStripeErrorMessage(error) };
     }
   });
+
+/**
+ * Fallback used by /post-auth when the Stripe webhook is slow or fails.
+ * Retrieves the checkout session server-side, then syncs the firm's billing
+ * columns from the resulting subscription. Idempotent — safe to call after
+ * the webhook has already landed.
+ */
+export const syncFirmFromStripeSession = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ session_id: z.string().trim().min(1).max(200), environment: envSchema }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: true } | { error: string }> => {
+    try {
+      const { supabase, userId } = context;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("firm_id, email")
+        .eq("id", userId)
+        .maybeSingle();
+      if (!profile?.firm_id) return { error: "No firm associated with user" };
+
+      const stripe = createStripeClient(data.environment);
+      const session = await stripe.checkout.sessions.retrieve(data.session_id, {
+        expand: ["subscription", "subscription.items.data.price", "customer"],
+      });
+
+      const subRef: any = (session as any).subscription;
+      const subId = typeof subRef === "string" ? subRef : subRef?.id;
+      if (!subId) return { error: "No subscription on this checkout session yet" };
+
+      const sub =
+        typeof subRef === "string"
+          ? await stripe.subscriptions.retrieve(subId, { expand: ["items.data.price"] })
+          : subRef;
+
+      let customer: any = null;
+      const custRef: any = (session as any).customer;
+      if (custRef && typeof custRef === "object" && !custRef.deleted) customer = custRef;
+      else if (typeof custRef === "string") {
+        const retrieved: any = await stripe.customers.retrieve(custRef);
+        if (!retrieved?.deleted) customer = retrieved;
+      }
+
+      // Make sure the subscription carries firmId metadata so future webhooks
+      // can resolve without an email lookup.
+      if (sub.metadata?.firmId !== profile.firm_id) {
+        await stripe.subscriptions.update(sub.id, {
+          metadata: { ...sub.metadata, firmId: profile.firm_id, userId },
+        });
+        (sub as any).metadata = { ...sub.metadata, firmId: profile.firm_id };
+      }
+
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { syncFirmBillingFromSubscription } = await import("@/lib/stripe-billing-sync.server");
+      const result = await syncFirmBillingFromSubscription(supabaseAdmin, sub, {
+        session,
+        customer,
+        fallbackFirmId: profile.firm_id,
+        fallbackEmail: profile.email ?? undefined,
+        logPrefix: "[syncFirmFromStripeSession]",
+      });
+      if (!result.ok) return { error: "Could not link this checkout to your firm" };
+      return { ok: true };
+    } catch (error) {
+      console.error("[syncFirmFromStripeSession]", error);
+      return { error: getStripeErrorMessage(error) };
+    }
+  });
