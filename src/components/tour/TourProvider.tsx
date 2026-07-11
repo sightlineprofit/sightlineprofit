@@ -849,15 +849,18 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
   const [scopeReviewed, setScopeReviewed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const getCtx = useServerFn(getMyContext);
+  const { data: meCtx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const firmId = (meCtx as any)?.profile?.firm_id as string | undefined;
 
   // Realtime: watch for a new project row for this firm while Step 6 is active.
   useEffect(() => {
-    if (projectCreated) return;
+    if (projectCreated || !firmId) return;
     const ch = supabase
       .channel("tour-projects")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "projects" },
+        { event: "INSERT", schema: "public", table: "projects", filter: `firm_id=eq.${firmId}` },
         (payload: any) => {
           const id = payload?.new?.id as string | undefined;
           if (id) {
@@ -868,7 +871,7 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [projectCreated]);
+  }, [projectCreated, firmId]);
 
   // Fallback (and primary path): the ProjectSetupWizard dispatches a
   // window CustomEvent when it successfully creates a project. This works
@@ -900,18 +903,39 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
     return () => { supabase.removeChannel(ch); };
   }, [projectId, sopAttached]);
 
-  // Scope review: 3s timer once user is on the project page and SOP is attached.
+  // Scope review: once the user opens the project detail on /sightline
+  // (via search param OR a custom event dispatched when the inline detail
+  // panel opens) AND the SOP is attached, mark scope reviewed after 3s.
   useEffect(() => {
     if (!sopAttached || scopeReviewed) return;
-    if (!location.pathname.startsWith("/projects/")) return;
-    const t = setTimeout(() => setScopeReviewed(true), 3000);
-    return () => clearTimeout(t);
-  }, [sopAttached, scopeReviewed, location.pathname]);
+    const search = new URLSearchParams(location.search);
+    const openViaParam =
+      location.pathname === "/sightline" && !!search.get("openProject");
+    if (openViaParam) {
+      const t = setTimeout(() => setScopeReviewed(true), 3000);
+      return () => clearTimeout(t);
+    }
+    const onOpened = () => {
+      const t = setTimeout(() => setScopeReviewed(true), 3000);
+      // Cleanup handled by the outer return via listener removal + state
+      return () => clearTimeout(t);
+    };
+    window.addEventListener("sightline:project-opened", onOpened as EventListener);
+    return () => window.removeEventListener("sightline:project-opened", onOpened as EventListener);
+  }, [sopAttached, scopeReviewed, location.pathname, location.search]);
+
+  // Auto-advance to Step 7 shortly after all three checklist items complete.
+  useEffect(() => {
+    if (projectCreated && sopAttached && scopeReviewed) {
+      const t = setTimeout(() => { void onAdvance(); }, 1200);
+      return () => clearTimeout(t);
+    }
+  }, [projectCreated, sopAttached, scopeReviewed, onAdvance]);
 
   const goToProjectCreate = () =>
     navigate({ to: "/sightline", search: { new: 1 } as any });
   const goToSopLibrary = () => {
-    if (projectId) navigate({ to: "/projects/$id", params: { id: projectId } } as any);
+    if (projectId) navigate({ to: "/sightline", search: { openProject: projectId } as any });
   };
 
   const item = (label: string, done: boolean, doneLabel: string) => (
@@ -955,7 +979,7 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
           {!projectCreated ? (
             <button type="button" onClick={goToProjectCreate} style={primaryBtn}>Create my first project →</button>
           ) : !sopAttached ? (
-            <button type="button" onClick={goToSopLibrary} style={primaryBtn}>Go to SOP library →</button>
+            <button type="button" onClick={goToSopLibrary} style={primaryBtn}>Attach an SOP workflow →</button>
           ) : null}
           {projectCreated && sopAttached ? (
             <button
@@ -963,7 +987,7 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
               onClick={onAdvance}
               style={{ ...primaryBtn, animation: allDone ? "tourPulseGold 600ms ease-out 1" : undefined }}
             >
-              Next →
+              Skip to Step 7 →
             </button>
           ) : null}
         </div>
