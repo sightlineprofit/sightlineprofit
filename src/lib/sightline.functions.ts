@@ -433,7 +433,17 @@ export const createProject = createServerFn({ method: "POST" })
         start_date: data.start_date || null,
         end_date: data.end_date || null,
         sop_template_id: data.sop_template_id ?? null,
-      })
+        // Explicit pricing method (falls back to legacy inference).
+        pricing_method:
+          data.pricing_method ??
+          ((Number(data.fixed_fee) || 0) > 0 && (Number(data.scoped_rate) || 0) > 0
+            ? "hybrid"
+            : (Number(data.scoped_rate) || 0) > 0
+              ? "hourly"
+              : "flat_fee"),
+        flat_fee_amount: data.flat_fee_amount ?? data.fixed_fee ?? null,
+        hourly_scoped_hours: data.hourly_scoped_hours ?? null,
+      } as any)
       .select("id")
       .single();
     if (error) throw new Error(error.message);
@@ -491,6 +501,48 @@ export const createProject = createServerFn({ method: "POST" })
         }
       }
     }
+
+    // ─── Lock in the firm's current cost structure as this project's
+    //     immutable snapshot. Never mutated after creation.
+    try {
+      const [
+        { data: firmConfig },
+        { data: firmExpenses },
+        { data: firmOwnerComp },
+        { data: firmTeam },
+      ] = await Promise.all([
+        supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+        supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
+        supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
+        supabase
+          .from("firm_members")
+          .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+          .eq("firm_id", profile.firm_id)
+          .eq("is_active", true)
+          .neq("role_type", "principal"),
+      ]);
+      const fin = calcFinance(
+        (firmConfig as FirmConfig | null) ?? null,
+        ((firmExpenses as unknown) as Expense[]) ?? [],
+        {
+          ownerComp: (firmOwnerComp as any) ?? [],
+          teamProfiles: (firmTeam as any) ?? [],
+        },
+      );
+      const snapshotBody = buildSnapshotFromCalc(fin, (firmConfig as FirmConfig | null) ?? null, {
+        isRetroactive: false,
+      });
+      await (supabase.from("project_cost_snapshots") as any).insert({
+        project_id: project.id,
+        firm_id: profile.firm_id,
+        ...snapshotBody,
+      });
+    } catch (e) {
+      // Don't fail project creation if snapshot insert races or errors — the
+      // retroactive backfill in getProjectDetail will create one on first load.
+      console.warn("[createProject] snapshot insert failed:", e);
+    }
+
     return { id: project.id };
   });
 
