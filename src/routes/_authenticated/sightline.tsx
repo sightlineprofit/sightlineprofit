@@ -271,6 +271,43 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
         </Select>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {([
+          { id: "all", label: "All", color: "#2C2C2C" },
+          { id: "attention", label: "Needs attention", color: "#C4714A" },
+          { id: "watch", label: "Watch", color: "#B8860B" },
+          { id: "healthy", label: "Healthy", color: "#5C8A6E" },
+          { id: "stale", label: "Stale data", color: "#B8860B" },
+        ] as const).map((c) => {
+          const active = chipFilter === c.id;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setChipFilter(active && c.id !== "all" ? "all" : c.id)}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 100,
+                fontFamily: "'Jost', sans-serif",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "all 0.15s",
+                border: active ? `1px solid ${c.color}` : "1px solid transparent",
+                background: active
+                  ? c.id === "all"
+                    ? "rgba(44,44,44,0.10)"
+                    : `${c.color}1A`
+                  : "rgba(44,44,44,0.06)",
+                color: active ? c.color : "#8A7F75",
+              }}
+            >
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+
       {isLoading ? (
         <p className="text-ch/50">Loading…</p>
       ) : filtered.length === 0 ? (
