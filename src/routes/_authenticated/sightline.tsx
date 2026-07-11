@@ -702,6 +702,29 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
     return map;
   }, [entriesForMemo]);
 
+  // Hooks below MUST stay above the early return so hook order is stable
+  // between the loading render and the data-ready render (Rules of Hooks).
+  const confirmMut = useMutation({
+    mutationFn: () => confirmFn({ data: { project_id: id } }),
+    onSuccess: () => {
+      toast.success("Marked as up to date");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+  const nothingMut = useMutation({
+    mutationFn: (phrase: string) => nothingFn({ data: { project_id: id, phrase } }),
+    onSuccess: () => {
+      toast.success("Recorded — nothing to report this period");
+      setNtrOpen(false);
+      setNtrPhrase("");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
+  });
+
   if (isLoading || !data) {
     return (
       <div className="mx-auto max-w-6xl px-8 py-12">
@@ -761,26 +784,6 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   const displayState: 1 | 2 | 3 =
     freshnessState !== "current" ? 1 : confirmedCoversActivity ? 3 : 2;
 
-  const confirmMut = useMutation({
-    mutationFn: () => confirmFn({ data: { project_id: id } }),
-    onSuccess: () => {
-      toast.success("Marked as up to date");
-      invalidate();
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-    },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
-  });
-  const nothingMut = useMutation({
-    mutationFn: (phrase: string) => nothingFn({ data: { project_id: id, phrase } }),
-    onSuccess: () => {
-      toast.success("Recorded — nothing to report this period");
-      setNtrOpen(false);
-      setNtrPhrase("");
-      invalidate();
-      qc.invalidateQueries({ queryKey: ["sightline-list"] });
-    },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
-  });
   const projectRate = Number(project.scoped_rate) || Number(config?.rate_billed) || 0;
   const hasExplicitRate = Number(project.scoped_rate) > 0;
   const fixedFee = Number((project as { fixed_fee?: number | null }).fixed_fee) || 0;
