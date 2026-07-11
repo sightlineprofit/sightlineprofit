@@ -71,6 +71,15 @@ function SightlinePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search.openProject]);
+  // Signal the guided tour (and any other listeners) when the inline
+  // project-detail panel opens, since /sightline does not navigate away.
+  useEffect(() => {
+    if (openProject) {
+      window.dispatchEvent(
+        new CustomEvent("sightline:project-opened", { detail: { projectId: openProject } }),
+      );
+    }
+  }, [openProject]);
   const showOnboardHint = String(search.onboarded ?? "") === "1";
   const autoOpenNew = String(search.new ?? "") === "1";
 
