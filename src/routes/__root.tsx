@@ -50,6 +50,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        {import.meta.env.DEV && (
+          <pre className="mt-4 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/5 p-3 text-left text-xs text-destructive">
+            {error?.message}
+            {"\n\n"}
+            {error?.stack}
+          </pre>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
