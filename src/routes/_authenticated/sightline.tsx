@@ -44,6 +44,8 @@ import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
 import { ProjectSetupWizard } from "@/components/projects/ProjectSetupWizard";
 import { ProjectCard as RedesignedProjectCard } from "@/components/projects/ProjectCard";
+import { ProjectDetailPanel } from "@/components/projects/ProjectDetailPanel";
+import { getProjectFinancials } from "@/lib/finance";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
@@ -122,6 +124,7 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
   const [filter, setFilter] = useState<"all" | Status>("active");
+  const [chipFilter, setChipFilter] = useState<"all" | "attention" | "watch" | "healthy" | "stale">("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"health" | "margin_desc" | "margin_asc" | "recent" | "name">("health");
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -135,24 +138,90 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
     if (autoOpenNew) navigate({ to: "/sightline", search: {}, replace: true });
   };
 
+  // Compute snapshot-based tier for each project
+  const projectTier = (p: any): "critical" | "watch" | "healthy" | "none" => {
+    const snap = p.snapshot;
+    const hrs = Number(p.hoursLogged ?? 0);
+    if (!snap || hrs === 0) return "none";
+    const fin = getProjectFinancials({
+      project: {
+        pricing_method: p.pricing_method ?? (p.fixed_fee ? "flat_fee" : p.scoped_rate ? "hourly" : "flat_fee"),
+        flat_fee_amount: p.flat_fee_amount ?? p.fixed_fee ?? null,
+        scoped_rate: p.scoped_rate ?? null,
+        scoped_hrs: p.scoped_hrs ?? null,
+        hourly_scoped_hours: p.hourly_scoped_hours ?? null,
+      },
+      snapshot: snap,
+      hoursLogged: hrs,
+      lastEntryDate: p.lastEntryDate ?? null,
+    });
+    const target = Number(fin.targetMarginPct) || 0;
+    if (fin.marginRemaining < 0 || fin.marginRemainingPct < target * 0.5) return "critical";
+    if (fin.marginRemainingPct < target) return "watch";
+    return "healthy";
+  };
+  const projectFreshness = (p: any): "current" | "stale" | "critical" | "none" => {
+    const s = (p as any).freshness?.state;
+    if (s === "stale" || s === "critical" || s === "current") return s;
+    return "none";
+  };
+  const projectMarginPct = (p: any): number => {
+    const snap = p.snapshot;
+    if (!snap) return Number.POSITIVE_INFINITY;
+    const fin = getProjectFinancials({
+      project: {
+        pricing_method: p.pricing_method ?? (p.fixed_fee ? "flat_fee" : p.scoped_rate ? "hourly" : "flat_fee"),
+        flat_fee_amount: p.flat_fee_amount ?? p.fixed_fee ?? null,
+        scoped_rate: p.scoped_rate ?? null,
+        scoped_hrs: p.scoped_hrs ?? null,
+        hourly_scoped_hours: p.hourly_scoped_hours ?? null,
+      },
+      snapshot: snap,
+      hoursLogged: Number(p.hoursLogged ?? 0),
+      lastEntryDate: p.lastEntryDate ?? null,
+    });
+    return fin.marginRemainingPct;
+  };
+
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
     const list = data.projects.filter((p) => {
       if (filter !== "all" && p.status !== filter) return false;
+      if (chipFilter !== "all") {
+        if (chipFilter === "stale") {
+          const f = projectFreshness(p);
+          if (!(f === "stale" || f === "critical")) return false;
+        } else {
+          const tier = projectTier(p);
+          if (chipFilter === "attention" && tier !== "critical") return false;
+          if (chipFilter === "watch" && tier !== "watch") return false;
+          if (chipFilter === "healthy" && tier !== "healthy") return false;
+        }
+      }
       if (!q) return true;
       return [p.name, p.client_name].filter(Boolean).some((v) => v!.toLowerCase().includes(q));
     });
-    const rank = (p: typeof list[number]) => marginHealthRank(marginHealthState(p.margin));
+    const tierRank = (p: any) => {
+      const t = projectTier(p);
+      return t === "critical" ? 0 : t === "watch" ? 1 : t === "healthy" ? 2 : 3;
+    };
+    const withinTier = (p: any) => projectMarginPct(p);
     const remaining = (p: typeof list[number]) => (p.margin?.remaining ?? Number.NEGATIVE_INFINITY);
     const sorted = [...list];
-    if (sortBy === "health") sorted.sort((a, b) => rank(a) - rank(b));
+    if (sortBy === "health")
+      sorted.sort((a, b) => {
+        const d = tierRank(a) - tierRank(b);
+        if (d !== 0) return d;
+        return withinTier(a) - withinTier(b);
+      });
     else if (sortBy === "margin_desc") sorted.sort((a, b) => remaining(b) - remaining(a));
     else if (sortBy === "margin_asc") sorted.sort((a, b) => remaining(a) - remaining(b));
     else if (sortBy === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
     else if (sortBy === "recent") sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return sorted;
-  }, [data, filter, search, sortBy]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, filter, chipFilter, search, sortBy]);
 
   return (
     <ModulePage
