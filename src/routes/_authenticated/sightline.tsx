@@ -1304,6 +1304,12 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
 
         {/* ============ OVERVIEW ============ */}
         <TabsContent value="overview" className="mt-6 space-y-6">
+          <ProjectDetailPanel
+            project={project as any}
+            snapshot={detailSnapshot}
+            hoursLogged={detailHoursLogged}
+            lastEntryDate={detailLastEntryIso}
+          />
           {showOnboardHint && !hintDismissed && (
             <div
               className="flex items-start justify-between gap-3 rounded-md border-l-2 border-l-[#5C8A6E] py-2 pl-3 pr-2"
