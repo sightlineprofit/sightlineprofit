@@ -416,6 +416,8 @@ export type ProjectCostSnapshot = {
   total_opex: number;
   total_team_cost: number;
   total_cost_floor: number;
+  snapshotted_at?: string | null;
+  is_retroactive?: boolean | null;
 };
 
 export type ProjectFinancialsInput = {
