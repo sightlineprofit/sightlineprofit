@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
 import { ProjectSetupWizard } from "@/components/projects/ProjectSetupWizard";
+import { ProjectCard as RedesignedProjectCard } from "@/components/projects/ProjectCard";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
 
@@ -216,7 +217,16 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((p) => {
-            return <ProjectCard key={p.id} project={p} onOpen={onOpen} />;
+            return (
+              <RedesignedProjectCard
+                key={p.id}
+                project={p as any}
+                snapshot={((p as any).snapshot ?? null) as any}
+                hoursLogged={Number((p as any).hoursLogged ?? 0)}
+                lastEntryDate={((p as any).lastEntryDate ?? null) as any}
+                onClick={() => onOpen(p.id)}
+              />
+            );
           })}
         </div>
       )}
