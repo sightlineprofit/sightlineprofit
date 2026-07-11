@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getProjectFinancials, type ProjectCostSnapshot, type ProjectPricingMethod } from "@/lib/finance";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
+import { useNavigate } from "@tanstack/react-router";
 
 // ─── Formatting helpers ────────────────────────────────────────────────────
 function fmtMoney(n: number): string {
@@ -189,6 +190,15 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
 
   const daysAgoLabel = (n: number) => (n === 1 ? "1 day ago" : `${n} days ago`);
 
+  // ─── Retroactive banner dismiss ─────────────────────────────────────────
+  const banKey = `retroactive-banner-dismissed-${project.id}`;
+  const [retroDismissed, setRetroDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(banKey) === "1";
+  });
+  const navigate = useNavigate();
+  const showRetroBanner = !!snapshot.is_retroactive && !retroDismissed;
+
   return (
     <button
       type="button"
@@ -257,6 +267,51 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
           )}
         </div>
       </div>
+
+      {showRetroBanner && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: "rgba(184,134,11,0.07)",
+            borderLeft: `2px solid ${GOLD}`,
+            borderRadius: "0 4px 4px 0",
+            padding: "8px 12px",
+            marginBottom: 12,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 8,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: CHARCOAL, lineHeight: 1.5 }}>
+              Cost structure captured today using current rate architecture. For accuracy, update to reflect what your costs were when this project was quoted.
+            </div>
+            <span
+              role="link"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate({ to: "/settings" });
+              }}
+              style={{ display: "inline-block", marginTop: 4, fontFamily: "'Jost', sans-serif", fontSize: 11, color: GOLD, cursor: "pointer" }}
+            >
+              Update in settings →
+            </span>
+          </div>
+          <span
+            role="button"
+            aria-label="Dismiss"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (typeof window !== "undefined") window.localStorage.setItem(banKey, "1");
+              setRetroDismissed(true);
+            }}
+            style={{ fontFamily: "'Jost', sans-serif", fontSize: 14, color: MUTED, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}
+          >
+            ×
+          </span>
+        </div>
+      )}
 
       {noScope ? (
         <div
