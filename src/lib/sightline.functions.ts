@@ -48,6 +48,18 @@ export const getProjectList = createServerFn({ method: "GET" })
           .in("project_id", projectIds)
       : { data: [] as Array<{ project_id: string | null; user_id: string; hrs: number; billable: boolean; date: string }> };
 
+    // Locked cost snapshots per project (Phase 1). Nullable per project;
+    // the card handles the missing case with a setup prompt.
+    const { data: snapshotRows } = projectIds.length
+      ? await (supabase.from("project_cost_snapshots") as any)
+          .select("*")
+          .in("project_id", projectIds)
+      : { data: [] as Array<any> };
+    const snapshotByProject = new Map<string, any>();
+    for (const s of (snapshotRows ?? []) as Array<{ project_id: string }>) {
+      if (!snapshotByProject.has(s.project_id)) snapshotByProject.set(s.project_id, s);
+    }
+
     // Pull most recent 'nothing_to_report' event per project so the freshness
     // clock resets on a legitimate override (see project detail page).
     const { data: ntrRows } = projectIds.length
@@ -90,15 +102,17 @@ export const getProjectList = createServerFn({ method: "GET" })
       hasAnyEntry: boolean;
       usingFallbackCostRate: boolean;
       lastEntryAt: string | null;
+      hoursLogged: number;
     };
     const agg: Record<string, Agg> = {};
     for (const e of entries ?? []) {
       if (!e.project_id) continue;
       const a = (agg[e.project_id] ||= {
-        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null,
+        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null, hoursLogged: 0,
       });
       a.hasAnyEntry = true;
       const hrs = Number(e.hrs || 0);
+      a.hoursLogged += hrs;
       let cr = costRateByUser.get(e.user_id);
       if (cr == null) { cr = firmBreakEven; a.usingFallbackCostRate = true; }
       const cost = hrs * (cr || 0);
@@ -120,7 +134,7 @@ export const getProjectList = createServerFn({ method: "GET" })
         perHour: fin.perHour,
       },
       projects: (projects ?? []).map((p) => {
-        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null };
+        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null, hoursLogged: 0 };
         const fixedFee = Number((p as { fixed_fee?: number | null }).fixed_fee) || 0;
         const scopedRate = Number(p.scoped_rate) || 0;
         const scopedHrs = totals[p.id]?.scoped ?? Number(p.scoped_hrs || 0);
@@ -173,6 +187,9 @@ export const getProjectList = createServerFn({ method: "GET" })
         return {
           ...p,
           totals: totals[p.id] ?? { scoped: Number(p.scoped_hrs || 0), actual: 0 },
+          snapshot: snapshotByProject.get(p.id) ?? null,
+          hoursLogged: a.hoursLogged,
+          lastEntryDate: a.lastEntryAt,
           freshness: {
             lastEntryAt: lastActivityAt,
             daysSince,
