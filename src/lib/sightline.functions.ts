@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   calc as calcFinance,
   getProjectMarginCalc,
+  buildSnapshotFromCalc,
   type Expense,
   type FirmConfig,
 } from "@/lib/finance";
@@ -370,6 +371,9 @@ const createProjectSchema = z.object({
   status: z.enum(["active", "pipeline", "completed", "on_hold"]).default("active"),
   scoped_rate: z.number().min(0).max(100000).optional().nullable(),
   fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
+  pricing_method: z.enum(["flat_fee", "hourly", "hybrid"]).optional().nullable(),
+  flat_fee_amount: z.number().min(0).max(100000000).optional().nullable(),
+  hourly_scoped_hours: z.number().min(0).max(100000).optional().nullable(),
   start_date: z.string().optional().nullable(),
   end_date: z.string().optional().nullable(),
   sop_template_id: z.string().uuid().optional().nullable(),
