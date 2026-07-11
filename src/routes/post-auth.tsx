@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { createFirmForCurrentUser, getMyContext } from "@/lib/firm.functions";
+import { syncFirmFromStripeSession } from "@/lib/billing.functions";
+import { getStripeEnvironment } from "@/lib/stripe";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { landingPathFor } from "@/lib/role";
@@ -19,6 +21,7 @@ function PostAuth() {
   const search = Route.useSearch();
   const createFirm = useServerFn(createFirmForCurrentUser);
   const getCtx = useServerFn(getMyContext);
+  const syncFromSession = useServerFn(syncFirmFromStripeSession);
   const [status, setStatus] = useState<
     | { kind: "working"; message: string }
     | { kind: "timeout" }
@@ -98,6 +101,28 @@ function PostAuth() {
           return;
         }
       }
+      // Webhook didn't land in time — try a direct server-side sync from
+      // the Stripe session as a fallback before showing the timeout screen.
+      if (search.session_id) {
+        setStatus({ kind: "working", message: "Finalizing your account…" });
+        try {
+          const env = getStripeEnvironment();
+          const res = await syncFromSession({ data: { session_id: search.session_id, environment: env } });
+          if ("ok" in res && res.ok) {
+            const refreshed = await getCtx();
+            const refFirm = refreshed?.firm as any;
+            if (refFirm?.stripe_subscription_id && refreshed?.profile) {
+              const target = landingPathFor(refreshed.profile, refFirm);
+              nav({ to: target as any });
+              return;
+            }
+          } else if ("error" in res) {
+            console.warn("[post-auth] fallback sync error:", res.error);
+          }
+        } catch (e) {
+          console.warn("[post-auth] fallback sync failed:", e);
+        }
+      }
       setStatus({ kind: "timeout" });
       return;
     }
@@ -105,7 +130,7 @@ function PostAuth() {
     // Not from Stripe (e.g. user hit /post-auth directly or reopened after
     // signing in) — send them to complete payment.
     nav({ to: "/register", search: { step: "payment" } as any });
-  }, [nav, createFirm, getCtx, fromStripe]);
+  }, [nav, createFirm, getCtx, syncFromSession, fromStripe, search.session_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,21 +159,28 @@ function PostAuth() {
           <>
             <p className="font-display text-2xl">This is taking longer than expected.</p>
             <p className="mt-2 text-sm text-ch/60">
-              Your payment likely went through, but we haven't received the confirmation
-              from Stripe yet. This usually clears within a minute.
+              Your payment was received. Your account is still being activated —
+              this usually resolves within a minute. Please refresh, or contact us
+              if it persists.
             </p>
             <div className="mt-6 flex flex-col items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  setStatus({ kind: "working", message: "Checking again…" });
-                  setAttempt((a) => a + 1);
+                  window.location.reload();
                 }}
                 className="rounded-md bg-ch px-5 py-2.5 text-sm font-medium text-white hover:opacity-90"
                 style={{ fontFamily: "Jost, sans-serif" }}
               >
-                Check again
+                Refresh now →
               </button>
+              <a
+                href="mailto:hello@proposability.com"
+                className="text-xs text-ch/60 hover:text-ch underline"
+                style={{ fontFamily: "Jost, sans-serif" }}
+              >
+                Contact support →
+              </a>
               <button
                 type="button"
                 onClick={() => nav({ to: "/register", search: { step: "payment" } as any })}
