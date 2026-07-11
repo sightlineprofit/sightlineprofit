@@ -476,6 +476,7 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
             <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED, marginBottom: 5 }}>
               REVENUE ALLOCATION
             </div>
+            <div style={{ position: "relative" }}>
             <div style={{ height: 10, borderRadius: 4, overflow: "hidden", display: "flex", width: "100%", opacity: staleOverlayOpacity }}>
               {fin.compAllocation > 0 && (
                 <span style={{ background: "#2C2C2C", flexBasis: `${seg(fin.compAllocation)}%`, minWidth: 2 }} />
@@ -498,6 +499,20 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
               {marginSegPct > 0 && (
                 <span style={{ background: health, flexBasis: `${marginSegPct}%` }} />
               )}
+            </div>
+            {staleOverlayOpacity < 1 && (
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: 4,
+                  pointerEvents: "none",
+                  backgroundImage:
+                    "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.25) 5px, rgba(255,255,255,0.25) 10px)",
+                }}
+              />
+            )}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px", marginTop: 6 }}>
               {fin.compAllocation > 0 && <LegendItem color="#2C2C2C" label="Comp" amount={fmtMoney(fin.compAllocation)} />}
