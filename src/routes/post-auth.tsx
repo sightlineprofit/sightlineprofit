@@ -8,6 +8,35 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { landingPathFor } from "@/lib/role";
 
+const CHECKOUT_ENV_STORAGE_KEY = "sightline_checkout_environment";
+
+function isStripeEnv(value: unknown): value is StripeEnv {
+  return value === "sandbox" || value === "live";
+}
+
+function readSavedCheckoutEnvironment(): StripeEnv | null {
+  if (typeof window === "undefined") return null;
+  const saved = window.localStorage.getItem(CHECKOUT_ENV_STORAGE_KEY);
+  return isStripeEnv(saved) ? saved : null;
+}
+
+function checkoutEnvironmentFromPending(): StripeEnv | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem("sightline_pending_firm") ?? window.sessionStorage.getItem("sightline_pending_firm");
+  if (!raw) return null;
+  try {
+    const pending = JSON.parse(raw) as { checkoutEnvironment?: unknown };
+    return isStripeEnv(pending.checkoutEnvironment) ? pending.checkoutEnvironment : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveCheckoutEnvironment(searchEnv?: StripeEnv): StripeEnv {
+  const explicitEnv = searchEnv ?? readSavedCheckoutEnvironment() ?? checkoutEnvironmentFromPending();
+  return explicitEnv ? getStripeEnvironment(explicitEnv) : getPreferredCheckoutEnvironment();
+}
+
 export const Route = createFileRoute("/post-auth")({
   head: () => ({ meta: [{ title: "Setting up — Sightline" }] }),
   validateSearch: (s: Record<string, unknown>): { session_id?: string; env?: StripeEnv } => ({
@@ -66,7 +95,7 @@ function PostAuth() {
       });
       localStorage.removeItem("sightline_pending_firm");
       sessionStorage.removeItem("sightline_pending_firm");
-      nav({ to: "/register", search: { step: "payment" } as any });
+      nav({ to: "/register", search: { step: "payment", env: resolveCheckoutEnvironment(search.env) } as any });
       return;
     }
 
@@ -107,7 +136,7 @@ function PostAuth() {
       if (search.session_id) {
         setStatus({ kind: "working", message: "Finalizing your account…" });
         try {
-          const env = search.env ? getStripeEnvironment(search.env) : getPreferredCheckoutEnvironment();
+          const env = resolveCheckoutEnvironment(search.env);
           const res = await syncFromSession({ data: { session_id: search.session_id, environment: env } });
           if ("ok" in res && res.ok) {
             const refreshed = await getCtx();
@@ -130,7 +159,7 @@ function PostAuth() {
 
     // Not from Stripe (e.g. user hit /post-auth directly or reopened after
     // signing in) — send them to complete payment.
-    nav({ to: "/register", search: { step: "payment" } as any });
+    nav({ to: "/register", search: { step: "payment", env: resolveCheckoutEnvironment(search.env) } as any });
   }, [nav, createFirm, getCtx, syncFromSession, fromStripe, search.session_id, search.env]);
 
   useEffect(() => {
@@ -184,7 +213,7 @@ function PostAuth() {
               </a>
               <button
                 type="button"
-                onClick={() => nav({ to: "/register", search: { step: "payment" } as any })}
+                onClick={() => nav({ to: "/register", search: { step: "payment", env: resolveCheckoutEnvironment(search.env) } as any })}
                 className="text-xs text-ch/60 hover:text-ch underline"
                 style={{ fontFamily: "Jost, sans-serif" }}
               >
