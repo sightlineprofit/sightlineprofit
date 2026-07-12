@@ -1,31 +1,25 @@
-Put both the local preview and the published site back into Stripe test/sandbox mode.
+## Problem
 
-Current state:
-- `.env.development` already contains a sandbox (`pk_test_...`) token, so the local preview is already in test mode.
-- `.env.production` contains a live (`pk_live_...`) token, so the published site (sightlineprofit.lovable.app / custom domains) is in live mode and can accept real payments.
-- The app derives the Stripe environment from the `VITE_PAYMENTS_CLIENT_TOKEN` prefix, so changing the production token changes both the frontend Stripe.js environment and the server-side connection.
+The new `prevent_profile_privilege_escalation` trigger is blocking legitimate signup. When a new user finishes registering, `createFirmForCurrentUser` uses the admin client to write `firm_id` and `role` onto their profile for the first time. The trigger raises "role, is_super_admin, and firm_id cannot be changed via the API" because the service-role detection (`current_user = 'service_role'` / `request.jwt.claim.role = 'service_role'`) does not fire reliably with the new `sb_secret_…` Supabase key that this project uses (documented in AGENTS.md — the same reason `prevent_firm_billing_changes` needs a manual GUC set).
 
-Plan:
+Result: no one can complete signup; the payment/onboarding screen is unreachable.
 
-1. Verify local preview mode
-   - Confirm `npm run dev` / preview loads the sandbox token from `.env.development`.
-   - Confirm the test-mode banner appears on checkout pages.
+## Fix
 
-2. Switch the published site to test mode
-   - Replace the `VITE_PAYMENTS_CLIENT_TOKEN` value in `.env.production` with the sandbox (`pk_test_...`) token from `.env.development`.
-   - This is safe because the token is a publishable (public) key.
-   - After the next publish, the production build will initialize Stripe.js in sandbox mode and server functions will route to the sandbox connection.
+Update the trigger so it still blocks privilege escalation but permits the one-time bootstrap writes signup needs. Concretely, allow the change when the field is transitioning **from NULL to a value** (initial assignment), and keep blocking every subsequent change:
 
-3. UI/UX verification
-   - Confirm `PaymentTestModeBanner` renders the test-mode banner on the published site after republish.
-   - Confirm checkout flows use sandbox test cards (e.g., 4242 4242 4242 4242).
+- `firm_id`: allow `NULL → <uuid>`; block any other change.
+- `role`: allow `NULL → <role>`; block any other change.
+- `is_super_admin`: always blocked via the API (only super_admin or true service_role can flip it).
 
-4. Publish the change
-   - Republish the project so the updated `.env.production` is used in the production build.
+Super admins and real service-role sessions continue to bypass the trigger entirely (unchanged). This preserves the security finding fix (`profiles_admin_update_privilege_escalation`, `profiles_self_update_privilege_escalation`) — a normal authenticated user still cannot elevate `role`, move themselves between firms, or grant super-admin — while unblocking the first-time signup write.
 
-Important implications:
-- The published site will no longer accept real payments.
-- Any existing live Stripe subscriptions that were created before the switch will continue billing through Stripe, but new checkouts opened by the app will be sandbox sessions.
-- This does not disconnect the live Stripe account; it only changes which environment the app uses for checkout. Reverting later is as simple as restoring the live token in `.env.production` and republishing.
+## Changes
 
-No database or backend schema changes are required.
+- New migration replacing `public.prevent_profile_privilege_escalation()` with the NULL→value allowance described above. Trigger definition itself does not change.
+- No application code changes.
+
+## Verification
+
+- After the migration, sign up as a new user and confirm `/post-auth` completes and routes to `/register?step=payment` (or `/onboarding`) instead of showing the error toast.
+- Confirm an authenticated user still cannot `UPDATE profiles SET role='principal'` on their own row (should raise the same exception).
