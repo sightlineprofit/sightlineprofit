@@ -102,6 +102,45 @@ export const dismissTourWelcomeBanner = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const getTourStep6Progress = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const firmId = await getTourFirmId(supabase, userId);
+    if (!firmId) {
+      return { projectCreated: false, sopAttached: false, projectId: null as string | null };
+    }
+
+    const { data: projects } = await supabase
+      .from("projects")
+      .select("id, sop_template_id, created_at")
+      .eq("firm_id", firmId)
+      .order("created_at", { ascending: false })
+      .limit(25);
+
+    if (!projects?.length) {
+      return { projectCreated: false, sopAttached: false, projectId: null as string | null };
+    }
+
+    const projectIds = projects.map((p) => p.id as string);
+    const { data: phases } = await supabase
+      .from("project_phases")
+      .select("project_id")
+      .in("project_id", projectIds)
+      .limit(1);
+
+    const phasedProjectId = (phases?.[0]?.project_id as string | undefined) ?? null;
+    const templatedProject = projects.find((p) => p.sop_template_id);
+    const projectWithSopId = phasedProjectId ?? (templatedProject?.id as string | undefined) ?? null;
+    const projectId = projectWithSopId ?? (projects[0].id as string);
+
+    return {
+      projectCreated: true,
+      sopAttached: !!projectWithSopId,
+      projectId,
+    };
+  });
+
 /**
  * Reconcile tour progress against existing data. For users who came through
  * the old /onboarding wizard (or set things up in Settings), auto-advance
