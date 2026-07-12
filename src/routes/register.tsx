@@ -263,6 +263,7 @@ function RegisterPage() {
       return;
     }
     setBusy(true);
+    const redirectEnv = checkoutEnvironment ?? resolveCheckoutEnvironment(search.env);
     // Stash pending firm details BEFORE signUp so post-auth can pick them
     // up whether Supabase auto-confirms the session or requires a click.
     localStorage.setItem(
@@ -272,11 +273,10 @@ function RegisterPage() {
         ownerName,
         billingFrequency: frequency,
         stripePriceId: quote.data.priceId,
-        checkoutEnvironment,
+        checkoutEnvironment: redirectEnv,
         needsPayment: true,
       }),
     );
-    const redirectEnv = checkoutEnvironment ?? resolveCheckoutEnvironment(search.env);
     const { data: signUp, error } = await supabase.auth.signUp({
       email,
       password,
@@ -306,6 +306,7 @@ function RegisterPage() {
       toast.error("Fetching pricing… try again in a moment.");
       return;
     }
+    const redirectEnv = checkoutEnvironment ?? resolveCheckoutEnvironment(search.env);
     localStorage.setItem(
       "sightline_pending_firm",
       JSON.stringify({
@@ -313,11 +314,10 @@ function RegisterPage() {
         ownerName: ownerName || "",
         billingFrequency: frequency,
         stripePriceId: quote.data.priceId,
-        checkoutEnvironment,
+        checkoutEnvironment: redirectEnv,
         needsPayment: true,
       }),
     );
-    const redirectEnv = checkoutEnvironment ?? resolveCheckoutEnvironment(search.env);
     const result = await lovable.auth.signInWithOAuth("google", {
       redirect_uri: `${window.location.origin}/post-auth?env=${redirectEnv}`,
     });
