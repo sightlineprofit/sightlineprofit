@@ -52,20 +52,35 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       if (!prices.data.length) return { error: `Price not found: ${priceLookup}` };
       const price = prices.data[0];
 
+      const hadCachedCustomerId = !!firm.stripe_customer_id;
       let customerId = firm.stripe_customer_id ?? undefined;
+      if (customerId) {
+        try {
+          const existingCustomer: any = await stripe.customers.retrieve(customerId);
+          if (existingCustomer?.deleted) customerId = undefined;
+        } catch (e) {
+          console.warn(
+            "[createCheckoutSession] cached customer id is not available in this Stripe environment; creating one for current mode",
+            (e as Error).message,
+          );
+          customerId = undefined;
+        }
+      }
       if (!customerId) {
         customerId = await resolveOrCreateCustomerForFirm(stripe, {
           firmId: firm.id,
           email: profile.email ?? undefined,
           firmName: firm.name,
         });
-        // Persist immediately so we don't re-search Stripe on every retry
-        // while the webhook is still in flight.
-        try {
-          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-          await updateFirmBillingFromBackend(supabaseAdmin, firm.id, { stripe_customer_id: customerId });
-        } catch (e) {
-          console.warn("[createCheckoutSession] failed to cache customer id", e);
+        if (!hadCachedCustomerId) {
+          // Persist immediately so we don't re-search Stripe on every retry
+          // while the webhook is still in flight.
+          try {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            await updateFirmBillingFromBackend(supabaseAdmin, firm.id, { stripe_customer_id: customerId });
+          } catch (e) {
+            console.warn("[createCheckoutSession] failed to cache customer id", e);
+          }
         }
       }
 

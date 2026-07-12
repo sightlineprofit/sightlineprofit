@@ -9,6 +9,7 @@ import { getFoundingQuote, type FoundingBillingFrequency } from "@/lib/founding.
 import { StripeEmbeddedCheckoutPane } from "@/components/billing/StripeEmbeddedCheckout";
 import { getBillingSummary } from "@/lib/billing.functions";
 import type { CheckoutPriceKey } from "@/lib/stripe.server";
+import { canUseStripeEnvironment, getPreferredCheckoutEnvironment, getStripeEnvironment, type StripeEnv } from "@/lib/stripe";
 
 type Step = "account" | "payment";
 
@@ -16,9 +17,10 @@ export const Route = createFileRoute("/register")({
   head: () => ({ meta: [{ title: "Start your trial — Sightline" }] }),
   validateSearch: (
     s: Record<string, unknown>,
-  ): { billing?: FoundingBillingFrequency; step?: Step } => ({
+  ): { billing?: FoundingBillingFrequency; step?: Step; env?: StripeEnv } => ({
     billing: s.billing === "annual" ? "annual" : s.billing === "monthly" ? "monthly" : undefined,
     step: s.step === "payment" ? "payment" : s.step === "account" ? "account" : undefined,
+    env: s.env === "sandbox" || s.env === "live" ? s.env : undefined,
   }),
   component: RegisterPage,
 });
@@ -144,9 +146,21 @@ function RegisterPage() {
   );
   const [step, setStep] = useState<Step>(search.step === "payment" ? "payment" : "account");
   const [busy, setBusy] = useState(false);
+  const [checkoutEnvironment, setCheckoutEnvironment] = useState<StripeEnv | null>(null);
+  const [checkoutConfigError, setCheckoutConfigError] = useState<string | null>(null);
 
   const quoteFn = useServerFn(getFoundingQuote);
   const billingSummaryFn = useServerFn(getBillingSummary);
+
+  useEffect(() => {
+    try {
+      setCheckoutEnvironment(search.env ? getStripeEnvironment(search.env) : getPreferredCheckoutEnvironment());
+      setCheckoutConfigError(null);
+    } catch (error) {
+      setCheckoutEnvironment(null);
+      setCheckoutConfigError(error instanceof Error ? error.message : "Payments are not configured for this build.");
+    }
+  }, [search.env]);
 
   // Live founding-slot / price quote for the currently-selected frequency.
   const quote = useQuery({
@@ -181,11 +195,21 @@ function RegisterPage() {
     if (search.billing !== frequency) {
       nav({
         to: "/register",
-        search: { billing: frequency, step },
+        search: { billing: frequency, step, env: search.env },
         replace: true,
       });
     }
-  }, [frequency, step, nav, search.billing]);
+  }, [frequency, step, nav, search.billing, search.env]);
+
+  const switchCheckoutEnvironment = (env: StripeEnv) => {
+    setCheckoutEnvironment(env);
+    setCheckoutConfigError(null);
+    nav({
+      to: "/register",
+      search: { billing: frequency, step, env },
+      replace: true,
+    });
+  };
 
   // ─────────────── Step 1 submit ───────────────
   const submitAccount = async (e: React.FormEvent) => {
@@ -308,6 +332,10 @@ function RegisterPage() {
             quote={quote.data}
             trialEndDate={trialEndDate}
             loadingFirm={currentFirm.isLoading}
+            checkoutEnvironment={checkoutEnvironment}
+            checkoutConfigError={checkoutConfigError}
+            canSwitchToTestMode={canUseStripeEnvironment("sandbox")}
+            onCheckoutEnvironmentChange={switchCheckoutEnvironment}
           />
         )}
 
@@ -476,6 +504,10 @@ function StepPayment(props: {
     | undefined;
   trialEndDate: string;
   loadingFirm: boolean;
+  checkoutEnvironment: StripeEnv | null;
+  checkoutConfigError: string | null;
+  canSwitchToTestMode: boolean;
+  onCheckoutEnvironmentChange: (env: StripeEnv) => void;
 }) {
   const priceKey = (props.firmPriceId ?? props.quote?.priceId) as CheckoutPriceKey | undefined;
   const dollars = props.quote ? (props.quote.amountCents / 100).toFixed(2) : "—";
@@ -617,15 +649,43 @@ function StepPayment(props: {
         {dollars} on {props.trialEndDate} unless you cancel before then.
       </div>
 
+      {props.checkoutEnvironment === "live" && props.canSwitchToTestMode ? (
+        <div
+          className="mb-4 rounded-md border px-3 py-3 text-center"
+          style={{ background: "#FEF2F2", borderColor: "#FCA5A5", color: "#991B1B" }}
+        >
+          <p style={{ fontFamily: "Jost, sans-serif", fontSize: 12, lineHeight: 1.5 }}>
+            Live mode is active. Test cards will be declined.
+          </p>
+          <button
+            type="button"
+            onClick={() => props.onCheckoutEnvironmentChange("sandbox")}
+            className="mt-2 underline"
+            style={{ fontFamily: "Jost, sans-serif", fontSize: 12, fontWeight: 600 }}
+          >
+            Switch this checkout to test mode
+          </button>
+        </div>
+      ) : null}
+
       {/* Stripe embedded checkout (in subscription-with-trial mode) */}
       {props.loadingFirm ? (
         <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">
           Loading checkout…
         </div>
+      ) : props.checkoutConfigError ? (
+        <div className="rounded-md bg-white p-6 text-center text-sm text-danger">
+          {props.checkoutConfigError}
+        </div>
+      ) : !props.checkoutEnvironment ? (
+        <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">
+          Preparing checkout…
+        </div>
       ) : priceKey ? (
         <StripeEmbeddedCheckoutPane
           priceKey={priceKey}
-          returnUrl={`${window.location.origin}/post-auth?session_id={CHECKOUT_SESSION_ID}`}
+          returnUrl={`${window.location.origin}/post-auth?env=${props.checkoutEnvironment}&session_id={CHECKOUT_SESSION_ID}`}
+          environment={props.checkoutEnvironment}
         />
       ) : (
         <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">

@@ -1,26 +1,40 @@
-## The bug
+**Why this is happening**
 
-The `role` column on `public.profiles` has a NOT NULL default of `'team'`, so rows created by the `handle_new_user` trigger already have `role = 'team'` (never NULL). The previous fix only allowed `role` changes when `OLD.role IS NULL`, which never happens. So the first legitimate signup write — `createFirmForCurrentUser` upgrading the new user from `team` to `principal` — hits the trigger and raises "role cannot be changed via the API".
+The app chooses Stripe mode from the publishable token prefix in `src/lib/stripe.ts`:
 
-`firm_id` has no default and is nullable, so the NULL→value allowance already works for it; the trigger only trips on `role`.
+```text
+pk_test_... -> sandbox/test
+pk_live_... -> live
+```
 
-## Fix
+Right now:
 
-Update `prevent_profile_privilege_escalation` so the initial-bootstrap allowance keys off `OLD.firm_id IS NULL` (the reliable "user has not been placed in a firm yet" signal) instead of `OLD.<column> IS NULL`:
+```text
+.env.development = pk_test_...
+.env.production  = pk_live_...
+```
 
-- If `OLD.firm_id IS NULL` (first-time firm assignment), allow both `firm_id` and `role` to change in this one UPDATE. `is_super_admin` still cannot flip.
-- Once `OLD.firm_id IS NOT NULL`, block any change to `firm_id`, `role`, or `is_super_admin` (unchanged behavior).
+So preview/dev builds should use test mode, but the published/custom-domain production build will always use live mode. That is why the test card `4242 4242 4242 4242` is declined: it is being entered into a live checkout session.
 
-Super admins and true `service_role` sessions continue to bypass entirely.
+**Plan**
 
-This keeps the two security findings fixed (a normal authenticated user still can't self-elevate `role`, move between firms, or grant super-admin — their `OLD.firm_id` is already set) while letting signup complete.
+1. **Make test mode explicit for your testing path**
+   - Change the payment environment selection so the payment screen can intentionally run in test mode for preview/testing, instead of silently following the live production token.
+   - Keep the live production token available so real checkout can still work later.
 
-## Changes
+2. **Add a visible mode indicator on the payment screen**
+   - Show a clear test-mode banner when checkout is using the test environment.
+   - Show a live-mode warning when the page is using the live token, so it is obvious before entering card details.
 
-- One new migration replacing `public.prevent_profile_privilege_escalation()` with the logic above. Trigger definition unchanged.
-- No application code changes.
+3. **Guard against accidental live test-card use**
+   - If checkout is live, show copy that test cards will be declined.
+   - If checkout is test, use the test client token and pass `environment: "sandbox"` to the server function.
 
-## Verification
+4. **Verify the fix**
+   - Confirm the payment screen mounts Embedded Checkout in test mode.
+   - Confirm the server function receives `environment: "sandbox"`.
+   - Confirm the Stripe decline message no longer says the request was in live mode when using the test card.
 
-- Sign up as a new user → `/post-auth` completes and routes to `/register?step=payment`.
-- As an existing authenticated user, `UPDATE profiles SET role='principal' WHERE id = auth.uid()` still raises "role cannot be changed via the API".
+**Expected result**
+
+You’ll be able to get past the payment screen with test cards during testing, and live mode will stop appearing unexpectedly on the testing flow.
