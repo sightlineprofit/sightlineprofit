@@ -164,6 +164,12 @@ export function ProjectSetupWizard({
         window.dispatchEvent(
           new CustomEvent("sightline:project-created", { detail: { id: res.id } }),
         );
+        const trimmedPhaseCount = phases.filter((p) => p.name.trim().length > 0).length;
+        if (trimmedPhaseCount > 0 || templateId) {
+          window.dispatchEvent(
+            new CustomEvent("sightline:sop-attached", { detail: { id: res.id } }),
+          );
+        }
       }
       onCreated(res.id);
       handleClose();
