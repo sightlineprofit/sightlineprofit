@@ -1,40 +1,33 @@
-**Why this is happening**
+## Bug: Step 6 checklist gets stuck after "Create project + attach SOP"
 
-The app chooses Stripe mode from the publishable token prefix in `src/lib/stripe.ts`:
+### Root cause
 
-```text
-pk_test_... -> sandbox/test
-pk_live_... -> live
-```
+In `src/components/tour/TourProvider.tsx` (Step 6), the "Attach an SOP workflow" checkmark only ticks when a Supabase Realtime `INSERT` event fires on `project_phases`.
 
-Right now:
+But the wizard creates the project **and** its phases in a single `createProject` server call. The tour only subscribes to the `project_phases` channel *after* `projectId` is set (which happens when the project-created event arrives) — the phase INSERTs have already happened by then, and `public.project_phases` may not even be in the realtime publication. So `sopAttached` never flips to true and Step 6 sits there waiting.
 
-```text
-.env.development = pk_test_...
-.env.production  = pk_live_...
-```
+The third item "Review scoped hours" adds another gate (open the project detail, wait 3s) that the user shouldn't have to satisfy.
 
-So preview/dev builds should use test mode, but the published/custom-domain production build will always use live mode. That is why the test card `4242 4242 4242 4242` is declined: it is being entered into a live checkout session.
+### Fix
 
-**Plan**
+1. **Signal SOP attach from the wizard** (`ProjectSetupWizard.tsx`)
+   - After `createProject` succeeds, if the created project has phases (i.e. `phases.length > 0` or an SOP template was chosen), dispatch a new `sightline:sop-attached` CustomEvent with `{ id }` right after the existing `sightline:project-created` event.
 
-1. **Make test mode explicit for your testing path**
-   - Change the payment environment selection so the payment screen can intentionally run in test mode for preview/testing, instead of silently following the live production token.
-   - Keep the live production token available so real checkout can still work later.
+2. **Listen for the event in Step 6** (`TourProvider.tsx`)
+   - Add a `window.addEventListener("sightline:sop-attached", …)` effect that sets `sopAttached = true` (and captures projectId if not already set). Keep the existing realtime subscription as a fallback for the case where the user attaches an SOP later from the project detail panel.
 
-2. **Add a visible mode indicator on the payment screen**
-   - Show a clear test-mode banner when checkout is using the test environment.
-   - Show a live-mode warning when the page is using the live token, so it is obvious before entering card details.
+3. **Remove "Review scoped hours"**
+   - Delete the `scopeReviewed` state, its effect (the `/sightline?openProject=…` + `sightline:project-opened` listener), and the third `item(...)` row.
+   - Simplify `allDone` to `projectCreated && sopAttached`.
+   - Auto-advance effect becomes `if (projectCreated && sopAttached) → onAdvance()` after ~800ms.
+   - Drop the "Skip to Step 7" button (auto-advance covers it) or keep as an immediate-advance fallback — I'll keep it, relabeled "Continue →", visible once both items are done.
+   - Update the progress dots comment ("STEP 6 OF 7") copy stays; only the checklist shrinks from 3 to 2 items.
 
-3. **Guard against accidental live test-card use**
-   - If checkout is live, show copy that test cards will be declined.
-   - If checkout is test, use the test client token and pass `environment: "sandbox"` to the server function.
+### Files touched
 
-4. **Verify the fix**
-   - Confirm the payment screen mounts Embedded Checkout in test mode.
-   - Confirm the server function receives `environment: "sandbox"`.
-   - Confirm the Stripe decline message no longer says the request was in live mode when using the test card.
+- `src/components/tour/TourProvider.tsx` — remove `scopeReviewed`, update effects, checklist, button.
+- `src/components/projects/ProjectSetupWizard.tsx` — dispatch `sightline:sop-attached` alongside `sightline:project-created` on successful creation when phases exist.
 
-**Expected result**
+### Out of scope
 
-You’ll be able to get past the payment screen with test cards during testing, and live mode will stop appearing unexpectedly on the testing flow.
+No backend/schema changes. No changes to the wizard's create logic, payment flow, or other tour steps.

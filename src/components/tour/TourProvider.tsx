@@ -846,7 +846,6 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
   const [projectCreated, setProjectCreated] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [sopAttached, setSopAttached] = useState(false);
-  const [scopeReviewed, setScopeReviewed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const getCtx = useServerFn(getMyContext);
@@ -903,34 +902,28 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
     return () => { supabase.removeChannel(ch); };
   }, [projectId, sopAttached]);
 
-  // Scope review: once the user opens the project detail on /sightline
-  // (via search param OR a custom event dispatched when the inline detail
-  // panel opens) AND the SOP is attached, mark scope reviewed after 3s.
+  // Fallback: the ProjectSetupWizard dispatches sightline:sop-attached when
+  // it creates a project that includes phases or an SOP template — realtime
+  // on project_phases misses these because the subscription is set up after
+  // the INSERT (and the table may not be in the realtime publication).
   useEffect(() => {
-    if (!sopAttached || scopeReviewed) return;
-    const search = new URLSearchParams(location.search);
-    const openViaParam =
-      location.pathname === "/sightline" && !!search.get("openProject");
-    if (openViaParam) {
-      const t = setTimeout(() => setScopeReviewed(true), 3000);
-      return () => clearTimeout(t);
-    }
-    const onOpened = () => {
-      const t = setTimeout(() => setScopeReviewed(true), 3000);
-      // Cleanup handled by the outer return via listener removal + state
-      return () => clearTimeout(t);
+    if (sopAttached) return;
+    const onAttached = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      setSopAttached(true);
+      if (id) setProjectId((prev) => prev ?? id);
     };
-    window.addEventListener("sightline:project-opened", onOpened as EventListener);
-    return () => window.removeEventListener("sightline:project-opened", onOpened as EventListener);
-  }, [sopAttached, scopeReviewed, location.pathname, location.search]);
+    window.addEventListener("sightline:sop-attached", onAttached as EventListener);
+    return () => window.removeEventListener("sightline:sop-attached", onAttached as EventListener);
+  }, [sopAttached]);
 
-  // Auto-advance to Step 7 shortly after all three checklist items complete.
+  // Auto-advance to Step 7 shortly after both checklist items complete.
   useEffect(() => {
-    if (projectCreated && sopAttached && scopeReviewed) {
-      const t = setTimeout(() => { void onAdvance(); }, 1200);
+    if (projectCreated && sopAttached) {
+      const t = setTimeout(() => { void onAdvance(); }, 900);
       return () => clearTimeout(t);
     }
-  }, [projectCreated, sopAttached, scopeReviewed, onAdvance]);
+  }, [projectCreated, sopAttached, onAdvance]);
 
   const goToProjectCreate = () =>
     navigate({ to: "/sightline", search: { new: 1 } as any });
@@ -958,7 +951,7 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
     </li>
   );
 
-  const allDone = projectCreated && sopAttached && scopeReviewed;
+  const allDone = projectCreated && sopAttached;
 
   return (
     <>
@@ -969,7 +962,6 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
       <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 12px" }}>
         {item("Create a project", projectCreated, "Project created ✓")}
         {item("Attach an SOP workflow", sopAttached, "Workflow attached ✓")}
-        {item("Review scoped hours", scopeReviewed, "Scope reviewed ✓")}
       </ul>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
@@ -981,13 +973,13 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
           ) : !sopAttached ? (
             <button type="button" onClick={goToSopLibrary} style={primaryBtn}>Attach an SOP workflow →</button>
           ) : null}
-          {projectCreated && sopAttached ? (
+          {allDone ? (
             <button
               type="button"
               onClick={onAdvance}
               style={{ ...primaryBtn, animation: allDone ? "tourPulseGold 600ms ease-out 1" : undefined }}
             >
-              Skip to Step 7 →
+              Continue →
             </button>
           ) : null}
         </div>
