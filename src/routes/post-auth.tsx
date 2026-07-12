@@ -3,15 +3,16 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { createFirmForCurrentUser, getMyContext } from "@/lib/firm.functions";
 import { syncFirmFromStripeSession } from "@/lib/billing.functions";
-import { getStripeEnvironment } from "@/lib/stripe";
+import { getPreferredCheckoutEnvironment, getStripeEnvironment, type StripeEnv } from "@/lib/stripe";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { landingPathFor } from "@/lib/role";
 
 export const Route = createFileRoute("/post-auth")({
   head: () => ({ meta: [{ title: "Setting up — Sightline" }] }),
-  validateSearch: (s: Record<string, unknown>): { session_id?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { session_id?: string; env?: StripeEnv } => ({
     session_id: typeof s.session_id === "string" ? s.session_id : undefined,
+    env: s.env === "sandbox" || s.env === "live" ? s.env : undefined,
   }),
   component: PostAuth,
 });
@@ -106,7 +107,7 @@ function PostAuth() {
       if (search.session_id) {
         setStatus({ kind: "working", message: "Finalizing your account…" });
         try {
-          const env = getStripeEnvironment();
+          const env = search.env ? getStripeEnvironment(search.env) : getPreferredCheckoutEnvironment();
           const res = await syncFromSession({ data: { session_id: search.session_id, environment: env } });
           if ("ok" in res && res.ok) {
             const refreshed = await getCtx();
@@ -130,7 +131,7 @@ function PostAuth() {
     // Not from Stripe (e.g. user hit /post-auth directly or reopened after
     // signing in) — send them to complete payment.
     nav({ to: "/register", search: { step: "payment" } as any });
-  }, [nav, createFirm, getCtx, syncFromSession, fromStripe, search.session_id]);
+  }, [nav, createFirm, getCtx, syncFromSession, fromStripe, search.session_id, search.env]);
 
   useEffect(() => {
     let cancelled = false;
