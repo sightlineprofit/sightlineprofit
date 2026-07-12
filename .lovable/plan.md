@@ -1,25 +1,26 @@
-## Problem
+## The bug
 
-The new `prevent_profile_privilege_escalation` trigger is blocking legitimate signup. When a new user finishes registering, `createFirmForCurrentUser` uses the admin client to write `firm_id` and `role` onto their profile for the first time. The trigger raises "role, is_super_admin, and firm_id cannot be changed via the API" because the service-role detection (`current_user = 'service_role'` / `request.jwt.claim.role = 'service_role'`) does not fire reliably with the new `sb_secret_…` Supabase key that this project uses (documented in AGENTS.md — the same reason `prevent_firm_billing_changes` needs a manual GUC set).
+The `role` column on `public.profiles` has a NOT NULL default of `'team'`, so rows created by the `handle_new_user` trigger already have `role = 'team'` (never NULL). The previous fix only allowed `role` changes when `OLD.role IS NULL`, which never happens. So the first legitimate signup write — `createFirmForCurrentUser` upgrading the new user from `team` to `principal` — hits the trigger and raises "role cannot be changed via the API".
 
-Result: no one can complete signup; the payment/onboarding screen is unreachable.
+`firm_id` has no default and is nullable, so the NULL→value allowance already works for it; the trigger only trips on `role`.
 
 ## Fix
 
-Update the trigger so it still blocks privilege escalation but permits the one-time bootstrap writes signup needs. Concretely, allow the change when the field is transitioning **from NULL to a value** (initial assignment), and keep blocking every subsequent change:
+Update `prevent_profile_privilege_escalation` so the initial-bootstrap allowance keys off `OLD.firm_id IS NULL` (the reliable "user has not been placed in a firm yet" signal) instead of `OLD.<column> IS NULL`:
 
-- `firm_id`: allow `NULL → <uuid>`; block any other change.
-- `role`: allow `NULL → <role>`; block any other change.
-- `is_super_admin`: always blocked via the API (only super_admin or true service_role can flip it).
+- If `OLD.firm_id IS NULL` (first-time firm assignment), allow both `firm_id` and `role` to change in this one UPDATE. `is_super_admin` still cannot flip.
+- Once `OLD.firm_id IS NOT NULL`, block any change to `firm_id`, `role`, or `is_super_admin` (unchanged behavior).
 
-Super admins and real service-role sessions continue to bypass the trigger entirely (unchanged). This preserves the security finding fix (`profiles_admin_update_privilege_escalation`, `profiles_self_update_privilege_escalation`) — a normal authenticated user still cannot elevate `role`, move themselves between firms, or grant super-admin — while unblocking the first-time signup write.
+Super admins and true `service_role` sessions continue to bypass entirely.
+
+This keeps the two security findings fixed (a normal authenticated user still can't self-elevate `role`, move between firms, or grant super-admin — their `OLD.firm_id` is already set) while letting signup complete.
 
 ## Changes
 
-- New migration replacing `public.prevent_profile_privilege_escalation()` with the NULL→value allowance described above. Trigger definition itself does not change.
+- One new migration replacing `public.prevent_profile_privilege_escalation()` with the logic above. Trigger definition unchanged.
 - No application code changes.
 
 ## Verification
 
-- After the migration, sign up as a new user and confirm `/post-auth` completes and routes to `/register?step=payment` (or `/onboarding`) instead of showing the error toast.
-- Confirm an authenticated user still cannot `UPDATE profiles SET role='principal'` on their own row (should raise the same exception).
+- Sign up as a new user → `/post-auth` completes and routes to `/register?step=payment`.
+- As an existing authenticated user, `UPDATE profiles SET role='principal' WHERE id = auth.uid()` still raises "role cannot be changed via the API".
