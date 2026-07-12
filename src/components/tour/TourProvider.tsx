@@ -12,6 +12,7 @@ import {
   resetTourFn,
   reconcileTour,
   dismissTourWelcomeBanner,
+  getTourStep6Progress,
 } from "@/lib/tour.functions";
 import { upsertFirmConfig, addExpense, upsertOwnerCompensation } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
@@ -847,10 +848,24 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
   const [projectId, setProjectId] = useState<string | null>(null);
   const [sopAttached, setSopAttached] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
+  const qc = useQueryClient();
   const getCtx = useServerFn(getMyContext);
+  const getStep6Progress = useServerFn(getTourStep6Progress);
+  const advancedRef = useRef(false);
   const { data: meCtx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data: step6Progress } = useQuery({
+    queryKey: ["tour-step-6-progress"],
+    queryFn: () => getStep6Progress(),
+    staleTime: 0,
+  });
   const firmId = (meCtx as any)?.profile?.firm_id as string | undefined;
+
+  useEffect(() => {
+    if (!step6Progress) return;
+    if (step6Progress.projectCreated) setProjectCreated(true);
+    if (step6Progress.sopAttached) setSopAttached(true);
+    if (step6Progress.projectId) setProjectId(step6Progress.projectId);
+  }, [step6Progress]);
 
   // Realtime: watch for a new project row for this firm while Step 6 is active.
   useEffect(() => {
@@ -883,10 +898,11 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
         setProjectCreated(true);
         setProjectId(id);
       }
+      qc.invalidateQueries({ queryKey: ["tour-step-6-progress"] });
     };
     window.addEventListener("sightline:project-created", onCreated as EventListener);
     return () => window.removeEventListener("sightline:project-created", onCreated as EventListener);
-  }, [projectCreated]);
+  }, [projectCreated, qc]);
 
   // Realtime: watch for project_phases inserted against the created project.
   useEffect(() => {
@@ -912,14 +928,16 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
       const id = (e as CustomEvent<{ id?: string }>).detail?.id;
       setSopAttached(true);
       if (id) setProjectId((prev) => prev ?? id);
+      qc.invalidateQueries({ queryKey: ["tour-step-6-progress"] });
     };
     window.addEventListener("sightline:sop-attached", onAttached as EventListener);
     return () => window.removeEventListener("sightline:sop-attached", onAttached as EventListener);
-  }, [sopAttached]);
+  }, [sopAttached, qc]);
 
   // Auto-advance to Step 7 shortly after both checklist items complete.
   useEffect(() => {
-    if (projectCreated && sopAttached) {
+    if (projectCreated && sopAttached && !advancedRef.current) {
+      advancedRef.current = true;
       const t = setTimeout(() => { void onAdvance(); }, 900);
       return () => clearTimeout(t);
     }
@@ -976,7 +994,10 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
           {allDone ? (
             <button
               type="button"
-              onClick={onAdvance}
+              onClick={() => {
+                advancedRef.current = true;
+                void onAdvance();
+              }}
               style={{ ...primaryBtn, animation: allDone ? "tourPulseGold 600ms ease-out 1" : undefined }}
             >
               Continue →

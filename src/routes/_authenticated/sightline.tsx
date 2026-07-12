@@ -1130,6 +1130,11 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
     try {
       const r = await attachTplFn({ data: { template_id: tplPicked, project_id: id } });
       toast.success(`${r.attached} phase${r.attached !== 1 ? "s" : ""} added from template`);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("sightline:sop-attached", { detail: { id } }),
+        );
+      }
       setTplPickerOpen(false);
       setTplPicked("");
       invalidate();
