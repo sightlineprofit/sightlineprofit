@@ -1,8 +1,7 @@
 import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js";
-import { getStripe, getStripeEnvironment } from "@/lib/stripe";
+import { getStripe, getStripeEnvironment, type StripeEnv } from "@/lib/stripe";
 import { createCheckoutSession } from "@/lib/billing.functions";
 import type { CheckoutPriceKey } from "@/lib/stripe.server";
-import type { StripeEnv } from "@/lib/stripe";
 
 export function StripeEmbeddedCheckoutPane({
   priceKey,
