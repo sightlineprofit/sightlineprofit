@@ -195,11 +195,11 @@ function RegisterPage() {
     if (search.billing !== frequency) {
       nav({
         to: "/register",
-        search: { billing: frequency, step },
+        search: { billing: frequency, step, env: search.env },
         replace: true,
       });
     }
-  }, [frequency, step, nav, search.billing]);
+  }, [frequency, step, nav, search.billing, search.env]);
 
   const switchCheckoutEnvironment = (env: StripeEnv) => {
     setCheckoutEnvironment(env);
