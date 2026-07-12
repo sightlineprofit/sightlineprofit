@@ -9,6 +9,7 @@ import { getFoundingQuote, type FoundingBillingFrequency } from "@/lib/founding.
 import { StripeEmbeddedCheckoutPane } from "@/components/billing/StripeEmbeddedCheckout";
 import { getBillingSummary } from "@/lib/billing.functions";
 import type { CheckoutPriceKey } from "@/lib/stripe.server";
+import { getPreferredCheckoutEnvironment, type StripeEnv } from "@/lib/stripe";
 
 type Step = "account" | "payment";
 
@@ -144,9 +145,21 @@ function RegisterPage() {
   );
   const [step, setStep] = useState<Step>(search.step === "payment" ? "payment" : "account");
   const [busy, setBusy] = useState(false);
+  const [checkoutEnvironment, setCheckoutEnvironment] = useState<StripeEnv | null>(null);
+  const [checkoutConfigError, setCheckoutConfigError] = useState<string | null>(null);
 
   const quoteFn = useServerFn(getFoundingQuote);
   const billingSummaryFn = useServerFn(getBillingSummary);
+
+  useEffect(() => {
+    try {
+      setCheckoutEnvironment(getPreferredCheckoutEnvironment());
+      setCheckoutConfigError(null);
+    } catch (error) {
+      setCheckoutEnvironment(null);
+      setCheckoutConfigError(error instanceof Error ? error.message : "Payments are not configured for this build.");
+    }
+  }, []);
 
   // Live founding-slot / price quote for the currently-selected frequency.
   const quote = useQuery({
@@ -308,6 +321,8 @@ function RegisterPage() {
             quote={quote.data}
             trialEndDate={trialEndDate}
             loadingFirm={currentFirm.isLoading}
+            checkoutEnvironment={checkoutEnvironment}
+            checkoutConfigError={checkoutConfigError}
           />
         )}
 
@@ -476,6 +491,8 @@ function StepPayment(props: {
     | undefined;
   trialEndDate: string;
   loadingFirm: boolean;
+  checkoutEnvironment: StripeEnv | null;
+  checkoutConfigError: string | null;
 }) {
   const priceKey = (props.firmPriceId ?? props.quote?.priceId) as CheckoutPriceKey | undefined;
   const dollars = props.quote ? (props.quote.amountCents / 100).toFixed(2) : "—";
@@ -622,10 +639,19 @@ function StepPayment(props: {
         <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">
           Loading checkout…
         </div>
+      ) : props.checkoutConfigError ? (
+        <div className="rounded-md bg-white p-6 text-center text-sm text-danger">
+          {props.checkoutConfigError}
+        </div>
+      ) : !props.checkoutEnvironment ? (
+        <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">
+          Preparing checkout…
+        </div>
       ) : priceKey ? (
         <StripeEmbeddedCheckoutPane
           priceKey={priceKey}
           returnUrl={`${window.location.origin}/post-auth?session_id={CHECKOUT_SESSION_ID}`}
+          environment={props.checkoutEnvironment}
         />
       ) : (
         <div className="rounded-md bg-white p-6 text-center text-sm text-ch/60">
