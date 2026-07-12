@@ -53,6 +53,18 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       const price = prices.data[0];
 
       let customerId = firm.stripe_customer_id ?? undefined;
+      if (customerId) {
+        try {
+          const existingCustomer: any = await stripe.customers.retrieve(customerId);
+          if (existingCustomer?.deleted) customerId = undefined;
+        } catch (e) {
+          console.warn(
+            "[createCheckoutSession] cached customer id is not available in this Stripe environment; creating one for current mode",
+            (e as Error).message,
+          );
+          customerId = undefined;
+        }
+      }
       if (!customerId) {
         customerId = await resolveOrCreateCustomerForFirm(stripe, {
           firmId: firm.id,
