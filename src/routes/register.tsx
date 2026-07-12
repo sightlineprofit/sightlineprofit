@@ -28,6 +28,39 @@ export const Route = createFileRoute("/register")({
 // ────────────────────────────────────────────── shared bits ──
 
 const PAGE_BG = "#FAF7F2";
+const CHECKOUT_ENV_STORAGE_KEY = "sightline_checkout_environment";
+
+function isStripeEnv(value: unknown): value is StripeEnv {
+  return value === "sandbox" || value === "live";
+}
+
+function readSavedCheckoutEnvironment(): StripeEnv | null {
+  if (typeof window === "undefined") return null;
+  const saved = window.localStorage.getItem(CHECKOUT_ENV_STORAGE_KEY);
+  return isStripeEnv(saved) ? saved : null;
+}
+
+function writeSavedCheckoutEnvironment(environment: StripeEnv) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CHECKOUT_ENV_STORAGE_KEY, environment);
+}
+
+function checkoutEnvironmentFromPending(): StripeEnv | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem("sightline_pending_firm") ?? window.sessionStorage.getItem("sightline_pending_firm");
+  if (!raw) return null;
+  try {
+    const pending = JSON.parse(raw) as { checkoutEnvironment?: unknown };
+    return isStripeEnv(pending.checkoutEnvironment) ? pending.checkoutEnvironment : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveCheckoutEnvironment(searchEnv?: StripeEnv): StripeEnv {
+  const explicitEnv = searchEnv ?? readSavedCheckoutEnvironment() ?? checkoutEnvironmentFromPending();
+  return explicitEnv ? getStripeEnvironment(explicitEnv) : getPreferredCheckoutEnvironment();
+}
 
 function Wordmark() {
   return (
@@ -154,7 +187,9 @@ function RegisterPage() {
 
   useEffect(() => {
     try {
-      setCheckoutEnvironment(search.env ? getStripeEnvironment(search.env) : getPreferredCheckoutEnvironment());
+      const env = resolveCheckoutEnvironment(search.env);
+      setCheckoutEnvironment(env);
+      writeSavedCheckoutEnvironment(env);
       setCheckoutConfigError(null);
     } catch (error) {
       setCheckoutEnvironment(null);
@@ -202,6 +237,7 @@ function RegisterPage() {
   }, [frequency, step, nav, search.billing, search.env]);
 
   const switchCheckoutEnvironment = (env: StripeEnv) => {
+    writeSavedCheckoutEnvironment(env);
     setCheckoutEnvironment(env);
     setCheckoutConfigError(null);
     nav({
@@ -236,14 +272,16 @@ function RegisterPage() {
         ownerName,
         billingFrequency: frequency,
         stripePriceId: quote.data.priceId,
+        checkoutEnvironment,
         needsPayment: true,
       }),
     );
+    const redirectEnv = checkoutEnvironment ?? resolveCheckoutEnvironment(search.env);
     const { data: signUp, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: window.location.origin + "/post-auth",
+        emailRedirectTo: `${window.location.origin}/post-auth?env=${redirectEnv}`,
         data: { name: ownerName, firm_name: firmName },
       },
     });
@@ -260,7 +298,7 @@ function RegisterPage() {
     // Session established immediately (auto-confirm on). Route through
     // /post-auth so the firm gets created, then it bounces us back to
     // /register?step=payment.
-    nav({ to: "/post-auth" });
+    nav({ to: "/post-auth", search: { env: redirectEnv } as any });
   };
 
   const onGoogle = async () => {
@@ -275,18 +313,20 @@ function RegisterPage() {
         ownerName: ownerName || "",
         billingFrequency: frequency,
         stripePriceId: quote.data.priceId,
+        checkoutEnvironment,
         needsPayment: true,
       }),
     );
+    const redirectEnv = checkoutEnvironment ?? resolveCheckoutEnvironment(search.env);
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin + "/post-auth",
+      redirect_uri: `${window.location.origin}/post-auth?env=${redirectEnv}`,
     });
     if (result.error) {
       toast.error(result.error.message || "Google sign-in failed");
       return;
     }
     if (result.redirected) return;
-    window.location.href = "/post-auth";
+    window.location.href = `/post-auth?env=${redirectEnv}`;
   };
 
   // ─────────────── UI helpers ───────────────
