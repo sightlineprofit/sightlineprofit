@@ -1,38 +1,31 @@
-## Plan: Fix Step 6 getting stuck after project + SOP setup
+## Goal
+Run an end-to-end Playwright verification against the **live** site (`sightlineprofit.com`) using Stripe **sandbox** mode (via `?env=sandbox`), completing a real checkout with test card `4242 4242 4242 4242`, and capturing screenshots proving:
+1. Post-checkout redirect lands on `/dashboard`
+2. The guided onboarding tour auto-launches
 
-### Goal
-Make guided onboarding Step 6 complete reliably even if the browser event or Realtime notification is missed, and stop asking users to create duplicate projects after they already created one with SOP phases.
+## Steps
 
-### What I’ll change
-1. **Add a durable Step 6 progress check**
-   - Add a tour server function that checks the current firm’s actual data:
-     - Does the firm have at least one project?
-     - Does any project have attached SOP/scoped phases?
-     - Return the most relevant project id.
-   - This avoids depending only on temporary `window` events or Realtime inserts.
+1. **Provision a test user** via Supabase admin API (`sb_secret_…`, `email_confirm: true`) so we bypass email confirmation. Use a unique `+e2e-<timestamp>@` email.
 
-2. **Use that check when Step 6 opens/reopens**
-   - In `TourProvider.tsx`, Step 6 will query the backend on mount.
-   - If a project already exists, mark “Create a project” complete.
-   - If that project has phases/SOP scope, mark “Attach an SOP workflow” complete.
-   - If both are complete, auto-advance to Step 7.
+2. **Playwright script** at `/tmp/browser/live-checkout/run.py`:
+   - Launch headless Chromium, viewport 1280×1800.
+   - Navigate to `https://sightlineprofit.com/register?env=sandbox` to force sandbox mode (persisted via `localStorage`).
+   - Screenshot each step: signup form → account creation → payment step (verify sandbox banner, not live banner) → Stripe Embedded Checkout iframe.
+   - Fill Stripe iframe fields: card `4242 4242 4242 4242`, future expiry, any CVC, ZIP.
+   - Submit; wait for redirect to `/post-auth?env=sandbox&session_id=...`.
+   - Screenshot the post-auth waiting state and the eventual `/dashboard` landing.
+   - Wait for `TourProvider` auto-launch; screenshot the tour overlay/checklist.
+   - Capture console errors and final URL.
 
-3. **Re-check after project creation and SOP attachment**
-   - Keep the existing browser events as fast-path signals.
-   - After `sightline:project-created` or `sightline:sop-attached`, invalidate/refetch the durable Step 6 progress check so the UI has a reliable source of truth.
+3. **Report back** with:
+   - Final URL after checkout
+   - Screenshots of: sandbox banner on payment step, Stripe form, post-auth transition, dashboard, active tour step
+   - Any console errors or webhook-lag fallback messages
+   - Confirmation the new sandbox subscription appears on the firm (via a `supabase--read_query` on `firms.stripe_subscription_id`)
 
-4. **Signal SOP attachment from the project detail attach flow too**
-   - When phases are attached via the project detail “Add phases from SOP Library” dialog, dispatch the same `sightline:sop-attached` event and refresh Step 6 progress.
+4. **Cleanup:** Delete the test user + firm rows so we don't leave orphan sandbox data.
 
-5. **Avoid duplicate-project prompting**
-   - If Step 6 finds an existing project without SOP phases, show only the “Attach an SOP workflow” action for that project.
-   - If it finds an existing project with phases, it will continue automatically instead of asking for another project.
-
-### Files to update
-- `src/lib/tour.functions.ts`
-- `src/components/tour/TourProvider.tsx`
-- `src/routes/_authenticated/sightline.tsx`
-
-### Out of scope
-- No database schema changes.
-- No changes to payment, registration, or project creation business rules.
+## Notes
+- Uses sandbox mode only — no real card, no real charge.
+- No code changes; verification only.
+- If Stripe iframe selectors are flaky, fall back to `page.frame_locator("iframe[name^='__privateStripeFrame']")` and role-based selectors.
