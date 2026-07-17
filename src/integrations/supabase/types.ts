@@ -2036,6 +2036,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _migrate_export: { Args: never; Returns: string }
+      _migrate_export_auth: { Args: never; Returns: string }
       current_firm_id: { Args: never; Returns: string }
       current_firm_tier: { Args: never; Returns: string }
       current_user_role: {
