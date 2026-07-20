@@ -48,10 +48,12 @@ import {
   PricingStrip,
   useHealthChangeToast,
 } from "@/components/dashboard/RateArchitectureHeader";
+import { UtilizationRealityCheck } from "@/components/dashboard/UtilizationRealityCheck";
 
 import { TeamHoursTile } from "@/components/dashboard/TeamHoursTile";
 import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
 import { useTour } from "@/components/tour/TourProvider";
+import { normalizePricingStructure, requiresBilledRate } from "@/lib/pricing-structure";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Sightline" }] }),
@@ -135,9 +137,19 @@ function Dashboard() {
     return weeks;
   }, [trailingEntries, manualLogsWindow, selectedMonday]);
 
-  const targetHrs = Number(data?.config?.target_billable_hrs_per_week ?? 0);
+  const targetHrs = c.principalBillableHrsWeek || Number(data?.config?.target_billable_hrs_per_week ?? 0);
   const rateBilled = Number(data?.config?.rate_billed ?? 0);
-  const setupIncomplete = !targetHrs || !rateBilled;
+  const pricingStructure = normalizePricingStructure((data?.config as { pricing_structure?: string } | null)?.pricing_structure);
+  const setupIncomplete =
+    !targetHrs || (requiresBilledRate(pricingStructure) && !rateBilled);
+
+  const projectScopedHours = useMemo(() => {
+    const cap: any = (data as any)?.capacity;
+    if (!cap?.projects) return [] as number[];
+    return (cap.projects as any[])
+      .map((p) => Number(p.scoped_hrs) || 0)
+      .filter((h) => h > 0);
+  }, [data]);
 
   // Active projects with actual vs scoped hours
   const activeProjects = useMemo(() => {
@@ -318,14 +330,20 @@ function Dashboard() {
         <>
           <WelcomeBanner firm={data?.firm as any} firstName={firstName} />
           <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
-            <RateArchitecturePanel
-              c={c}
-              cfg={data?.config}
-              members={(data as any)?.capacity?.team ?? []}
-              expenses={data?.expenses ?? []}
-              targetMarginPct={targetMarginPct}
-              configUpdatedAt={(data?.config as any)?.updated_at}
-            />
+            <div className="flex flex-col">
+              <RateArchitecturePanel
+                c={c}
+                cfg={data?.config}
+                members={(data as any)?.capacity?.team ?? []}
+                expenses={data?.expenses ?? []}
+                targetMarginPct={targetMarginPct}
+                configUpdatedAt={(data?.config as any)?.updated_at}
+                projectScopedHours={projectScopedHours}
+              />
+              {data?.firm?.id && (
+                <UtilizationRealityCheck firmId={data.firm.id as string} />
+              )}
+            </div>
             <div className="flex flex-col gap-3">
               <WeeklyPulse
                 weekBillable={weekMetrics.billable}

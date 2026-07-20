@@ -8,9 +8,9 @@ import {
   activateSubscription,
   createBillingPortalSession,
 } from "@/lib/billing.functions";
+import { getFoundingQuote, firmUsesFoundingPricing, resolveCheckoutPriceKey } from "@/lib/founding.functions";
 import { getStripeEnvironment, paymentsConfigured } from "@/lib/stripe";
 import { StripeEmbeddedCheckoutPane } from "@/components/billing/StripeEmbeddedCheckout";
-import { FOUNDING_PRICE_KEYS } from "@/lib/stripe.server";
 
 export const Route = createFileRoute("/_authenticated/billing")({
   head: () => ({ meta: [{ title: "Activate your subscription — Sightline" }] }),
@@ -33,6 +33,7 @@ function BillingPage() {
   const fetchSummary = useServerFn(getBillingSummary);
   const activate = useServerFn(activateSubscription);
   const openPortal = useServerFn(createBillingPortalSession);
+  const quoteFn = useServerFn(getFoundingQuote);
 
   const summaryQ = useQuery({
     queryKey: ["billing-summary"],
@@ -40,12 +41,20 @@ function BillingPage() {
   });
 
   const firm: any = summaryQ.data ?? null;
-  const isFounding = firm?.stripe_price_id ? FOUNDING_PRICE_KEYS.has(firm.stripe_price_id) : false;
-  const priceCol = isFounding ? PRICE_TABLE.founding : PRICE_TABLE.standard;
 
   const [freq, setFreq] = useState<Frequency>(
     (firm?.billing_frequency === "annual" ? "annual" : "monthly") as Frequency,
   );
+
+  const quoteQ = useQuery({
+    queryKey: ["founding-quote", freq],
+    queryFn: () => quoteFn({ data: { frequency: freq } }),
+    enabled: !!firm,
+  });
+
+  const isFounding = firmUsesFoundingPricing(firm, quoteQ.data?.foundingActive ?? false);
+  const priceCol = isFounding ? PRICE_TABLE.founding : PRICE_TABLE.standard;
+  const checkoutPriceKey = resolveCheckoutPriceKey(firm, freq, quoteQ.data);
   const [showCardEntry, setShowCardEntry] = useState(false);
   const [saving, setSaving] = useState(false);
   const [portalPending, setPortalPending] = useState(false);
@@ -214,15 +223,7 @@ function BillingPage() {
             ) : configured ? (
               <div className="mb-5">
                 <StripeEmbeddedCheckoutPane
-                  priceKey={
-                    (isFounding
-                      ? freq === "annual"
-                        ? "sightline_founding_annual"
-                        : "sightline_founding_monthly"
-                      : freq === "annual"
-                        ? "sightline_standard_annual"
-                        : "sightline_standard_monthly") as any
-                  }
+                  priceKey={checkoutPriceKey}
                   returnUrl={`${window.location.origin}/dashboard?checkout=success`}
                 />
                 {hasCard && (
@@ -324,7 +325,7 @@ function ActiveSubscription({
   portalPending: boolean;
   onPortal: () => void;
 }) {
-  const isFounding = firm?.stripe_price_id ? FOUNDING_PRICE_KEYS.has(firm.stripe_price_id) : false;
+  const isFounding = firmUsesFoundingPricing(firm, false);
   const freq: Frequency = firm?.billing_frequency === "annual" ? "annual" : "monthly";
   const priceCol = isFounding ? PRICE_TABLE.founding : PRICE_TABLE.standard;
   const cents = priceCol[freq];

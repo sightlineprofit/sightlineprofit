@@ -64,6 +64,16 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       ? await supabase.from("sop_steps").select("*").in("phase_id", phaseIds).order("sort_order")
       : { data: [] as never[] };
 
+    const stepIds = (steps ?? []).map((s: { id: string }) => s.id);
+    const [{ data: stepAssignees }, picker] = stepIds.length
+      ? await Promise.all([
+          supabase.from("sop_step_assignees").select("*").in("sop_step_id", stepIds),
+          import("@/lib/project-cost-snapshot.server").then((m) =>
+            m.listFirmMembersForAssigneePicker(supabase, profile.firm_id),
+          ),
+        ])
+      : [{ data: [] as never[] }, { members: [], principal: { name: "Principal" } }];
+
     const lastUsed: Record<string, string> = {};
     const usageCounts: Record<string, number> = {};
     const activeUsageCounts: Record<string, number> = {};
@@ -82,6 +92,9 @@ export const getSopLibrary = createServerFn({ method: "GET" })
       templates: templates ?? [],
       phases: phases ?? [],
       steps: steps ?? [],
+      stepAssignees: stepAssignees ?? [],
+      assigneePickerMembers: picker.members,
+      assigneePickerPrincipal: picker.principal,
       projects: projects.map((p) => ({ id: p.id, name: p.name, client_name: p.client_name, status: p.status })),
       config,
       lastUsed,
@@ -378,6 +391,7 @@ export const attachTemplateToProject = createServerFn({ method: "POST" })
       .order("sort_order");
 
     // Insert project_phases one-by-one to capture new ids for step snapshot
+    let migrationPending = false;
     for (const p of phases) {
       const { data: ins, error } = await supabase
         .from("project_phases")
@@ -396,21 +410,38 @@ export const attachTemplateToProject = createServerFn({ method: "POST" })
 
       const steps = (allSteps ?? []).filter((s) => s.phase_id === p.id);
       if (steps.length) {
-        await supabase.from("project_steps").insert(
-          steps.map((s) => ({
-            project_phase_id: ins.id,
-            sop_step_id: s.id,
-            description: s.description,
-            estimated_hrs: Number(s.estimated_hrs) || 0,
-            template_estimated_hrs: Number(s.estimated_hrs) || 0,
-            is_custom: false,
-            sort_order: s.sort_order,
-            actual_hrs: 0,
-          })),
+        const { data: insertedSteps, error: stepErr } = await supabase
+          .from("project_steps")
+          .insert(
+            steps.map((s) => ({
+              project_phase_id: ins.id,
+              sop_step_id: s.id,
+              description: s.description,
+              estimated_hrs: Number(s.estimated_hrs) || 0,
+              template_estimated_hrs: Number(s.estimated_hrs) || 0,
+              is_custom: false,
+              sort_order: s.sort_order,
+              actual_hrs: 0,
+            })),
+          )
+          .select("id, sop_step_id");
+        if (stepErr) throw new Error(stepErr.message);
+        const { copySopAssigneesToProjectSteps, refreshProjectCostSnapshot } = await import(
+          "@/lib/project-cost-snapshot.server"
         );
+        const pairs = (insertedSteps ?? [])
+          .filter((row: { sop_step_id?: string | null }) => row.sop_step_id)
+          .map((row: { id: string; sop_step_id: string }) => ({
+            sopStepId: row.sop_step_id,
+            projectStepId: row.id,
+          }));
+        const copied = await copySopAssigneesToProjectSteps(supabase, pairs);
+        if (!copied) migrationPending = true;
+        const refreshed = await refreshProjectCostSnapshot(supabase, project.id, profile.firm_id);
+        if (!refreshed) migrationPending = true;
       }
     }
-    return { project_id: project.id, attached: phases.length };
+    return { project_id: project.id, attached: phases.length, migrationPending };
   });
 
 export const reorderProjectPhases = createServerFn({ method: "POST" })
@@ -470,4 +501,83 @@ export const getSopTemplatePhases = createServerFn({ method: "GET" })
         billable: !!p.billable,
       })),
     };
+  });
+
+const sopStepAssigneeSchema = z.object({
+  sop_step_id: z.string().uuid(),
+  assignee_kind: z.enum(["member", "principal"]).default("member"),
+  firm_member_id: z.string().uuid().optional().nullable(),
+  estimated_hrs: z.number().min(0).max(9999).optional(),
+  is_billable: z.boolean().optional(),
+  notes: z.string().max(500).optional().nullable(),
+});
+
+export const upsertSopStepAssignee = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => sopStepAssigneeSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
+    if (data.assignee_kind === "member" && !data.firm_member_id) {
+      throw new Error("firm_member_id required");
+    }
+
+    const match =
+      data.assignee_kind === "principal"
+        ? { sop_step_id: data.sop_step_id, assignee_kind: "principal" as const }
+        : {
+            sop_step_id: data.sop_step_id,
+            firm_member_id: data.firm_member_id!,
+            assignee_kind: "member" as const,
+          };
+
+    const { data: existing } = await supabase
+      .from("sop_step_assignees")
+      .select("id")
+      .match(match)
+      .maybeSingle();
+
+    const row = {
+      sop_step_id: data.sop_step_id,
+      assignee_kind: data.assignee_kind,
+      firm_member_id: data.assignee_kind === "principal" ? null : data.firm_member_id,
+      estimated_hrs: data.estimated_hrs ?? 0,
+      is_billable: data.is_billable ?? true,
+      notes: data.notes ?? null,
+    };
+
+    if (existing?.id) {
+      const { data: updated, error } = await supabase
+        .from("sop_step_assignees")
+        .update(row)
+        .eq("id", existing.id)
+        .select("*")
+        .single();
+      if (error) throw new Error(error.message);
+      return updated;
+    }
+
+    const { data: inserted, error } = await supabase
+      .from("sop_step_assignees")
+      .insert(row)
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return inserted;
+  });
+
+export const deleteSopStepAssignee = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("sop_step_assignees").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });

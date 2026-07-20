@@ -1,0 +1,5 @@
+Date,Hours,Project,Billable,Description,Activity
+2026-01-15,2.5,Henderson Residence,Yes,Reviewed finish selections,Design Development
+2026-01-15,1.0,Henderson Residence,Yes,Client call — material review,Client Meeting Prep
+2026-01-16,0.5,,No,Team standup,Team Meeting
+INSTRUCTIONS — delete before uploading. Date: YYYY-MM-DD format. Hours: decimal (2.5 not 2:30). Project: must match a project name in Sightline exactly. Billable: Yes or No. Leave Project blank for non-billable firm time.

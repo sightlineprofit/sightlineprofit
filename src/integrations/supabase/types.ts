@@ -395,6 +395,7 @@ export type Database = {
           firm_id: string
           growth_signals: Json
           planned_activity_allocation: Json
+          pricing_structure: string
           rate_billed: number | null
           rate_insight_shown: boolean
           target_billable_hrs_per_week: number | null
@@ -418,6 +419,7 @@ export type Database = {
           firm_id: string
           growth_signals?: Json
           planned_activity_allocation?: Json
+          pricing_structure?: string
           rate_billed?: number | null
           rate_insight_shown?: boolean
           target_billable_hrs_per_week?: number | null
@@ -441,6 +443,7 @@ export type Database = {
           firm_id?: string
           growth_signals?: Json
           planned_activity_allocation?: Json
+          pricing_structure?: string
           rate_billed?: number | null
           rate_insight_shown?: boolean
           target_billable_hrs_per_week?: number | null
@@ -1221,13 +1224,16 @@ export type Database = {
         Row: {
           aligned_rate: number
           annual_billable_hrs: number
+          assignee_cost_breakdown: Json
           break_even_rate: number
           comp_per_hour: number
+          cost_basis_method: string
           created_at: string
           firm_id: string
           id: string
           is_retroactive: boolean
           opex_per_hour: number
+          project_break_even_rate: number | null
           project_id: string
           snapshotted_at: string
           target_margin_pct: number
@@ -1242,13 +1248,16 @@ export type Database = {
         Insert: {
           aligned_rate: number
           annual_billable_hrs: number
+          assignee_cost_breakdown?: Json
           break_even_rate: number
           comp_per_hour: number
+          cost_basis_method?: string
           created_at?: string
           firm_id: string
           id?: string
           is_retroactive?: boolean
           opex_per_hour: number
+          project_break_even_rate?: number | null
           project_id: string
           snapshotted_at?: string
           target_margin_pct: number
@@ -1263,13 +1272,16 @@ export type Database = {
         Update: {
           aligned_rate?: number
           annual_billable_hrs?: number
+          assignee_cost_breakdown?: Json
           break_even_rate?: number
           comp_per_hour?: number
+          cost_basis_method?: string
           created_at?: string
           firm_id?: string
           id?: string
           is_retroactive?: boolean
           opex_per_hour?: number
+          project_break_even_rate?: number | null
           project_id?: string
           snapshotted_at?: string
           target_margin_pct?: number
@@ -1487,6 +1499,54 @@ export type Database = {
           },
         ]
       }
+      project_step_assignees: {
+        Row: {
+          assignee_kind: string
+          created_at: string
+          estimated_hrs: number
+          firm_member_id: string | null
+          id: string
+          is_billable: boolean
+          notes: string | null
+          project_step_id: string
+        }
+        Insert: {
+          assignee_kind?: string
+          created_at?: string
+          estimated_hrs?: number
+          firm_member_id?: string | null
+          id?: string
+          is_billable?: boolean
+          notes?: string | null
+          project_step_id: string
+        }
+        Update: {
+          assignee_kind?: string
+          created_at?: string
+          estimated_hrs?: number
+          firm_member_id?: string | null
+          id?: string
+          is_billable?: boolean
+          notes?: string | null
+          project_step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_step_assignees_firm_member_id_fkey"
+            columns: ["firm_member_id"]
+            isOneToOne: false
+            referencedRelation: "firm_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_step_assignees_project_step_id_fkey"
+            columns: ["project_step_id"]
+            isOneToOne: false
+            referencedRelation: "project_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           client_name: string | null
@@ -1675,6 +1735,54 @@ export type Database = {
           },
         ]
       }
+      sop_step_assignees: {
+        Row: {
+          assignee_kind: string
+          created_at: string
+          estimated_hrs: number
+          firm_member_id: string | null
+          id: string
+          is_billable: boolean
+          notes: string | null
+          sop_step_id: string
+        }
+        Insert: {
+          assignee_kind?: string
+          created_at?: string
+          estimated_hrs?: number
+          firm_member_id?: string | null
+          id?: string
+          is_billable?: boolean
+          notes?: string | null
+          sop_step_id: string
+        }
+        Update: {
+          assignee_kind?: string
+          created_at?: string
+          estimated_hrs?: number
+          firm_member_id?: string | null
+          id?: string
+          is_billable?: boolean
+          notes?: string | null
+          sop_step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sop_step_assignees_firm_member_id_fkey"
+            columns: ["firm_member_id"]
+            isOneToOne: false
+            referencedRelation: "firm_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sop_step_assignees_sop_step_id_fkey"
+            columns: ["sop_step_id"]
+            isOneToOne: false
+            referencedRelation: "sop_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sop_templates: {
         Row: {
           category: string | null
@@ -1854,6 +1962,8 @@ export type Database = {
           firm_id: string
           hrs: number
           id: string
+          import_log_id: string | null
+          imported_from: string | null
           notes: string | null
           project_id: string | null
           project_phase_id: string | null
@@ -1875,6 +1985,8 @@ export type Database = {
           firm_id: string
           hrs?: number
           id?: string
+          import_log_id?: string | null
+          imported_from?: string | null
           notes?: string | null
           project_id?: string | null
           project_phase_id?: string | null
@@ -1896,6 +2008,8 @@ export type Database = {
           firm_id?: string
           hrs?: number
           id?: string
+          import_log_id?: string | null
+          imported_from?: string | null
           notes?: string | null
           project_id?: string | null
           project_phase_id?: string | null
@@ -1939,10 +2053,73 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "time_entries_import_log_id_fkey"
+            columns: ["import_log_id"]
+            isOneToOne: false
+            referencedRelation: "time_import_logs"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "time_entries_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_import_logs: {
+        Row: {
+          date_range_end: string | null
+          date_range_start: string | null
+          filename: string
+          firm_id: string
+          id: string
+          imported_at: string
+          imported_by: string
+          rows_errored: number
+          rows_found: number
+          rows_imported: number
+          rows_skipped: number
+          skipped_detail: Json
+          source: string
+        }
+        Insert: {
+          date_range_end?: string | null
+          date_range_start?: string | null
+          filename: string
+          firm_id: string
+          id?: string
+          imported_at?: string
+          imported_by: string
+          rows_errored?: number
+          rows_found: number
+          rows_imported?: number
+          rows_skipped?: number
+          skipped_detail?: Json
+          source: string
+        }
+        Update: {
+          date_range_end?: string | null
+          date_range_start?: string | null
+          filename?: string
+          firm_id?: string
+          id?: string
+          imported_at?: string
+          imported_by?: string
+          rows_errored?: number
+          rows_found?: number
+          rows_imported?: number
+          rows_skipped?: number
+          skipped_detail?: Json
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_import_logs_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
             referencedColumns: ["id"]
           },
         ]

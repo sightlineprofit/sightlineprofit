@@ -228,6 +228,94 @@ export async function markFirmBillingPastDue(admin: SupabaseAdmin, invoice: any)
   return { ok: true as const, firmId: existing.id };
 }
 
+async function stripeCustomerExists(
+  stripe: ReturnType<typeof createStripeClient>,
+  customerId: string,
+): Promise<boolean> {
+  try {
+    const customer: any = await stripe.customers.retrieve(customerId);
+    return !customer?.deleted;
+  } catch {
+    return false;
+  }
+}
+
+async function stripeSubscriptionExists(
+  stripe: ReturnType<typeof createStripeClient>,
+  subscriptionId: string,
+): Promise<boolean> {
+  if (!subscriptionId.startsWith("sub_")) return false;
+  try {
+    await stripe.subscriptions.retrieve(subscriptionId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve a firm's Stripe customer in the current environment, healing legacy
+ * rows that point at test/dev IDs or another Stripe account. Persists fixes.
+ */
+export async function reconcileLegacyFirmStripeBilling(
+  admin: SupabaseAdmin,
+  stripe: ReturnType<typeof createStripeClient>,
+  firm: {
+    id: string;
+    name?: string | null;
+    stripe_customer_id?: string | null;
+    stripe_subscription_id?: string | null;
+    stripe_payment_method_id?: string | null;
+    subscription_status?: string | null;
+  },
+  opts?: { email?: string; logPrefix?: string },
+): Promise<string> {
+  const logPrefix = opts?.logPrefix ?? "[reconcileLegacyFirmStripeBilling]";
+  const cachedCustomerId = firm.stripe_customer_id ?? null;
+  let customerId = cachedCustomerId;
+
+  if (customerId && !(await stripeCustomerExists(stripe, customerId))) {
+    console.warn(`${logPrefix} stale customer id for firm ${firm.id}: ${customerId}`);
+    customerId = null;
+  }
+
+  if (!customerId) {
+    customerId = await resolveOrCreateCustomerForFirm(stripe, {
+      firmId: firm.id,
+      email: opts?.email,
+      firmName: firm.name ?? undefined,
+    });
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (customerId !== cachedCustomerId) {
+    patch.stripe_customer_id = customerId;
+  }
+
+  const cachedSubId = firm.stripe_subscription_id ?? null;
+  if (cachedSubId && !(await stripeSubscriptionExists(stripe, cachedSubId))) {
+    console.warn(`${logPrefix} stale subscription id for firm ${firm.id}: ${cachedSubId}`);
+    patch.stripe_subscription_id = null;
+    if (firm.subscription_status === "active") {
+      patch.subscription_status = "trialing";
+    }
+  }
+
+  if (customerId !== cachedCustomerId && firm.stripe_payment_method_id) {
+    try {
+      await stripe.paymentMethods.retrieve(firm.stripe_payment_method_id);
+    } catch {
+      patch.stripe_payment_method_id = null;
+    }
+  }
+
+  if (Object.keys(patch).length) {
+    await updateFirmBillingFromBackend(admin, firm.id, patch);
+  }
+
+  return customerId;
+}
+
 export async function resolveOrCreateCustomerForFirm(
   stripe: ReturnType<typeof createStripeClient>,
   opts: { firmId: string; email?: string; firmName?: string },
@@ -286,9 +374,8 @@ export async function backfillFirmBillingFromStripeServer(
   }
 
   let customer: Stripe.Customer | null = null;
-  if (firm.stripe_customer_id) {
-    const retrieved: any = await stripe.customers.retrieve(firm.stripe_customer_id);
-    if (!retrieved.deleted) customer = retrieved;
+  if (firm.stripe_customer_id && (await stripeCustomerExists(stripe, firm.stripe_customer_id))) {
+    customer = (await stripe.customers.retrieve(firm.stripe_customer_id)) as Stripe.Customer;
   }
   if (!customer) {
     const found = await stripe.customers.search({ query: `metadata['firmId']:'${firm.id}'`, limit: 1 });
@@ -309,7 +396,15 @@ export async function backfillFirmBillingFromStripeServer(
   const rank = (s: string) =>
     s === "active" ? 0 : s === "trialing" ? 1 : s === "past_due" ? 2 : s === "incomplete" ? 3 : 4;
   const sub = subs.data.slice().sort((a, b) => rank(a.status) - rank(b.status))[0];
-  if (!sub) return { ok: false, reason: "no_subscription", customerId: customer.id };
+  if (!sub) {
+    if (customer.id !== firm.stripe_customer_id) {
+      await updateFirmBillingFromBackend(admin, firm.id, {
+        stripe_customer_id: customer.id,
+        stripe_subscription_id: null,
+      });
+    }
+    return { ok: false, reason: "no_subscription", customerId: customer.id };
+  }
 
   if (customer.metadata?.firmId !== firm.id) {
     await stripe.customers.update(customer.id, { metadata: { ...customer.metadata, firmId: firm.id } });

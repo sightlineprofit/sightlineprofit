@@ -434,7 +434,7 @@ export function RateBreakdownSlideOver({
         <DetailRow
           label="Budget revenue"
           value={fmtUsd(budgetRevenue)}
-          tip="Annual revenue if you bill your target hours at your current rate every week."
+          tip="Annual revenue if every billable contributor hits target hours at their billed rates."
           last
         />
         <div className="mt-3 flex items-center gap-3 text-[11px] text-ch/50">

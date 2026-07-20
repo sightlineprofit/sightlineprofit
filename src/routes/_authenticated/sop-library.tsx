@@ -17,8 +17,15 @@ import {
   unhideAllSops,
   duplicateSopTemplate,
   getTemplateUsage,
+  upsertSopStepAssignee,
+  deleteSopStepAssignee,
 } from "@/lib/sop.functions";
 import { fmtUsd, formatHours } from "@/lib/finance";
+import {
+  StepAssigneeSection,
+  type AssigneePickerMember,
+  type StepAssigneeRecord,
+} from "@/components/projects/StepAssigneeSection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +46,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { ProjectSetupWizard, type WizardPhase } from "@/components/projects/ProjectSetupWizard";
 
 type Risk = "low" | "medium" | "high";
@@ -129,9 +137,16 @@ function Library() {
   const hideFn = useServerFn(setSopHidden);
   const unhideAllFn = useServerFn(unhideAllSops);
   const duplicateFn = useServerFn(duplicateSopTemplate);
+  const upsertSopAssigneeFn = useServerFn(upsertSopStepAssignee);
+  const deleteSopAssigneeFn = useServerFn(deleteSopStepAssignee);
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({ queryKey: ["sop-library"], queryFn: () => getLib() });
+  useRealtimeInvalidate(
+    "sop-library-assignees",
+    [{ table: "sop_step_assignees" }, { table: "sop_steps" }],
+    [["sop-library"]],
+  );
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState<"all" | Risk>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -297,6 +312,11 @@ function Library() {
   const hiddenCount = hiddenSet.size;
 
   if (editing) {
+    const sopStepAssignees = (data?.stepAssignees ?? []) as Array<
+      StepAssigneeRecord & { sop_step_id: string }
+    >;
+    const assigneeMembers = (data?.assigneePickerMembers ?? []) as AssigneePickerMember[];
+    const assigneePrincipalName = data?.assigneePickerPrincipal?.name ?? "Principal";
     return (
       <TemplateEditor
         draft={editing}
@@ -309,6 +329,26 @@ function Library() {
         usageCount={editing.id ? (data?.usageCounts?.[editing.id] ?? 0) : 0}
         activeUsageCount={editing.id ? (data?.activeUsageCounts?.[editing.id] ?? 0) : 0}
         onShowUsage={editing.id ? () => setUsageFor({ id: editing.id!, name: editing.name }) : undefined}
+        canManage={canManage}
+        stepAssignees={sopStepAssignees}
+        assigneeMembers={assigneeMembers}
+        assigneePrincipalName={assigneePrincipalName}
+        onUpsertStepAssignee={
+          canManage
+            ? async (stepId, payload) => {
+                await upsertSopAssigneeFn({ data: { sop_step_id: stepId, ...payload } });
+                qc.invalidateQueries({ queryKey: ["sop-library"] });
+              }
+            : undefined
+        }
+        onDeleteStepAssignee={
+          canManage
+            ? async (assigneeId) => {
+                await deleteSopAssigneeFn({ data: { id: assigneeId } });
+                qc.invalidateQueries({ queryKey: ["sop-library"] });
+              }
+            : undefined
+        }
       />
     );
   }
@@ -750,6 +790,8 @@ function AttachProjectPicker({
 
 function TemplateEditor({
   draft, onChange, onSave, onCancel, onDuplicateInstead, saving, config, usageCount, activeUsageCount, onShowUsage,
+  canManage, stepAssignees = [], assigneeMembers = [], assigneePrincipalName = "Principal",
+  onUpsertStepAssignee, onDeleteStepAssignee,
 }: {
   draft: TemplateDraft;
   onChange: (d: TemplateDraft) => void;
@@ -757,13 +799,40 @@ function TemplateEditor({
   onCancel: () => void;
   onDuplicateInstead?: () => void;
   saving: boolean;
-  config: { rate_billed: number | null; comp_draw_annual: number | null } | null;
+  config: { rate_billed: number | null; comp_draw_annual: number | null; target_billable_hrs_per_week?: number | null } | null;
   usageCount: number;
   activeUsageCount: number;
   onShowUsage?: () => void;
+  canManage?: boolean;
+  stepAssignees?: Array<StepAssigneeRecord & { sop_step_id: string }>;
+  assigneeMembers?: AssigneePickerMember[];
+  assigneePrincipalName?: string;
+  onUpsertStepAssignee?: (stepId: string, payload: {
+    assignee_kind: "member" | "principal";
+    firm_member_id?: string | null;
+    estimated_hrs?: number;
+    is_billable?: boolean;
+  }) => Promise<void>;
+  onDeleteStepAssignee?: (assigneeId: string) => Promise<void>;
 }) {
   const billedRate = Number(config?.rate_billed) || 0;
   const costPerHour = billedRate > 0 ? billedRate * 0.6 : 0;
+  const principalBurdenedRate = useMemo(() => {
+    const draw = Number(config?.comp_draw_annual) || 0;
+    const hpw = Number(config?.target_billable_hrs_per_week) || 40;
+    const hrs = 48 * hpw;
+    return hrs > 0 ? draw / hrs : costPerHour * 0.55;
+  }, [config, costPerHour]);
+
+  const assigneesByStep = useMemo(() => {
+    const m = new Map<string, StepAssigneeRecord[]>();
+    for (const a of stepAssignees) {
+      const arr = m.get(a.sop_step_id) ?? [];
+      arr.push(a);
+      m.set(a.sop_step_id, arr);
+    }
+    return m;
+  }, [stepAssignees]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [phaseDeleteIdx, setPhaseDeleteIdx] = useState<number | null>(null);
 
@@ -925,6 +994,13 @@ function TemplateEditor({
             phase={phase}
             billedRate={billedRate}
             costPerHour={costPerHour}
+            assigneesByStep={assigneesByStep}
+            assigneeMembers={assigneeMembers}
+            assigneePrincipalName={assigneePrincipalName}
+            principalBurdenedRate={principalBurdenedRate}
+            canManage={canManage}
+            onUpsertStepAssignee={onUpsertStepAssignee}
+            onDeleteStepAssignee={onDeleteStepAssignee}
             onChange={(next) => setPhases((phs) => phs.map((p, idx) => (idx === i ? next : p)))}
             onRemove={() => setPhaseDeleteIdx(i)}
             onUp={() => movePhase(i, -1)}
@@ -987,6 +1063,8 @@ function Field({ label, children, className }: { label: string; children: React.
 
 function PhaseRow({
   phase, onChange, onRemove, onUp, onDown, billedRate, costPerHour,
+  assigneesByStep, assigneeMembers = [], assigneePrincipalName = "Principal",
+  principalBurdenedRate = 0, canManage, onUpsertStepAssignee, onDeleteStepAssignee,
 }: {
   phase: Phase;
   onChange: (p: Phase) => void;
@@ -995,6 +1073,18 @@ function PhaseRow({
   onDown: () => void;
   billedRate: number;
   costPerHour: number;
+  assigneesByStep?: Map<string, StepAssigneeRecord[]>;
+  assigneeMembers?: AssigneePickerMember[];
+  assigneePrincipalName?: string;
+  principalBurdenedRate?: number;
+  canManage?: boolean;
+  onUpsertStepAssignee?: (stepId: string, payload: {
+    assignee_kind: "member" | "principal";
+    firm_member_id?: string | null;
+    estimated_hrs?: number;
+    is_billable?: boolean;
+  }) => Promise<void>;
+  onDeleteStepAssignee?: (assigneeId: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const stepSum = phase.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
@@ -1093,8 +1183,15 @@ function PhaseRow({
               </Button>
             </div>
             <div className="space-y-2">
-              {phase.steps.map((step, j) => (
-                <div key={j} className="flex items-center gap-2">
+              {phase.steps.map((step, j) => {
+                const stepAssigneeList = step.id ? assigneesByStep?.get(step.id) ?? [] : [];
+                const stepTotalHrs =
+                  stepAssigneeList.length > 0
+                    ? stepAssigneeList.reduce((s, a) => s + Number(a.estimated_hrs || 0), 0)
+                    : Number(step.estimated_hrs) || 0;
+                return (
+                <div key={j} className="rounded-md border border-border/60 bg-white/80 p-2">
+                <div className="flex items-center gap-2">
                   <span className="w-6 text-right text-xs text-ch/40">{j + 1}.</span>
                   <Input
                     value={step.description}
@@ -1104,15 +1201,17 @@ function PhaseRow({
                     })}
                     placeholder="Describe a step in this phase"
                     maxLength={500}
+                    className="flex-1"
                   />
                   <Input
                     type="number" min={0} step={0.25}
-                    value={step.estimated_hrs}
+                    value={stepAssigneeList.length > 0 ? stepTotalHrs : step.estimated_hrs}
+                    readOnly={stepAssigneeList.length > 0}
                     onChange={(e) => onChange({
                       ...phase,
                       steps: phase.steps.map((s, idx) => idx === j ? { ...s, estimated_hrs: parseFloat(e.target.value) || 0 } : s),
                     })}
-                    className="w-20 text-right"
+                    className={cn("w-20 text-right", stepAssigneeList.length > 0 && "bg-creamd/40")}
                     placeholder="hrs"
                   />
                   <span className="text-xs text-ch/50">hrs</span>
@@ -1124,7 +1223,24 @@ function PhaseRow({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-              ))}
+                {step.id && onUpsertStepAssignee && (
+                  <StepAssigneeSection
+                    stepId={step.id}
+                    assignees={stepAssigneeList}
+                    members={assigneeMembers}
+                    principalName={assigneePrincipalName}
+                    principalBurdenedRate={principalBurdenedRate}
+                    isAdmin={canManage}
+                    onUpsert={(payload) => onUpsertStepAssignee(step.id!, payload)}
+                    onDelete={(aid) => onDeleteStepAssignee?.(aid) ?? Promise.resolve()}
+                  />
+                )}
+                {!step.id && canManage && (
+                  <p className="mt-1 pl-8 text-[11px] italic text-ch/45">Save the template to assign team members to new steps.</p>
+                )}
+                </div>
+              );
+              })}
               {phase.steps.length === 0 && (
                 <p className="text-xs text-ch/40">No steps yet.</p>
               )}

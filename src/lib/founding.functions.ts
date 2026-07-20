@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { FOUNDING_PRICE_KEYS } from "@/lib/stripe.server";
+import { FOUNDING_PRICE_KEYS, CHECKOUT_PRICE_KEYS, type CheckoutPriceKey } from "@/lib/stripe.server";
 
 export type FoundingBillingFrequency = "monthly" | "annual";
 
@@ -30,6 +30,40 @@ const PRICE_TABLE: Record<
     standardCents: 69990,
   },
 };
+
+/** Founding ($39.99) vs standard ($69.99) for display and checkout. */
+export function firmUsesFoundingPricing(
+  firm: { stripe_price_id?: string | null } | null | undefined,
+  foundingSlotsActive: boolean,
+): boolean {
+  const priceId = firm?.stripe_price_id ?? null;
+  if (priceId && FOUNDING_PRICE_KEYS.has(priceId)) return true;
+  if (priceId) return false;
+  return foundingSlotsActive;
+}
+
+/** Stripe lookup_key for checkout — respects locked-in firm price or live founding slots. */
+export function resolveCheckoutPriceKey(
+  firm: { stripe_price_id?: string | null; billing_frequency?: string | null } | null | undefined,
+  frequency: FoundingBillingFrequency,
+  quote?: { priceId?: string; foundingActive?: boolean } | null,
+): CheckoutPriceKey {
+  const priceId = firm?.stripe_price_id ?? null;
+  if (priceId && FOUNDING_PRICE_KEYS.has(priceId)) {
+    return frequency === "annual" ? "sightline_founding_annual" : "sightline_founding_monthly";
+  }
+  if (priceId) {
+    return frequency === "annual" ? "sightline_standard_annual" : "sightline_standard_monthly";
+  }
+  if (quote?.priceId && (CHECKOUT_PRICE_KEYS as readonly string[]).includes(quote.priceId)) {
+    return quote.priceId as CheckoutPriceKey;
+  }
+  const foundingActive = quote?.foundingActive ?? false;
+  if (foundingActive) {
+    return frequency === "annual" ? "sightline_founding_annual" : "sightline_founding_monthly";
+  }
+  return frequency === "annual" ? "sightline_standard_annual" : "sightline_standard_monthly";
+}
 
 /**
  * Ask the backend which price a signup should receive right now.

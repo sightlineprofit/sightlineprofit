@@ -4,8 +4,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  DollarSign, Receipt, Calculator, User, Building2, Users,
+  DollarSign, Receipt, Calculator, User, Users,
   CreditCard, Bell, SlidersHorizontal, Lock, X, Plus, Trash2, History, ChevronDown, ChevronRight,
+  Database,
 } from "lucide-react";
 import {
   getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
@@ -16,7 +17,7 @@ import {
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { ModulePage } from "@/components/shell/ModulePage";
-import { calc, type Expense, type OwnerCompensationRow } from "@/lib/finance";
+import { calc, type Expense, type OwnerCompensationRow, effectivePrincipalBillableHrsWeek } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
@@ -24,24 +25,43 @@ import { AlignedRateBreakdown } from "@/components/dashboard/AlignedRateBreakdow
 import { MetricBreakdown, type MetricKind } from "@/components/dashboard/MetricBreakdown";
 import { listChangeLog } from "@/lib/change-log.functions";
 import { switchBillingFrequency } from "@/lib/billing.functions";
+import { getFoundingQuote, firmUsesFoundingPricing } from "@/lib/founding.functions";
 import { getStripeEnvironment } from "@/lib/stripe";
+import { PricingStructureSelector } from "@/components/pricing/PricingStructureSelector";
+import {
+  normalizePricingStructure,
+  requiresBilledRate,
+  type PricingStructure,
+} from "@/lib/pricing-structure";
 import {
   BurdenedCostCalculator,
   type BurdenedCostValue,
 } from "@/components/team/BurdenedCostCalculator";
 import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
 import { useTour } from "@/components/tour/TourProvider";
+import { TimeImportWizard, formatSourceLabel } from "@/components/settings/TimeImportWizard";
+import { listTimeImportLogs } from "@/lib/time-import.functions";
+import type { ImportSource } from "@/lib/time-import/types";
 
 type PanelId =
   | "comp" | "opex" | "rate" | "team_cost"
-  | "profile" | "firm" | "team" | "billing"
+  | "profile" | "data" | "team" | "billing"
   | "notifications" | "preferences" | "security" | "history";
+
+const LEGACY_PANEL_MAP: Record<string, PanelId> = {
+  firm: "profile",
+  time_import: "data",
+};
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Sightline" }] }),
-  validateSearch: (s: Record<string, unknown>) => ({
-    panel: (s.panel as PanelId | undefined) ?? undefined,
-  }),
+  validateSearch: (s: Record<string, unknown>) => {
+    const raw = s.panel as string | undefined;
+    const panel = raw
+      ? (LEGACY_PANEL_MAP[raw] ?? (raw as PanelId))
+      : undefined;
+    return { panel };
+  },
   component: SettingsPage,
 });
 
@@ -216,12 +236,12 @@ function AdminSettings() {
 
       {active && (
         <div className="mt-3 rounded-[8px] border border-border bg-white px-7 pt-6 pb-6">
-          {active === "comp" && <CompPanel onClose={close} onOpenPanel={open} />}
+          {active === "comp" && <CompPanel onClose={close} />}
           {active === "opex" && <OpexPanel onClose={close} />}
           {active === "rate" && <RatePanel onClose={close} />}
-          {active === "team_cost" && <TeamCostPanel onClose={close} />}
-          {active === "profile" && <PanelShell title="Profile" subtitle="Your name and contact info." onClose={close}><ProfilePanelBody /></PanelShell>}
-          {active === "firm" && <FirmPanel onClose={close} />}
+          {active === "team_cost" && <TeamCostPanel onClose={close} onOpenPanel={open} />}
+          {active === "profile" && <ProfileFirmPanel onClose={close} />}
+          {active === "data" && <DataPanel onClose={close} />}
           {active === "team" && <TeamPanel onClose={close} />}
           {active === "billing" && <BillingPanel onClose={close} />}
           {active === "notifications" && <NotificationsPanel onClose={close} />}
@@ -281,8 +301,8 @@ function GettingStartedSection() {
                 onClick={async () => {
                   await resetTour();
                   setConfirming(false);
-                  await navigate({ to: "/dashboard" });
-                  setTimeout(() => startTour(), 300);
+                  navigate({ to: "/dashboard" });
+                  startTour({ fromBeginning: true });
                 }}
                 className="rounded-[5px] bg-ch px-3 py-1 text-[12px] font-medium text-cream"
               >
@@ -402,12 +422,22 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
     : { tone: "muted", text: "No expenses added" };
 
   let rateStatus: Status;
-  if (cfg?.rate_billed && cfg?.target_billable_hrs_per_week) {
-    const label = `${cfg.target_billable_hrs_per_week} hrs/wk · $${Math.round(cfg.rate_billed)}/hr`;
-    rateStatus =
-      c.rateHealth === "healthy" ? { tone: "ok", text: `${label} · Above floor` }
-      : c.rateHealth === "below_floor" ? { tone: "warn", text: `${label} · Below floor` }
-      : { tone: "warn", text: "Below break-even" };
+  const pricingStructure = normalizePricingStructure((cfg as { pricing_structure?: string } | null)?.pricing_structure);
+  if (cfg?.target_billable_hrs_per_week) {
+    if (requiresBilledRate(pricingStructure) && cfg?.rate_billed) {
+      const label = `${cfg.target_billable_hrs_per_week} hrs/wk · $${Math.round(cfg.rate_billed)}/hr`;
+      rateStatus =
+        c.rateHealth === "healthy" ? { tone: "ok", text: `${label} · Above floor` }
+        : c.rateHealth === "below_floor" ? { tone: "warn", text: `${label} · Below floor` }
+        : { tone: "warn", text: "Below break-even" };
+    } else if (pricingStructure === "flat_fee") {
+      rateStatus = {
+        tone: "ok",
+        text: `${cfg.target_billable_hrs_per_week} hrs/wk · Flat fee pricing`,
+      };
+    } else {
+      rateStatus = { tone: "muted", text: "Billed rate not set" };
+    }
   } else {
     rateStatus = { tone: "muted", text: "Not configured" };
   }
@@ -424,12 +454,18 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
 function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id: PanelId) => void }) {
   const getCtx = useServerFn(getMyContext);
   const list = useServerFn(listTeam);
+  const listLogsFn = useServerFn(listTimeImportLogs);
   const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
   const { data: team } = useQuery({ queryKey: ["team"], queryFn: () => list() });
+  const { data: importLogs } = useQuery({
+    queryKey: ["time-import-logs"],
+    queryFn: () => listLogsFn(),
+  });
 
   const firmName = ctx?.firm?.name;
   const memberCount = team?.members?.length ?? 0;
   const pendingCount = team?.invites?.length ?? 0;
+  const lastImport = importLogs?.logs?.[0] ?? null;
 
   const tier = ctx?.firm?.subscription_tier as string | undefined;
   const status = ctx?.firm?.subscription_status as string | undefined;
@@ -448,10 +484,21 @@ function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id:
     : memberCount > 1 ? { tone: "ok", text: `${memberCount} members` }
     : { tone: "muted", text: "Solo — no team yet" };
 
+  const profileStatus: Status = firmName
+    ? { tone: "ok", text: "Complete" }
+    : { tone: "muted", text: "Firm name not set" };
+
+  const dataStatus: Status = lastImport
+    ? {
+        tone: "ok",
+        text: `Last import · ${lastImport.rows_imported} entries`,
+      }
+    : { tone: "muted", text: "No imports yet" };
+
   const tiles: TileDef[] = [
-    { id: "profile", name: "Profile", desc: "Your name and contact info.", icon: User, status: { tone: "ok", text: "Complete" } },
-    { id: "firm", name: "Firm", desc: "Firm name and business configuration.", icon: Building2, status: firmName ? { tone: "ok", text: "Complete" } : { tone: "muted", text: "Not set" } },
-    { id: "team", name: "Team", desc: "Members, roles, and invitations.", icon: Users, status: teamStatus },
+    { id: "profile", name: "Profile & firm", desc: "Your info and firm configuration.", icon: User, status: profileStatus },
+    { id: "data", name: "Data", desc: "Import time history from Clockify, Harvest, Toggl, and more.", icon: Database, status: dataStatus },
+    { id: "team", name: "Team", desc: "Roster, Sightline invitations, and roles.", icon: Users, status: teamStatus },
     { id: "billing", name: "Billing", desc: "Your current plan and payment method.", icon: CreditCard, status: billingStatus },
     { id: "notifications", name: "Notifications", desc: "Alerts and email preferences.", icon: Bell, status: { tone: "muted", text: "Default settings" } },
     { id: "preferences", name: "Preferences", desc: "Display and regional settings.", icon: SlidersHorizontal, status: { tone: "muted", text: "Default settings" } },
@@ -459,6 +506,49 @@ function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id:
     { id: "history", name: "Historical reference", desc: "Change log across your financial settings.", icon: History, status: { tone: "muted", text: "View change history" } },
   ];
   return <>{tiles.map(t => <Tile key={t.id} t={t} active={active} onOpen={onOpen} />)}</>;
+}
+
+function DataPanel({ onClose }: { onClose: () => void }) {
+  const listLogsFn = useServerFn(listTimeImportLogs);
+  const { data } = useQuery({
+    queryKey: ["time-import-logs"],
+    queryFn: () => listLogsFn(),
+  });
+  const logs = data?.logs ?? [];
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  return (
+    <>
+      {logs.length > 0 && (
+        <div className="mb-5 rounded-[6px] border border-border bg-cream/40 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="flex w-full items-center justify-between text-left text-[12px] text-[#8A7F75] hover:text-ch"
+          >
+            <span>Import history ({logs.length})</span>
+            {historyOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          {historyOpen && (
+            <ul className="mt-2 space-y-1.5 border-t border-border pt-2 text-[11px] text-[#8A7F75]">
+              {logs.map((log) => (
+                <li key={log.id} className="flex flex-wrap gap-x-2">
+                  <span className="text-ch">{new Date(log.imported_at).toLocaleDateString()}</span>
+                  <span>·</span>
+                  <span>{formatSourceLabel(log.source as ImportSource)}</span>
+                  <span>·</span>
+                  <span>{log.rows_imported} imported</span>
+                  <span>·</span>
+                  <span>{log.filename}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <TimeImportWizard onClose={onClose} />
+    </>
+  );
 }
 
 /* ────────────────────────────── panel shell ────────────────────────────── */
@@ -590,6 +680,7 @@ function useFinancialDraft() {
       target_billable_hrs_per_week: cfg.target_billable_hrs_per_week?.toString() ?? "",
       target_gross_margin_pct: cfg.target_gross_margin_pct?.toString() ?? "",
       rate_billed: cfg.rate_billed?.toString() ?? "",
+      pricing_structure: normalizePricingStructure((cfg as { pricing_structure?: string }).pricing_structure),
     });
     hydrated.current = true;
   }, [cfg]);
@@ -598,9 +689,14 @@ function useFinancialDraft() {
   function patch(p: Record<string, string>) {
     setDraft(d => {
       const next = { ...d, ...p };
+      const availN = Number(next.available_hrs_per_week) || 0;
+      const targetN = Number(next.target_billable_hrs_per_week) || 0;
+      if (availN > 0 && targetN > availN) {
+        next.target_billable_hrs_per_week = String(availN);
+      }
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(async () => {
-        const payload: Record<string, number | null> = {};
+        const payload: Record<string, number | string | null> = {};
         const keys = [
           "comp_draw_annual","comp_ptax_pct","comp_health_annual","comp_retire_annual",
           "comp_distribution_annual","comp_reserve_target_annual",
@@ -611,6 +707,10 @@ function useFinancialDraft() {
           const v = next[k] ?? "";
           const n = v === "" ? null : Number(v);
           payload[k] = n !== null && Number.isFinite(n) ? n : null;
+        }
+        payload.pricing_structure = normalizePricingStructure(next.pricing_structure);
+        if (!requiresBilledRate(payload.pricing_structure as PricingStructure)) {
+          payload.rate_billed = null;
         }
         try {
           await saveCfg({ data: payload as any });
@@ -639,6 +739,7 @@ function useFinancialDraft() {
     target_billable_hrs_per_week: num("target_billable_hrs_per_week"),
     target_gross_margin_pct: num("target_gross_margin_pct"),
     rate_billed: num("rate_billed"),
+    pricing_structure: normalizePricingStructure(draft.pricing_structure),
     actual_billed_rate: null,
     business_structure: cfg?.business_structure ?? "sole_prop",
   };
@@ -661,13 +762,24 @@ function NumInput({ value, onChange, prefix, suffix, placeholder }: {
   );
 }
 
-function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?: (id: PanelId) => void }) {
+function CompPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const { liveConfig, expenses, cfg } = useFinancialDraft();
   const listOwn = useServerFn(listOwnerCompensations);
+  const listTeamFn = useServerFn(listTeam);
+  const invitePrincipal = useServerFn(inviteTeamMember);
+  const resendInvite = useServerFn(resendInvitation);
   const updCfg = useServerFn(upsertFirmConfig);
   const { data: ownerData } = useQuery({ queryKey: ["ownerComp"], queryFn: () => listOwn() });
+  const { data: teamData } = useQuery({ queryKey: ["team"], queryFn: () => listTeamFn() });
+  const isPrincipal = me?.profile?.role === "principal";
+  const [coOwnerEmail, setCoOwnerEmail] = useState("");
+  const [coOwnerName, setCoOwnerName] = useState("");
+  const [invitingCoOwner, setInvitingCoOwner] = useState(false);
+  const pendingPrincipalInvites = (teamData?.invites ?? []).filter(
+    (i: any) => i.role === "principal",
+  );
 
   // Simple ↔ Advanced mode is a UI preference only.
   const [mode, setMode] = useState<"simple" | "advanced">(() => {
@@ -691,6 +803,31 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
       qc.invalidateQueries({ queryKey: ["financialDraft"] });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save structure.");
+    }
+  }
+
+  async function sendCoOwnerInvite() {
+    if (!coOwnerEmail.trim()) {
+      toast.error("Email required.");
+      return;
+    }
+    setInvitingCoOwner(true);
+    try {
+      await invitePrincipal({
+        data: {
+          email: coOwnerEmail.trim().toLowerCase(),
+          role: "principal",
+          name: coOwnerName.trim() || null,
+        } as any,
+      });
+      toast.success("Co-owner invitation sent.");
+      setCoOwnerEmail("");
+      setCoOwnerName("");
+      qc.invalidateQueries({ queryKey: ["team"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send invitation.");
+    } finally {
+      setInvitingCoOwner(false);
     }
   }
 
@@ -814,18 +951,76 @@ function CompPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?
                 onSaved={() => qc.invalidateQueries({ queryKey: ["ownerComp"] })}
               />
             ))}
+            {pendingPrincipalInvites.map((inv: any) => (
+              <div
+                key={inv.id}
+                className="rounded-[7px] border border-gold border-dashed bg-cream/40 px-3.5 py-3"
+              >
+                <div className="text-[12px] font-medium text-ch">
+                  {inv.name || inv.email}
+                  <span className="ml-1.5 text-[11px] font-normal text-ch/60">· Co-owner invite pending</span>
+                </div>
+                <div className="mt-0.5 text-[11px] text-ch/60">{inv.email}</div>
+                <p className="mt-2 text-[11px] leading-[1.5] text-ch/55">
+                  Their compensation card appears once they accept. Each co-owner configures their own pay.
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await resendInvite({ data: { id: inv.id } });
+                      toast.success("Invitation resent.");
+                    } catch {
+                      toast.error("Could not resend.");
+                    }
+                  }}
+                  className="mt-2 text-[11px] text-gold hover:underline"
+                >
+                  Resend invitation
+                </button>
+              </div>
+            ))}
           </div>
-          {principals.length === 1 && (
-            <p className="mt-3 text-[11px] leading-[1.5] text-ch/55">
-              Co-owned firm? A second principal can join using the invite flow in{" "}
+          {isPrincipal && (
+            <div className="mt-4 rounded-[7px] border border-border bg-cream/50 p-3">
+              <div className="mb-2 text-[11px] font-medium text-ch">Invite a co-owner / principal</div>
+              <Row2>
+                <Field label="Name">
+                  <input
+                    className={inputCls}
+                    value={coOwnerName}
+                    onChange={(e) => setCoOwnerName(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </Field>
+                <Field label="Email">
+                  <input
+                    className={inputCls}
+                    type="email"
+                    value={coOwnerEmail}
+                    onChange={(e) => setCoOwnerEmail(e.target.value)}
+                    placeholder="Required"
+                  />
+                </Field>
+              </Row2>
+              <p className="mb-2.5 text-[11px] leading-[1.5] text-ch/60">
+                Co-owners get full ownership access, their own compensation settings, and billing access.
+                Their pay is configured here after they join — not in Team cost.
+              </p>
               <button
                 type="button"
-                onClick={() => onOpenPanel?.("team")}
-                className="text-gold underline underline-offset-2 hover:text-ch"
+                onClick={sendCoOwnerInvite}
+                disabled={invitingCoOwner}
+                className={darkBtn}
               >
-                Account → Team
+                {invitingCoOwner ? "Sending…" : "Send co-owner invitation"}
               </button>
-              . Invite them with the Principal role and their compensation card will appear here.
+            </div>
+          )}
+          {principals.length === 1 && !pendingPrincipalInvites.length && isPrincipal && (
+            <p className="mt-3 text-[11px] leading-[1.5] text-ch/55">
+              Co-owned firm? Use the invite form above to add a second principal. Their compensation card
+              will appear here once they accept.
             </p>
           )}
         </>
@@ -1101,7 +1296,7 @@ function computeCardTotal(r: OwnerCompensationRow, isSCorp: boolean): number {
 
 /* ────────────────────────── Team cost panel ────────────────────────── */
 
-function TeamCostPanel({ onClose }: { onClose: () => void }) {
+function TeamCostPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPanel?: (id: PanelId) => void }) {
   const qc = useQueryClient();
   const { liveConfig, expenses } = useFinancialDraft();
   const { data: me } = useMe();
@@ -1122,10 +1317,6 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
   });
 
   const [openId, setOpenId] = useState<string | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState<any>({
-    name: "", email: "", role_type: "team", employment_type: "employee",
-  });
 
   async function saveMember(id: string | undefined, d: any) {
     try {
@@ -1140,23 +1331,6 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function addQuick() {
-    if (!addForm.name.trim()) { toast.error("Name required."); return; }
-    const newId = await saveMember(undefined, {
-      name: addForm.name.trim(),
-      email: addForm.email.trim() || null,
-      role_type: addForm.role_type,
-      employment_type: addForm.employment_type,
-      compensation_type: addForm.employment_type === "employee" ? "hourly" : "contract_hourly",
-      employer_payroll_tax_pct: addForm.employment_type === "employee" ? stateDefault : null,
-      expected_hrs_per_week: 40,
-      weeks_per_year: 48,
-    });
-    setAddForm({ name: "", email: "", role_type: "team", employment_type: "employee" });
-    setAddOpen(false);
-    if (newId) setOpenId(newId);
-  }
-
   const initials = (name: string, email: string | null) =>
     (name || email || "?").split(/\s+/).map((s) => s[0]).slice(0, 2).join("").toUpperCase();
 
@@ -1166,7 +1340,7 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
       (s, m: any) => s + (Number(m.burdened_weekly_cost) || 0) * (Number(m.weeks_per_year) || 48),
       0,
     );
-    const principalHrs = Number(liveConfig?.target_billable_hrs_per_week) || 0;
+    const principalHrs = effectivePrincipalBillableHrsWeek(liveConfig as any);
     const teamBillableHrs = members.reduce((s, m: any) => s + (Number(m.expected_hrs_per_week) || 0), 0);
     const annualBillableHrs = (principalHrs + teamBillableHrs) * 48;
     const perHour = annualBillableHrs > 0 ? totalCost / annualBillableHrs : 0;
@@ -1176,14 +1350,25 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
   return (
     <FinancialLayout
       title="Team cost"
-      subtitle="Fully burdened cost of each team member. Add cost records independently of Sightline access."
+      subtitle="Fully burdened cost of each team member. Add people in Account → Team — they appear here automatically."
       onClose={onClose}
       cfg={liveConfig} expenses={expenses}
       left={
         <>
-          {sorted.length === 0 && !addOpen ? (
+          {sorted.length === 0 ? (
             <div className="rounded-[7px] border border-border bg-cream/50 px-4 py-6 text-center text-[11px] text-ch/60">
-              No team members yet. Click <span className="text-gold">+ Add team member</span> below.
+              No team members yet.{" "}
+              {onOpenPanel ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenPanel("team")}
+                  className="text-gold underline underline-offset-2 hover:text-ch"
+                >
+                  Add team members in Account → Team
+                </button>
+              ) : (
+                "Add team members in Account → Team."
+              )}
             </div>
           ) : (
             <>
@@ -1224,53 +1409,18 @@ function TeamCostPanel({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          <div className="mt-3">
-            {!addOpen ? (
+          {sorted.length > 0 && onOpenPanel ? (
+            <p className="mt-3 text-[11px] text-ch/55">
+              Need to add someone?{" "}
               <button
                 type="button"
-                onClick={() => setAddOpen(true)}
-                className="inline-flex items-center gap-1.5 text-[11px] text-gold hover:underline"
+                onClick={() => onOpenPanel("team")}
+                className="text-gold underline underline-offset-2 hover:text-ch"
               >
-                <Plus size={13} /> Add team member
+                Go to Account → Team
               </button>
-            ) : (
-              <div className="rounded-[7px] border border-border bg-cream/50 p-3">
-                <div className="mb-2 text-[11px] font-medium text-ch">New team member</div>
-                <Row2>
-                  <Field label="Name">
-                    <input className={inputCls} value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} autoFocus />
-                  </Field>
-                  <Field label="Role">
-                    <select className={selectCls} value={addForm.role_type} onChange={(e) => setAddForm({ ...addForm, role_type: e.target.value })}>
-                      <option value="admin">Admin</option>
-                      <option value="team">Team</option>
-                      <option value="contractor">Contractor</option>
-                      <option value="view_only">View only</option>
-                    </select>
-                  </Field>
-                </Row2>
-                <Row2>
-                  <Field label="Employment type">
-                    <select className={selectCls} value={addForm.employment_type} onChange={(e) => setAddForm({ ...addForm, employment_type: e.target.value })}>
-                      <option value="employee">Employee</option>
-                      <option value="contractor">Contractor</option>
-                      <option value="1099">1099</option>
-                    </select>
-                  </Field>
-                  <Field label="Email (optional)">
-                    <input className={inputCls} type="email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} placeholder="Only needed to invite later" />
-                  </Field>
-                </Row2>
-                <p className="mb-2 text-[11px] text-ch/60">
-                  Only needed if you want to invite them to Sightline later. You can add cost data now without an email.
-                </p>
-                <div className="flex justify-end gap-2">
-                  <button type="button" className={ghostBtn} onClick={() => setAddOpen(false)}>Cancel</button>
-                  <button type="button" className={goldBtn} onClick={addQuick}>Add member</button>
-                </div>
-              </div>
-            )}
-          </div>
+            </p>
+          ) : null}
         </>
       }
     />
@@ -1724,9 +1874,10 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
 function RatePanel({ onClose }: { onClose: () => void }) {
   const { draft, patch, liveConfig, expenses } = useFinancialDraft();
   const avail = Number(draft.available_hrs_per_week) || 0;
-  const target = Number(draft.target_billable_hrs_per_week) || 0;
+  const target = effectivePrincipalBillableHrsWeek(liveConfig as any);
   const utilization = avail > 0 ? (target / avail) * 100 : 0;
   const firmRate = Number(liveConfig?.rate_billed) || 0;
+  const pricingStructure = normalizePricingStructure(draft.pricing_structure);
   return (
     <FinancialLayout
       title="Capacity and rate"
@@ -1739,17 +1890,38 @@ function RatePanel({ onClose }: { onClose: () => void }) {
               <NumInput value={draft.available_hrs_per_week ?? ""} onChange={(v) => patch({ available_hrs_per_week: v })} />
             </Field>
             <Field label="Target billable hrs / week">
-              <NumInput value={draft.target_billable_hrs_per_week ?? ""} onChange={(v) => patch({ target_billable_hrs_per_week: v })} />
+              <NumInput
+                value={draft.target_billable_hrs_per_week ?? ""}
+                onChange={(v) => patch({ target_billable_hrs_per_week: v })}
+              />
+              {avail > 0 ? (
+                <p className="mt-1 text-[10px] text-ch/45">Capped at available hours ({avail}/wk).</p>
+              ) : null}
             </Field>
           </Row2>
           <Row2>
             <Field label="Target gross margin %">
               <NumInput value={draft.target_gross_margin_pct ?? ""} onChange={(v) => patch({ target_gross_margin_pct: v })} suffix="%" />
             </Field>
-            <Field label="Your billed rate ($/hr)">
-              <NumInput value={draft.rate_billed ?? ""} onChange={(v) => patch({ rate_billed: v })} prefix="$" />
-            </Field>
+            <div />
           </Row2>
+          <PricingStructureSelector
+            value={pricingStructure}
+            onChange={(value) => {
+              patch({
+                pricing_structure: value,
+                ...(requiresBilledRate(value) ? {} : { rate_billed: "" }),
+              });
+            }}
+          />
+          {requiresBilledRate(pricingStructure) ? (
+            <Row2>
+              <Field label="Your billed rate ($/hr) *">
+                <NumInput value={draft.rate_billed ?? ""} onChange={(v) => patch({ rate_billed: v })} prefix="$" />
+              </Field>
+              <div />
+            </Row2>
+          ) : null}
           <div className="rounded-[4px] border border-border bg-creamd/50 px-3 py-2.5 text-[11px] text-ch">
             <span className="text-ch/60">Utilization target: </span>
             <span className="font-medium">{utilization.toFixed(0)}%</span>
@@ -1903,6 +2075,21 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
   );
 }
 
+function ProfileFirmPanel({ onClose }: { onClose: () => void }) {
+  return (
+    <PanelShell title="Profile & firm" subtitle="Your personal info and firm configuration." onClose={onClose}>
+      <div className="mb-6 border-b border-border pb-6">
+        <p className="mb-3 text-[12px] font-medium text-ch">Your profile</p>
+        <ProfilePanelBody />
+      </div>
+      <div>
+        <p className="mb-3 text-[12px] font-medium text-ch">Firm</p>
+        <FirmPanelBody onClose={onClose} />
+      </div>
+    </PanelShell>
+  );
+}
+
 function ProfilePanelBody() {
   const qc = useQueryClient();
   const { data } = useMe();
@@ -1942,7 +2129,7 @@ function ProfilePanelBody() {
   );
 }
 
-function FirmPanel({ onClose }: { onClose: () => void }) {
+function FirmPanelBody({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { data } = useMe();
   const upd = useServerFn(updateFirm);
@@ -1983,7 +2170,7 @@ function FirmPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <PanelShell title="Firm" subtitle="Firm name and business configuration." onClose={onClose}>
+    <>
       <Field label="Firm name"><input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} /></Field>
       <Row2>
         <Field label="Business structure">
@@ -2036,7 +2223,7 @@ function FirmPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <SaveRow onCancel={onClose} onSave={save} saving={saving} />
-    </PanelShell>
+    </>
   );
 }
 
@@ -2044,109 +2231,165 @@ const US_STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorad
 
 function TeamPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const { data: me } = useMe();
+  const firmState = ((me?.firm as any)?.state ?? null) as string | null;
+  const stateDefault = getDefaultEmployerTaxRate(firmState).total;
   const list = useServerFn(listTeam);
   const invite = useServerFn(inviteTeamMember);
   const update = useServerFn(updateTeamMember);
   const resend = useServerFn(resendInvitation);
+  const saveMember = useServerFn(saveFirmMember);
   const listFM = useServerFn(listFirmMembers);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
   const { data: fmData } = useQuery({ queryKey: ["firmMembers"], queryFn: () => listFM() });
   const [email, setEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
-  const [role, setRole] = useState<"principal" | "team" | "admin" | "view_only">("team");
+  const [role, setRole] = useState<"team" | "admin" | "view_only">("team");
   const [sending, setSending] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    name: "",
+    email: "",
+    role_type: "team",
+    employment_type: "employee",
+  });
+  const [adding, setAdding] = useState(false);
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["team"] });
     qc.invalidateQueries({ queryKey: ["firmMembers"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
   }
 
   async function send() {
-    if (!email) return;
+    if (!email.trim()) {
+      toast.error("Email required.");
+      return;
+    }
     setSending(true);
     try {
-      await invite({ data: { email, role, name: inviteName || null } as any });
-      toast.success("Invitation sent.");
+      await invite({
+        data: {
+          email: email.trim().toLowerCase(),
+          role,
+          name: inviteName.trim() || null,
+        } as any,
+      });
+      toast.success("Invitation sent. They'll appear in Team cost for compensation setup.");
       setEmail("");
       setInviteName("");
       refresh();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not send."); }
-    finally { setSending(false); }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not send.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function addToRoster() {
+    if (!addForm.name.trim()) {
+      toast.error("Name required.");
+      return;
+    }
+    setAdding(true);
+    try {
+      await saveMember({
+        data: {
+          name: addForm.name.trim(),
+          email: addForm.email.trim() || null,
+          role_type: addForm.role_type as any,
+          employment_type: addForm.employment_type as any,
+          compensation_type: addForm.employment_type === "employee" ? "hourly" : "contract_hourly",
+          employer_payroll_tax_pct: addForm.employment_type === "employee" ? stateDefault : null,
+          expected_hrs_per_week: 40,
+          weeks_per_year: 48,
+        },
+      });
+      toast.success("Team member added. Set up their compensation in Team cost.");
+      setAddForm({ name: "", email: "", role_type: "team", employment_type: "employee" });
+      setAddOpen(false);
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add member.");
+    } finally {
+      setAdding(false);
+    }
   }
 
   function inviteExisting(m: any) {
     setEmail(m.email ?? "");
     setInviteName(m.name ?? "");
-    setRole((m.role_type === "contractor" ? "team" : m.role_type) || "team");
-    // Scroll invite form into view via focus.
+    setRole(
+      m.role_type === "admin" || m.role_type === "view_only" ? m.role_type : "team",
+    );
     setTimeout(() => {
       const el = document.getElementById("invite-email-input");
       if (el) (el as HTMLInputElement).focus();
     }, 60);
   }
 
-  async function changeRole(id: string, r: string, name: string) {
-    if (r === "principal") {
-      const ok = window.confirm(
-        `Changing ${name || "this member"} to Principal will give them full ownership access to all financial settings and billing. Are you sure?`,
-      );
-      if (!ok) { refresh(); return; }
-    }
+  async function changeRole(id: string, r: string) {
     try {
-      const payload: any = { id, role: r };
-      if (r === "principal") {
-        // Clear per-profile cost hint — their cost now lives in owner_compensation.
-        Object.assign(payload, { cost_rate: null });
-      }
-      await update({ data: payload });
+      await update({ data: { id, role: r } });
       toast.success("Role updated.");
-      qc.invalidateQueries({ queryKey: ["ownerComp"] });
       refresh();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Could not update."); }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update.");
+    }
   }
 
   const initials = (name: string, email: string) =>
     (name || email).split(/\s+/).map(s => s[0]).slice(0, 2).join("").toUpperCase();
 
-  // Unified list: every firm_members row. Rows with profile_id use the profile
-  // role selector; others show status + optional "Invite to Sightline".
-  const rows = ((fmData ?? []) as any[]).filter(m => m.role_type !== "principal");
-  // Also surface invitations that don't yet have a firm_members mirror
-  // (rare, legacy). Merge by email so we don't double-list.
-  const seenEmails = new Set(rows.map(r => (r.email || "").toLowerCase()));
+  const rows = ((fmData ?? []) as any[]).filter((m) => m.role_type !== "principal");
+  const seenEmails = new Set(rows.map((r) => (r.email || "").toLowerCase()));
   const orphanInvites = (data?.invites ?? []).filter(
-    (i: any) => !seenEmails.has((i.email || "").toLowerCase()),
+    (i: any) =>
+      i.role !== "principal" && !seenEmails.has((i.email || "").toLowerCase()),
   );
 
   const rowStatus = (m: any) => {
     if (m.is_platform_user) return { label: "Active", dot: "#3F7A4E", tone: "ok" };
     if (m.invite_sent_at && !m.invite_accepted_at)
       return { label: "Pending invite", dot: "#B8860B", tone: "warn" };
-    return { label: "Internal record", dot: "#C0B8AA", tone: "muted" };
+    return { label: "Not invited yet", dot: "#C0B8AA", tone: "muted" };
   };
 
+  const principals = (data?.members ?? []).filter((m) => m.role === "principal");
+
   return (
-    <PanelShell title="Team" subtitle="Members, roles, and invitations." onClose={onClose}>
-      <div className="mb-3 overflow-hidden rounded-[6px] border border-border bg-white">
-        {/* Principals (from profiles) — shown first, no editing here */}
-        {(data?.members ?? []).filter(m => m.role === "principal").map((m) => (
-          <div key={`p-${m.id}`} className="flex items-center gap-2.5 border-b border-border px-3 py-2.5">
-            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-gold bg-cream text-[11px] font-medium text-gold">{initials(m.name || "", m.email)}</div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-medium text-ch">{m.name || m.email}</div>
-              <div className="truncate text-[11px] text-ch/60">{m.email}</div>
-            </div>
-            <span className="text-[11px] text-ch/60">Principal</span>
+    <PanelShell
+      title="Team"
+      subtitle="Add team members and invite them to Sightline. They appear in Team cost for compensation setup. Co-owners are invited from Owner compensation."
+      onClose={onClose}
+    >
+      {principals.length > 0 ? (
+        <div className="mb-3 rounded-[6px] border border-border bg-cream/40 px-3 py-2">
+          <div className="text-[11px] font-medium text-ch/70">Owners</div>
+          <div className="mt-1 space-y-1">
+            {principals.map((m) => (
+              <div key={m.id} className="text-[11px] text-ch/60">
+                {m.name || m.email} · Principal
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+      ) : null}
+
+      <div className="mb-3 overflow-hidden rounded-[6px] border border-border bg-white">
         {rows.map((m, i) => {
           const st = rowStatus(m);
-          const profile = (data?.members ?? []).find(p => p.id === m.profile_id);
+          const profile = (data?.members ?? []).find((p) => p.id === m.profile_id);
           const pendingInvite = (data?.invites ?? []).find(
-            (inv: any) => (inv.email || "").toLowerCase() === (m.email || "").toLowerCase(),
+            (inv: any) =>
+              inv.role !== "principal" &&
+              (inv.email || "").toLowerCase() === (m.email || "").toLowerCase(),
           );
           return (
-            <div key={m.id} className={cn("flex items-center gap-2.5 px-3 py-2.5", i < rows.length - 1 && "border-b border-border")}>
+            <div
+              key={m.id}
+              className={cn("flex items-center gap-2.5 px-3 py-2.5", i < rows.length - 1 && "border-b border-border")}
+            >
               <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-cream text-[11px] font-medium text-ch/70">
                 {initials(m.name || "", m.email || "")}
               </div>
@@ -2162,9 +2405,8 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
                 <select
                   className={cn(selectCls, "w-[110px] py-[3px] text-[11px]")}
                   value={profile.role}
-                  onChange={(e) => changeRole(profile.id, e.target.value, profile.name || profile.email)}
+                  onChange={(e) => changeRole(profile.id, e.target.value)}
                 >
-                  <option value="principal">Principal</option>
                   <option value="admin">Admin</option>
                   <option value="team">Team</option>
                   <option value="view_only">View only</option>
@@ -2173,16 +2415,23 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   onClick={async () => {
-                    try { await resend({ data: { id: pendingInvite.id } }); toast.success("Resent."); refresh(); }
-                    catch { toast.error("Could not resend."); }
+                    try {
+                      await resend({ data: { id: pendingInvite.id } });
+                      toast.success("Resent.");
+                      refresh();
+                    } catch {
+                      toast.error("Could not resend.");
+                    }
                   }}
                   className="text-[11px] text-ch/60 hover:text-gold"
-                >Resend</button>
+                >
+                  Resend
+                </button>
               ) : m.email ? (
                 <button
                   type="button"
                   onClick={() => inviteExisting(m)}
-                  className="rounded-[3px] border border-gold px-2 py-[3px] text-[11px] font-medium text-gold hover:bg-gold hover:text-white transition-colors"
+                  className="rounded-[3px] border border-gold px-2 py-[3px] text-[11px] font-medium text-gold transition-colors hover:bg-gold hover:text-white"
                 >
                   Invite to Sightline
                 </button>
@@ -2194,42 +2443,139 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
         })}
         {orphanInvites.map((i: any) => (
           <div key={i.id} className="flex items-center gap-2.5 border-t border-border bg-cream/50 px-3 py-2.5">
-            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-creamd/50 text-[11px] text-ch/50">{initials("", i.email)}</div>
+            <div className="grid h-[26px] w-[26px] place-items-center rounded-full border border-border bg-creamd/50 text-[11px] text-ch/50">
+              {initials(i.name || "", i.email)}
+            </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] text-ch/60">{i.email}</div>
+              <div className="truncate text-[12px] text-ch/60">{i.name || i.email}</div>
               <div className="truncate text-[11px] text-ch/50">{i.role}</div>
             </div>
             <span className="rounded-[3px] bg-[#FAEEDA] px-1.5 py-[2px] text-[11px] font-medium text-[#633806]">Pending</span>
             <button
               type="button"
-              onClick={async () => { try { await resend({ data: { id: i.id } }); toast.success("Resent."); refresh(); } catch { toast.error("Could not resend."); } }}
+              onClick={async () => {
+                try {
+                  await resend({ data: { id: i.id } });
+                  toast.success("Resent.");
+                  refresh();
+                } catch {
+                  toast.error("Could not resend.");
+                }
+              }}
               className="text-[11px] text-ch/60 hover:text-gold"
-            >Resend</button>
+            >
+              Resend
+            </button>
           </div>
         ))}
-        {!rows.length && !(data?.members?.length) && !orphanInvites.length && (
+        {!rows.length && !orphanInvites.length ? (
           <div className="px-3 py-6 text-center text-[11px] text-ch/50">No team members yet.</div>
+        ) : null}
+      </div>
+
+      <div className="mb-3 rounded-[6px] border border-border bg-cream/70 p-3">
+        <div className="mb-2 text-[11px] font-medium text-ch">Add team member</div>
+        {!addOpen ? (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-gold hover:underline"
+          >
+            <Plus size={13} /> Add to roster
+          </button>
+        ) : (
+          <>
+            <Row2>
+              <Field label="Name">
+                <input
+                  className={inputCls}
+                  value={addForm.name}
+                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                  autoFocus
+                />
+              </Field>
+              <Field label="Role">
+                <select
+                  className={selectCls}
+                  value={addForm.role_type}
+                  onChange={(e) => setAddForm({ ...addForm, role_type: e.target.value })}
+                >
+                  <option value="admin">Admin</option>
+                  <option value="team">Team</option>
+                  <option value="contractor">Contractor</option>
+                  <option value="view_only">View only</option>
+                </select>
+              </Field>
+            </Row2>
+            <Row2>
+              <Field label="Employment type">
+                <select
+                  className={selectCls}
+                  value={addForm.employment_type}
+                  onChange={(e) => setAddForm({ ...addForm, employment_type: e.target.value })}
+                >
+                  <option value="employee">Employee</option>
+                  <option value="contractor">Contractor</option>
+                  <option value="1099">1099</option>
+                </select>
+              </Field>
+              <Field label="Email (optional)">
+                <input
+                  className={inputCls}
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  placeholder="For Sightline invite later"
+                />
+              </Field>
+            </Row2>
+            <p className="mb-2 text-[11px] text-ch/60">
+              Adds them to Team cost for compensation setup. Invite to Sightline when ready.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" className={ghostBtn} onClick={() => setAddOpen(false)}>Cancel</button>
+              <button type="button" className={goldBtn} onClick={addToRoster} disabled={adding}>
+                {adding ? "Adding…" : "Add member"}
+              </button>
+            </div>
+          </>
         )}
       </div>
 
       <div className="rounded-[6px] border border-border bg-cream/70 p-3">
-        <div className="mb-2 text-[11px] font-medium text-ch">Invite a team member</div>
-        <div className="mb-2 flex gap-2">
-          <input id="invite-email-input" type="email" className={cn(inputCls, "flex-1")} placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <select className={cn(selectCls, "w-[110px]")} value={role} onChange={(e) => setRole(e.target.value as any)}>
-            <option value="principal">Principal</option>
+        <div className="mb-2 text-[11px] font-medium text-ch">Invite to Sightline</div>
+        <Row2>
+          <Field label="Name">
+            <input
+              className={inputCls}
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Optional"
+            />
+          </Field>
+          <Field label="Email">
+            <input
+              id="invite-email-input"
+              type="email"
+              className={inputCls}
+              placeholder="Required"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </Field>
+        </Row2>
+        <div className="mb-2">
+          <div className={fieldLabel}>Role</div>
+          <select className={selectCls} value={role} onChange={(e) => setRole(e.target.value as any)}>
             <option value="team">Team</option>
             <option value="admin">Admin</option>
             <option value="view_only">View only</option>
           </select>
         </div>
-        {inviteName && (
-          <div className="mb-2 text-[11px] text-ch/60">
-            Inviting <span className="font-medium text-ch">{inviteName}</span> — their cost data will link on accept.
-          </div>
-        )}
         <p className="mb-2.5 text-[11px] leading-[1.5] text-ch/60">
-          Principal: full ownership access, own compensation settings, and billing. Team: time calendar and assigned projects only. Admin: full access except billing. View only: read-only.
+          Team: time calendar and assigned projects. Admin: full access except billing. View only: read-only.
+          Co-owners / principals are invited from{" "}
+          <span className="text-ch/80">Financial → Owner compensation</span>.
         </p>
         <button type="button" onClick={send} disabled={sending} className={darkBtn}>
           {sending ? "Sending…" : "Send invitation"}
@@ -2243,14 +2589,18 @@ function BillingPanel({ onClose }: { onClose: () => void }) {
   const { data } = useMe();
   const qc = useQueryClient();
   const switchFreq = useServerFn(switchBillingFrequency);
+  const quoteFn = useServerFn(getFoundingQuote);
   const [busy, setBusy] = useState(false);
   const firm: any = data?.firm ?? null;
   const status = firm?.subscription_status;
   const isTrial = status === "trialing";
-  const isFounding = firm?.stripe_price_id
-    ? ["sightline_founding_monthly", "sightline_founding_annual"].includes(firm.stripe_price_id)
-    : false;
   const freq: "monthly" | "annual" = firm?.billing_frequency === "annual" ? "annual" : "monthly";
+  const quoteQ = useQuery({
+    queryKey: ["founding-quote", freq],
+    queryFn: () => quoteFn({ data: { frequency: freq } }),
+    enabled: !!firm,
+  });
+  const isFounding = firmUsesFoundingPricing(firm, quoteQ.data?.foundingActive ?? false);
   const prices = isFounding
     ? { monthly: 3999, annual: 39990, save: 7998 }
     : { monthly: 6999, annual: 69990, save: 13998 };

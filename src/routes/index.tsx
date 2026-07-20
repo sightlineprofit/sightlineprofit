@@ -1,5 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -61,7 +62,23 @@ function scrollTo(id: string) {
 }
 
 function HomePage() {
+  const nav = useNavigate();
   const isMobile = useIsMobile(960);
+
+  // After OAuth/email confirm, Supabase may land on Site URL (/) with a session
+  // instead of /post-auth. Send authenticated users through post-auth routing.
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled && session) {
+        void nav({ to: "/post-auth" });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [nav]);
+
   return (
     <div
       style={{

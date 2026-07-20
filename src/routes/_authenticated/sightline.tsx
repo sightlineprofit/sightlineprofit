@@ -17,13 +17,13 @@ import {
   getProjectList, getProjectDetail, updateProjectStatus,
   createProject, upsertProjectPhase, deleteProjectPhase,
   updateProjectMeta, updateProjectFinancial, updateProjectPhaseFinancial,
-  patchTimeEntry, listSopTemplatesLite,
+  listSopTemplatesLite,
   updateProjectStepHrs, createProjectStep, deleteProjectStep,
   confirmProjectReviewed, logNothingToReport, NOTHING_TO_REPORT_PHRASE,
   saveProjectMilestone, deleteProjectMilestone,
+  upsertProjectStepAssignee, deleteProjectStepAssignee, refreshProjectCostSnapshotFn,
 } from "@/lib/sightline.functions";
 import { attachTemplateToProject } from "@/lib/sop.functions";
-import { deleteTimeEntry } from "@/lib/time.functions";
 import { toast } from "sonner";
 import {
   fmtUsd, fmtPct, formatHours, calc as calcFinance, getProjectMarginCalc,
@@ -34,7 +34,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -44,7 +43,7 @@ import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
 import { ProjectSetupWizard } from "@/components/projects/ProjectSetupWizard";
 import { ProjectCard as RedesignedProjectCard } from "@/components/projects/ProjectCard";
-import { ProjectDetailPanel } from "@/components/projects/ProjectDetailPanel";
+import { ProjectDetailView, type ProjectDetailsPatch } from "@/components/projects/ProjectDetailView";
 import { getProjectFinancials } from "@/lib/finance";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
@@ -56,6 +55,7 @@ export const Route = createFileRoute("/_authenticated/sightline")({
       openProject: z.string().uuid().optional(),
       onboarded: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
       new: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
+      attachSop: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
     }).parse(s),
   component: SightlinePage,
 });
@@ -85,6 +85,7 @@ function SightlinePage() {
   }, [openProject]);
   const showOnboardHint = String(search.onboarded ?? "") === "1";
   const autoOpenNew = String(search.new ?? "") === "1";
+  const autoAttachSop = String(search.attachSop ?? "") === "1";
 
   if (tier !== "practice") {
     return (
@@ -113,6 +114,7 @@ function SightlinePage() {
           navigate({ to: "/sightline", search: {} });
         }}
         showOnboardHint={showOnboardHint}
+        autoAttachSop={autoAttachSop}
       />
     );
   }
@@ -704,7 +706,12 @@ type PhaseRow = {
   nonBillActual: number;
 };
 
-function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: () => void; showOnboardHint?: boolean }) {
+function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
+  id: string;
+  onBack: () => void;
+  showOnboardHint?: boolean;
+  autoAttachSop?: boolean;
+}) {
   const qc = useQueryClient();
   const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -723,8 +730,6 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   const phaseFinFn = useServerFn(updateProjectPhaseFinancial);
   const upsertPhaseFn = useServerFn(upsertProjectPhase);
   const deletePhaseFn = useServerFn(deleteProjectPhase);
-  const patchEntryFn = useServerFn(patchTimeEntry);
-  const deleteEntryFn = useServerFn(deleteTimeEntry);
   const listTemplatesFn = useServerFn(listSopTemplatesLite);
   const attachTplFn = useServerFn(attachTemplateToProject);
   const updateStepHrsFn = useServerFn(updateProjectStepHrs);
@@ -734,8 +739,9 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
   const nothingFn = useServerFn(logNothingToReport);
   const saveMilestoneFn = useServerFn(saveProjectMilestone);
   const deleteMilestoneFn = useServerFn(deleteProjectMilestone);
-  const [msLabel, setMsLabel] = useState("");
-  const [msDate, setMsDate] = useState("");
+  const upsertStepAssigneeFn = useServerFn(upsertProjectStepAssignee);
+  const deleteStepAssigneeFn = useServerFn(deleteProjectStepAssignee);
+  const refreshSnapshotFn = useServerFn(refreshProjectCostSnapshotFn);
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
@@ -747,8 +753,11 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
       { table: "project_phases", filter: `project_id=eq.${id}` },
       { table: "time_entries", filter: `project_id=eq.${id}` },
       { table: "project_financial_audit", filter: `project_id=eq.${id}` },
+      { table: "project_cost_snapshots", filter: `project_id=eq.${id}` },
+      { table: "project_steps" },
+      { table: "project_step_assignees" },
     ],
-    [["sightline-detail", id]],
+    [["sightline-detail", id], ["sightline-list"]],
   );
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["sightline-detail", id] });
@@ -766,14 +775,10 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
     statusMut.mutate(v);
   };
 
-  // Tab state
-  const [tab, setTab] = useState<"overview" | "phases" | "timelog">("overview");
+  // Tab state removed — detail uses ProjectDetailView sub-navigation
 
   // Phase add/edit state (non-financial: name)
-  const [addingPhase, setAddingPhase] = useState(false);
   const [addDraft, setAddDraft] = useState({ name: "", expected_hrs: "", billable: true });
-
-  // Financial confirm dialog state
   const [finConfirm, setFinConfirm] = useState<null | {
     label: string;
     oldDisplay: string;
@@ -794,17 +799,15 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
 
   // Add-from-template picker state
   const [tplPickerOpen, setTplPickerOpen] = useState(false);
+  const navigate = useNavigate();
+
+  // Guided tour Step 6: open template picker when arriving from setup.
+  useEffect(() => {
+    if (!autoAttachSop) return;
+    setTplPickerOpen(true);
+  }, [autoAttachSop]);
   const [tplPicked, setTplPicked] = useState<string>("");
 
-  // Time log filters
-  const [memberFilter, setMemberFilter] = useState<string>("all");
-  const [phaseFilter, setPhaseFilter] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
-  const [typeFilter, setTypeFilter] = useState<"all" | "billable" | "nonbill">("all");
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
-  // Templates picker query
   const { data: tplData } = useQuery({
     queryKey: ["sightline-templates"],
     queryFn: () => listTemplatesFn(),
@@ -861,6 +864,11 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
   const detailSnapshot = (data as unknown as { snapshot?: any }).snapshot ?? null;
+  const detailFinancials = (data as unknown as { financials?: import("@/lib/finance").ProjectFinancials | null }).financials ?? null;
+  const stepAssignees = (data as unknown as { stepAssignees?: Array<Record<string, unknown>> }).stepAssignees ?? [];
+  const assigneePickerMembers = (data as unknown as { assigneePickerMembers?: Array<{ id: string; name: string; burdened_hourly_rate?: number | null }> }).assigneePickerMembers ?? [];
+  const assigneePickerPrincipal = (data as unknown as { assigneePickerPrincipal?: { name: string } | null }).assigneePickerPrincipal;
+  const assigneesNewerThanSnapshot = !!(data as unknown as { assigneesNewerThanSnapshot?: boolean }).assigneesNewerThanSnapshot;
   const detailHoursLogged = (entries ?? []).reduce((s, e) => s + Number(e.hrs || 0), 0);
   const detailLastEntryIso = entries.length ? String(entries[0].date) : null;
   const firmMetrics = (data as unknown as {
@@ -1039,17 +1047,6 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
       ? "Custom phases"
       : "No phases yet";
 
-  // Filter entries for Time Log tab
-  const filteredEntries = entries.filter((e) => {
-    if (memberFilter !== "all" && e.user_id !== memberFilter) return false;
-    if (phaseFilter !== "all" && e.project_phase_id !== phaseFilter) return false;
-    if (typeFilter === "billable" && !e.billable) return false;
-    if (typeFilter === "nonbill" && e.billable) return false;
-    if (dateFrom && e.date < dateFrom) return false;
-    if (dateTo && e.date > dateTo) return false;
-    return true;
-  });
-
   // Financial edit helpers
   const openRateConfirm = (newRate: number) => {
     const oldRate = Number(project.scoped_rate) || 0;
@@ -1125,11 +1122,66 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
     }
   };
 
+  const saveProjectDetails = async (patch: ProjectDetailsPatch) => {
+    try {
+      const {
+        scoped_rate,
+        fixed_fee,
+        flat_fee_amount,
+        status,
+        ...metaPatch
+      } = patch;
+
+      const finData: {
+        project_id: string;
+        scoped_rate?: number | null;
+        fixed_fee?: number | null;
+        flat_fee_amount?: number | null;
+        reason?: string | null;
+      } = { project_id: id, reason: null };
+      let hasFin = false;
+      if (scoped_rate !== undefined) {
+        finData.scoped_rate = scoped_rate;
+        hasFin = true;
+      }
+      if (fixed_fee !== undefined) {
+        finData.fixed_fee = fixed_fee;
+        hasFin = true;
+      }
+      if (flat_fee_amount !== undefined) {
+        finData.flat_fee_amount = flat_fee_amount;
+        hasFin = true;
+      }
+      if (hasFin) await finFn({ data: finData });
+
+      if (status !== undefined && status !== project.status) {
+        await statusFn({ data: { id, status: status as Status } });
+      }
+
+      if (Object.keys(metaPatch).length > 0) {
+        await metaFn({ data: { id, ...metaPatch } });
+      }
+
+      toast.success("Project updated");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save");
+      throw e;
+    }
+  };
+
   const attachSelectedTemplate = async () => {
     if (!tplPicked) return;
     try {
       const r = await attachTplFn({ data: { template_id: tplPicked, project_id: id } });
       toast.success(`${r.attached} phase${r.attached !== 1 ? "s" : ""} added from template`);
+      if (r.migrationPending) {
+        toast.warning(
+          "Phases attached, but team assignments need a database update. Apply migration 20260716120000_task_assignee_cost_basis.sql in the Supabase SQL editor.",
+          { duration: 12000 },
+        );
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("sightline:sop-attached", { detail: { id } }),
@@ -1138,6 +1190,9 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
       setTplPickerOpen(false);
       setTplPicked("");
       invalidate();
+      if (autoAttachSop) {
+        navigate({ to: "/sightline", search: { openProject: id }, replace: true });
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
     }
@@ -1149,144 +1204,68 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
         <ArrowLeft className="h-4 w-4" /> Back to projects
       </button>
 
-      {/* HEADER */}
-      <div className="rounded-lg border border-border bg-white p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] uppercase tracking-[0.25em] text-gold">Project profitability</p>
-            <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">{project.name}</h1>
-            <p className="mt-1 text-ch/60">
-              {project.client_name ?? "No client"}  ·  {templateLabel}  ·  {isFixedFee
-                ? `Fixed fee ${fmtUsd(fixedFee)}${hasExplicitRate ? ` · ${fmtUsd(projectRate)}/hr` : ""}`
-                : hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "No project rate"}
-              {project.start_date && project.end_date && ` · ${project.start_date} → ${project.end_date}`}
-            </p>
-          </div>
-          <Select value={project.status} onValueChange={(v) => onStatusChange(v as Status)}>
-            <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="pipeline">Pipeline</SelectItem>
-              <SelectItem value="pursuit">Pursuit (BD)</SelectItem>
-              <SelectItem value="invoiced">Invoiced</SelectItem>
-              <SelectItem value="collected">Collected</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="on_hold">On hold</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* HEALTH PILL — State 1 (stale) overrides the ON TRACK confidence
-            with the same unreliable-margin treatment shown on the tile.
-            State 2 shows a lighter unconfirmed prompt; State 3 unchanged. */}
-        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4">
-          {displayState === 1 ? (
-            <>
-              <span
-                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]"
-                style={{ background: "rgba(196,113,74,0.12)", color: "#7A3A22" }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#C4714A" }} />
-                {daysSinceActivity == null ? "Data missing" : freshnessState === "critical" ? "Data missing" : "Needs update"}
-              </span>
-              {hasActuals && health.detail ? (
-                <span className="text-sm">
-                  <span
-                    className="text-ch/50"
-                    style={{ textDecoration: "line-through" }}
-                  >
-                    {health.detail}
-                  </span>
-                  <span className="ml-2 text-[#C4714A]">· unreliable — unknown until hours are logged</span>
-                </span>
-              ) : (
-                <span className="text-sm text-[#C4714A]">
-                  Unknown until hours are logged
-                </span>
-              )}
-            </>
-          ) : (
-            <>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.15em]",
-                  health.tone === "track" && "bg-success/10 text-success",
-                  health.tone === "watch" && "bg-goldp text-gold",
-                  health.tone === "over" && "bg-terra/10 text-terra",
-                )}
-              >
-                <span className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  health.tone === "track" && "bg-success",
-                  health.tone === "watch" && "bg-gold",
-                  health.tone === "over" && "bg-terra",
-                )} />
-                {health.pillLabel}
-              </span>
-              <span className="text-sm text-ch/70">{health.detail}</span>
-            </>
-          )}
-        </div>
-
-        {/* Freshness banner + action row (States 1 & 2) */}
-        {displayState !== 3 && (
-          <div
-            className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-md px-3 py-2.5"
-            style={
-              displayState === 1
-                ? { background: "rgba(196,113,74,0.08)", border: "1px solid rgba(196,113,74,0.30)" }
-                : { background: "rgba(184,134,11,0.06)", border: "1px solid rgba(184,134,11,0.25)" }
-            }
-          >
-            <div className="flex items-start gap-2 text-[12px]">
-              <AlertTriangle
-                className="mt-0.5 h-4 w-4 shrink-0"
-                style={{ color: displayState === 1 ? "#C4714A" : "#B8860B" }}
-              />
-              <span style={{ color: displayState === 1 ? "#7A3A22" : "#5C3D00" }}>
-                {displayState === 1
-                  ? daysSinceActivity == null
-                    ? "No time has been logged on this project yet. This margin figure is unreliable."
-                    : `${daysSinceActivity} days without a time entry. This margin figure is unreliable — unlogged hours may have already consumed part of this margin, or all of it.`
-                  : "A new time entry was logged. Confirm this project's numbers are current."}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => confirmMut.mutate()}
-                disabled={displayState !== 2 || confirmMut.isPending}
-                className={cn(
-                  "rounded-md border px-3 py-1.5 text-[11px] font-medium transition-colors",
-                  displayState === 2
-                    ? "border-ch/30 bg-white text-ch hover:bg-ch/5"
-                    : "cursor-not-allowed border-ch/10 bg-white/50 text-ch/30",
-                )}
-                title={
-                  displayState === 2
-                    ? "Mark reviewed"
-                    : "Log a time entry or use 'Nothing to report' before confirming"
-                }
-              >
-                {confirmMut.isPending ? "Saving…" : "Time entries are up to date"}
-              </button>
-              {displayState === 1 && (
-                <button
-                  type="button"
-                  onClick={() => { setNtrPhrase(""); setNtrOpen(true); }}
-                  className="rounded-md border border-ch/20 bg-white px-3 py-1.5 text-[11px] text-ch/70 hover:bg-ch/5"
-                >
-                  Nothing to report this period
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+      {/* Operational status + freshness (outside redesigned detail body) */}
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+        <Select value={project.status} onValueChange={(v) => onStatusChange(v as Status)}>
+          <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="pipeline">Pipeline</SelectItem>
+            <SelectItem value="pursuit">Pursuit (BD)</SelectItem>
+            <SelectItem value="invoiced">Invoiced</SelectItem>
+            <SelectItem value="collected">Collected</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="on_hold">On hold</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* WARNINGS PANEL — only when there is something to say */}
+      {displayState !== 3 && (
+        <div
+          className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-white px-4 py-3"
+          style={
+            displayState === 1
+              ? { background: "rgba(196,113,74,0.06)", borderColor: "rgba(196,113,74,0.25)" }
+              : { background: "rgba(184,134,11,0.05)", borderColor: "rgba(184,134,11,0.20)" }
+          }
+        >
+          <div className="flex items-start gap-2 text-[12px] text-ch/80">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: displayState === 1 ? "#C4714A" : "#B8860B" }} />
+            <span>
+              {displayState === 1
+                ? daysSinceActivity == null
+                  ? "No time has been logged on this project yet. Margin figures are unreliable until you log hours."
+                  : `${daysSinceActivity} days without a time entry. Confirm or log time to keep margin accurate.`
+                : "A new time entry was logged. Confirm this project's numbers are current."}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => confirmMut.mutate()}
+              disabled={displayState !== 2 || confirmMut.isPending}
+              className={cn(
+                "rounded-md border px-3 py-1.5 text-[11px] font-medium",
+                displayState === 2 ? "border-ch/30 bg-white text-ch hover:bg-ch/5" : "cursor-not-allowed border-ch/10 text-ch/30",
+              )}
+            >
+              {confirmMut.isPending ? "Saving…" : "Time entries are up to date"}
+            </button>
+            {displayState === 1 && (
+              <button
+                type="button"
+                onClick={() => { setNtrPhrase(""); setNtrOpen(true); }}
+                className="rounded-md border border-ch/20 bg-white px-3 py-1.5 text-[11px] text-ch/70 hover:bg-ch/5"
+              >
+                Nothing to report this period
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {warnings.length > 0 && (
-        <div className="mt-6 rounded-lg border border-terra/30 bg-terra/5 p-4">
+        <div className="mb-4 rounded-lg border border-terra/30 bg-terra/5 p-4">
           <div className="mb-2 flex items-center gap-2 text-terra">
             <AlertTriangle className="h-4 w-4" />
             <h3 className="font-display text-lg">Warnings</h3>
@@ -1299,532 +1278,127 @@ function ProjectDetail({ id, onBack, showOnboardHint }: { id: string; onBack: ()
         </div>
       )}
 
-      {/* TABS */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="mt-6">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="phases">Phases</TabsTrigger>
-          <TabsTrigger value="timelog">Time log</TabsTrigger>
-        </TabsList>
+      {showOnboardHint && !hintDismissed && (
+        <div
+          className="mb-4 flex items-start justify-between gap-3 rounded-md border-l-2 border-l-[#5C8A6E] py-2 pl-3 pr-2"
+          style={{ backgroundColor: "rgba(92,138,110,0.07)" }}
+        >
+          <p className="text-[13px] font-body" style={{ color: "#6B6259" }}>
+            {autoAttachSop
+              ? "Choose an SOP template to scope this project's phases. Sightline will copy the workflow into your project."
+              : "Your project is set up. Start logging time to track margin in real time."}
+          </p>
+          <button type="button" onClick={dismissHint} aria-label="Dismiss" className="shrink-0 rounded p-1 text-ch/50 hover:text-ch">
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
-        {/* ============ OVERVIEW ============ */}
-        <TabsContent value="overview" className="mt-6 space-y-6">
-          <ProjectDetailPanel
-            project={project as any}
-            snapshot={detailSnapshot}
-            hoursLogged={detailHoursLogged}
-            lastEntryDate={detailLastEntryIso}
-          />
-          {showOnboardHint && !hintDismissed && (
-            <div
-              className="flex items-start justify-between gap-3 rounded-md border-l-2 border-l-[#5C8A6E] py-2 pl-3 pr-2"
-              style={{ backgroundColor: "rgba(92,138,110,0.07)" }}
-            >
-              <p className="text-[13px] font-body" style={{ color: "#6B6259" }}>
-                Your project is set up. Start logging time to track margin in real time.
-              </p>
-              <button
-                type="button"
-                onClick={dismissHint}
-                aria-label="Dismiss"
-                className="shrink-0 rounded p-1 text-ch/50 hover:text-ch"
-              >
-                <XIcon className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-          {!hasExplicitRate && (
-            <div className="rounded-lg border border-gold/40 bg-goldp/40 p-4 text-sm text-ch/80">
-              Add a project rate to see profitability figures. This is the hourly rate agreed with this client.
-              <button
-                className="ml-2 inline-flex items-center gap-1 font-medium text-gold hover:text-goldl"
-                onClick={openMetaEdit}
-              >
-                Set rate →
-              </button>
-            </div>
-          )}
-          {phaseCount === 0 && (
-            <div className="rounded-lg border border-border bg-white p-4 text-sm text-ch/70">
-              Add phases to define your project budget. Without phases, scoped revenue cannot be calculated.
-            </div>
-          )}
-
-          <ProfitabilitySummary
-            projectFee={isFixedFee ? fixedFee : (hasExplicitRate ? billableScopedHrs * projectRate : 0)}
-            isFixedFee={isFixedFee}
-            budgetedBillableHrs={billableScopedHrs}
-            actualHrs={actualHrs}
-            billableHrs={billableHrs}
-            nonBillableHrs={nonBillableHrs}
-            rate={projectRate}
-            rateIsProject={hasExplicitRate}
-            firmBilledRate={Number(config?.rate_billed) || 0}
-            phaseRows={phaseRows}
-            startDate={project.start_date}
-            endDate={project.end_date}
-            hasOwnerSalary={Number(config?.comp_draw_annual ?? 0) > 0}
-            alignedRate={calcFinance(config ?? null, []).alignedRate}
-            onOpenSettings={openMetaEdit}
-            breakEvenRate={firmMetrics.breakEvenRate}
-            firmAlignedRate={firmMetrics.alignedRate}
-            perHour={firmMetrics.perHour}
-            teamCount={team.length}
-          />
-
-          <HoursSummary
-            scopedHrs={scopedHrs}
-            billableHrs={billableHrs}
-            nonBillableHrs={nonBillableHrs}
-          />
-
-          {/* PROJECT DETAILS CARD */}
-          <div className="rounded-lg border border-border bg-white p-5">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="font-display text-xl tracking-tight text-ch">Project details</h3>
-              {isAdmin && (
-                <Button variant="outline" size="sm" onClick={openMetaEdit}>Edit</Button>
-              )}
-            </div>
-            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Client</dt>
-                <dd className="mt-0.5 text-ch">{project.client_name ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Project rate</dt>
-                <dd className="mt-0.5 text-ch">{hasExplicitRate ? `${fmtUsd(projectRate)}/hr` : "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Template</dt>
-                <dd className="mt-0.5 text-ch">{template?.name ?? (phaseCount > 0 ? "Custom phases" : "—")}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Start date</dt>
-                <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">End date</dt>
-                <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Team logging time</dt>
-                <dd className="mt-0.5 text-ch">
-                  {Array.from(new Set(entries.map((e) => e.user_id))).length || "—"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          {/* ESTIMATED TIMELINE CARD */}
-          <div className="rounded-lg border border-border bg-white p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="font-display text-xl tracking-tight text-ch">Estimated timeline</h3>
-                <p className="mt-1 text-[13px] font-medium" style={{ fontFamily: "Jost, sans-serif", color: "#2C2C2C", fontWeight: 500 }}>
-                  When is the bulk of work happening on this project?
-                </p>
-              </div>
-              {isAdmin && (
-                <Button variant="outline" size="sm" onClick={openMetaEdit}>Edit dates</Button>
-              )}
-            </div>
-            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-3">
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Work begins</dt>
-                <dd className="mt-0.5 text-ch">{project.start_date ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Work wraps</dt>
-                <dd className="mt-0.5 text-ch">{project.end_date ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Est. weekly hrs</dt>
-                <dd className="mt-0.5 text-ch">
-                  {project.est_weekly_hrs != null
-                    ? `${Number(project.est_weekly_hrs).toFixed(1)} / wk`
-                    : (project.start_date && project.end_date && scopedHrs
-                        ? (() => {
-                            const w = Math.max(1, Math.round((new Date(project.end_date).getTime() - new Date(project.start_date).getTime()) / (7 * 86400000)) + 1);
-                            return `${(scopedHrs / w).toFixed(1)} / wk (auto)`;
-                          })()
-                        : "—")}
-                </dd>
-              </div>
-            </dl>
-
-            {/* Milestones */}
-            <div className="mt-5 border-t border-border pt-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Milestones</h4>
-              </div>
-              {milestones.length === 0 ? (
-                <p className="mt-2 text-[12px] text-ch/50">No milestones yet. Add one below (e.g. Install, Reveal).</p>
-              ) : (
-                <ul className="mt-2 divide-y divide-border">
-                  {milestones.map((m) => (
-                    <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                      <div>
-                        <div className="text-ch">{m.label}</div>
-                        <div className="text-[11px] text-ch/50">{m.milestone_date}</div>
-                      </div>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          className="text-[11px] text-ch/50 hover:text-terra"
-                          onClick={async () => {
-                            try {
-                              await deleteMilestoneFn({ data: { id: m.id } });
-                              toast.success("Milestone removed");
-                              invalidate();
-                            } catch (e) {
-                              toast.error(e instanceof Error ? e.message : "Failed");
-                            }
-                          }}
-                        >Remove</button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {isAdmin && (
-                <form
-                  className="mt-3 grid grid-cols-12 gap-2"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    if (!msLabel.trim() || !msDate) return;
-                    try {
-                      await saveMilestoneFn({
-                        data: { project_id: id, label: msLabel.trim(), milestone_date: msDate },
-                      });
-                      setMsLabel(""); setMsDate("");
-                      toast.success("Milestone added");
-                      invalidate();
-                    } catch (err) {
-                      toast.error(err instanceof Error ? err.message : "Failed");
-                    }
-                  }}
-                >
-                  <Input
-                    className="col-span-6"
-                    placeholder="Label (e.g. Install, Reveal)"
-                    value={msLabel}
-                    onChange={(e) => setMsLabel(e.target.value)}
-                  />
-                  <Input
-                    className="col-span-4"
-                    type="date"
-                    value={msDate}
-                    onChange={(e) => setMsDate(e.target.value)}
-                  />
-                  <Button
-                    type="submit"
-                    className="col-span-2 bg-ch text-cream hover:bg-ch/90"
-                    disabled={!msLabel.trim() || !msDate}
-                  >
-                    + Add
-                  </Button>
-                </form>
-              )}
-            </div>
-          </div>
-
-          {/* FINANCIAL CHANGE HISTORY (principal-only, hidden if empty) */}
-          {isPrincipal && audit.length > 0 && (
-            <Collapsible>
-              <div className="rounded-lg border border-border bg-white p-5">
-                <CollapsibleTrigger className="flex w-full items-center justify-between text-left">
-                  <div className="flex items-center gap-2 text-ch">
-                    <History className="h-4 w-4 text-ch/50" />
-                    <h3 className="font-display text-xl tracking-tight">Financial change history</h3>
-                    <span className="text-xs text-ch/50">({audit.length})</span>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-ch/50 transition-transform data-[state=open]:rotate-180" />
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-4">
-                  <ul className="space-y-3 text-sm">
-                    {audit.map((a) => {
-                      const who = team.find((t) => t.id === a.changed_by);
-                      return (
-                        <li key={a.id} className="border-t border-border pt-3 first:border-0 first:pt-0">
-                          <div className="text-ch/70">
-                            <span className="text-ch/50">{new Date(a.changed_at).toLocaleString()}</span>
-                            {"  "}
-                            <span className="text-ch">{who?.name || who?.email || "Someone"}</span>
-                            {" changed "}
-                            <span className="text-ch">{a.field_changed}</span>
-                            {" from "}<span className="text-ch">{a.old_value ?? "—"}</span>
-                            {" to "}<span className="text-ch">{a.new_value ?? "—"}</span>
-                          </div>
-                          {a.reason && (
-                            <div className="mt-1 text-xs italic text-ch/60">{a.reason}</div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
-          )}
-        </TabsContent>
-
-        {/* ============ PHASES ============ */}
-        <TabsContent value="phases" className="mt-6 space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <p className="text-sm text-ch/60">
-              {phaseCount} phase{phaseCount !== 1 && "s"} · {formatHours(scopedHrs)} scoped
-              {hasExplicitRate && <> · {fmtUsd(scopedRevenue)} potential revenue</>}
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setTplPickerOpen(true)}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add from SOP Library
-              </Button>
-              <Button size="sm" className="bg-ch text-cream hover:bg-ch/90" onClick={() => setAddingPhase(true)}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add phase
-              </Button>
-            </div>
-          </div>
-
-          {addingPhase && (
-            <div className="rounded-lg border border-border bg-white p-4">
-              <div className="grid grid-cols-12 gap-3">
-                <div className="col-span-6">
-                  <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Phase name</label>
-                  <Input value={addDraft.name} onChange={(e) => setAddDraft({ ...addDraft, name: e.target.value })} autoFocus />
-                </div>
-                <div className="col-span-3">
-                  <label className="mb-1 block text-[11px] uppercase tracking-[0.15em] text-ch/50">Budgeted hours</label>
-                  <Input type="number" min={0} step="any" value={addDraft.expected_hrs} onChange={(e) => setAddDraft({ ...addDraft, expected_hrs: e.target.value })} />
-                </div>
-                <div className="col-span-3 flex items-end gap-3">
-                  <label className="inline-flex items-center gap-1.5 text-sm text-ch/80">
-                    <input type="checkbox" checked={addDraft.billable} onChange={(e) => setAddDraft({ ...addDraft, billable: e.target.checked })} className="accent-gold" />
-                    Billable
-                  </label>
-                </div>
-              </div>
-              <div className="mt-3 flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setAddingPhase(false)}>Cancel</Button>
-                <Button
-                  size="sm"
-                  className="bg-ch text-cream hover:bg-ch/90"
-                  onClick={async () => {
-                    if (!addDraft.name.trim()) return;
-                    try {
-                      await upsertPhaseFn({ data: {
-                        project_id: id,
-                        name: addDraft.name.trim(),
-                        expected_hrs: Number(addDraft.expected_hrs) || 0,
-                        billable: addDraft.billable,
-                      } });
-                      setAddDraft({ name: "", expected_hrs: "", billable: true });
-                      setAddingPhase(false);
-                      invalidate();
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Failed");
-                    }
-                  }}
-                >
-                  Add phase
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {phaseRows.length === 0 && !addingPhase && (
-            <div className="rounded-lg border border-dashed border-border bg-white/60 p-8 text-center text-sm text-ch/60">
-              No phases yet. Add one manually or pull from your SOP Library.
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {phaseRows.map((p) => (
-              <PhaseCard
-                key={p.id}
-                phase={p}
-                steps={steps.filter((s) => s.project_phase_id === p.id)}
-                entries={entries.filter((e) => e.project_phase_id === p.id)}
-                team={team}
-                isPrincipal={isPrincipal}
-                isAdmin={isAdmin}
-                onEditHrs={(hrs) => openPhaseHrsConfirm(p, hrs)}
-                onEditBillable={(b) => openPhaseBillableConfirm(p, b)}
-                onDelete={async () => {
-                  if (!confirm(`Delete phase "${p.name}"?`)) return;
-                  await deletePhaseFn({ data: { id: p.id } });
-                  invalidate();
-                }}
-                onUpdateStepHrs={async (stepId, hrs) => {
-                  try { await updateStepHrsFn({ data: { id: stepId, estimated_hrs: hrs } }); invalidate(); }
-                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
-                }}
-                onAddStep={async (description, hrs) => {
-                  try { await createStepFn({ data: { project_phase_id: p.id, description, estimated_hrs: hrs } }); invalidate(); }
-                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
-                }}
-                onDeleteStep={async (stepId) => {
-                  try { await deleteStepFn({ data: { id: stepId } }); invalidate(); }
-                  catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
-                }}
-              />
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* ============ TIME LOG ============ */}
-        <TabsContent value="timelog" className="mt-6 space-y-4">
-          {/* Summary bar */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <SummaryStat label="Total hrs" value={formatHours(billableHrs + nonBillableHrs)} />
-            <SummaryStat label="Billable" value={formatHours(billableHrs)} />
-            <SummaryStat label="Non-billable" value={formatHours(nonBillableHrs)} />
-            <SummaryStat label="Revenue to date" value={hasExplicitRate ? fmtUsd(actualRevenue) : "—"} />
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-white p-3">
-            <Select value={memberFilter} onValueChange={setMemberFilter}>
-              <SelectTrigger className="w-40 bg-white"><SelectValue placeholder="Assignee" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All assignees</SelectItem>
-                {team.map((m) => <SelectItem key={m.id} value={m.id}>{m.name || m.email}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-              <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Phase" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All phases</SelectItem>
-                {phases.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as typeof typeFilter)}>
-              <SelectTrigger className="w-36 bg-white"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                <SelectItem value="billable">Billable</SelectItem>
-                <SelectItem value="nonbill">Non-billable</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-40 bg-white" />
-            <span className="text-xs text-ch/50">to</span>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-40 bg-white" />
-            {(memberFilter !== "all" || phaseFilter !== "all" || typeFilter !== "all" || dateFrom || dateTo) && (
-              <Button variant="ghost" size="sm" onClick={() => { setMemberFilter("all"); setPhaseFilter("all"); setTypeFilter("all"); setDateFrom(""); setDateTo(""); }}>
-                Clear
-              </Button>
-            )}
-          </div>
-
-          <div className="overflow-hidden rounded-lg border border-border bg-white">
-            <table className="w-full text-sm">
-              <thead className="bg-creamd/60 text-[11px] uppercase tracking-[0.16em] text-ch/50">
-                <tr>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-3 py-3 text-left">Assignee</th>
-                  <th className="px-3 py-3 text-left">Phase</th>
-                  <th className="px-3 py-3 text-right">Hours</th>
-                  <th className="px-3 py-3 text-left">Type</th>
-                  <th className="px-4 py-3 text-left">Notes</th>
-                  {isAdmin && <th className="px-3 py-3 w-12"></th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEntries.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-10 text-center text-ch/50">
-                    No time logged on this project yet. Log time from the Phases tab or from the Time Calendar.
-                  </td></tr>
-                ) : filteredEntries.slice(0, 200).map((e) => {
-                  const member = team.find((m) => m.id === e.user_id);
-                  return (
-                    <tr key={e.id} className="border-t border-border">
-                      <td className="px-4 py-2 text-ch/80 whitespace-nowrap">{e.date}</td>
-                      <td className="px-3 py-2 text-ch/80">{member?.name || member?.email || "—"}</td>
-                      <td className="px-3 py-2">
-                        <Select
-                          value={e.project_phase_id ?? "__none__"}
-                          onValueChange={async (v) => {
-                            try {
-                              await patchEntryFn({ data: { id: e.id, project_phase_id: v === "__none__" ? null : v } });
-                              invalidate();
-                            } catch (err) {
-                              toast.error(err instanceof Error ? err.message : "Failed");
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="h-7 w-40 bg-white text-xs"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">
-                              <span className="text-terra">No phase</span>
-                            </SelectItem>
-                            {phases.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatHours(Number(e.hrs))}</td>
-                      <td className="px-3 py-2">
-                        <button
-                          onClick={async () => {
-                            try {
-                              await patchEntryFn({ data: { id: e.id, billable: !e.billable } });
-                              invalidate();
-                            } catch (err) {
-                              toast.error(err instanceof Error ? err.message : "Failed");
-                            }
-                          }}
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.15em]",
-                            e.billable ? "bg-success/10 text-success" : "bg-terra/10 text-terra",
-                          )}
-                        >
-                          {e.billable ? "Billable" : "Non-bill"}
-                        </button>
-                      </td>
-                      <td className="px-4 py-2 max-w-xs truncate text-ch/60">{e.notes ?? ""}</td>
-                      {isAdmin && (
-                        <td className="px-3 py-2 text-right">
-                          {deleteConfirmId === e.id ? (
-                            <div className="inline-flex gap-1">
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    await deleteEntryFn({ data: { id: e.id } });
-                                    setDeleteConfirmId(null);
-                                    invalidate();
-                                  } catch (err) {
-                                    toast.error(err instanceof Error ? err.message : "Failed");
-                                  }
-                                }}
-                                className="rounded px-2 py-0.5 text-[11px] uppercase text-terra hover:bg-terra/10"
-                              >
-                                Confirm
-                              </button>
-                              <button onClick={() => setDeleteConfirmId(null)} className="rounded px-2 py-0.5 text-[11px] uppercase text-ch/50 hover:bg-creamd">
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button onClick={() => setDeleteConfirmId(e.id)} className="text-ch/40 hover:text-terra">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </TabsContent>
-      </Tabs>
+      <ProjectDetailView
+        project={project as any}
+        snapshot={detailSnapshot}
+        phases={phases}
+        steps={steps}
+        entries={entries as any}
+        team={team}
+        milestones={milestones}
+        audit={audit as any}
+        importLogs={((data as unknown as { importLogs?: Array<{ id: string; source: string; imported_at: string; rows_imported: number; date_range_start: string | null; date_range_end: string | null }> }).importLogs) ?? []}
+        sopPhases={((data as unknown as { sopPhases?: Array<{ id: string; description: string | null }> }).sopPhases) ?? []}
+        hoursLogged={detailHoursLogged}
+        lastEntryDate={detailLastEntryIso}
+        principalId={undefined}
+        isAdmin={isAdmin}
+        onSaveMilestone={isAdmin ? async (label, date) => {
+          await saveMilestoneFn({ data: { project_id: id, label, milestone_date: date } });
+          toast.success("Milestone added");
+          invalidate();
+        } : undefined}
+        onDeleteMilestone={isAdmin ? async (mid) => {
+          await deleteMilestoneFn({ data: { id: mid } });
+          invalidate();
+        } : undefined}
+        onSaveProjectDetails={isAdmin ? saveProjectDetails : undefined}
+        onStatusChange={onStatusChange}
+        financials={detailFinancials}
+        stepAssignees={stepAssignees as any}
+        assigneeMembers={assigneePickerMembers}
+        assigneePrincipalName={assigneePickerPrincipal?.name ?? "Principal"}
+        assigneesNewerThanSnapshot={assigneesNewerThanSnapshot}
+        onUpsertStepAssignee={
+          isAdmin
+            ? async (stepId, payload) => {
+                await upsertStepAssigneeFn({
+                  data: { project_step_id: stepId, ...payload },
+                });
+                invalidate();
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+              }
+            : undefined
+        }
+        onDeleteStepAssignee={
+          isAdmin
+            ? async (assigneeId) => {
+                await deleteStepAssigneeFn({ data: { id: assigneeId } });
+                invalidate();
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+              }
+            : undefined
+        }
+        onRefreshCostSnapshot={
+          isAdmin
+            ? async () => {
+                await refreshSnapshotFn({ data: { project_id: id } });
+                toast.success("Cost snapshot updated");
+                invalidate();
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+              }
+            : undefined
+        }
+        onAttachSopTemplate={isAdmin ? () => setTplPickerOpen(true) : undefined}
+        sopTemplateName={template?.name ?? null}
+        onCreateProjectStep={
+          isAdmin
+            ? async (phaseId, description, estimatedHrs = 0) => {
+                await createStepFn({
+                  data: { project_phase_id: phaseId, description, estimated_hrs: estimatedHrs },
+                });
+                toast.success("Task added");
+                invalidate();
+              }
+            : undefined
+        }
+        onAssignToPhase={
+          isAdmin
+            ? async (phaseId, phaseName, payload) => {
+                let stepId = steps.find((s) => s.project_phase_id === phaseId)?.id;
+                if (!stepId) {
+                  const created = await createStepFn({
+                    data: {
+                      project_phase_id: phaseId,
+                      description: phaseName,
+                      estimated_hrs: payload.estimated_hrs ?? 0,
+                    },
+                  });
+                  stepId = created.id;
+                }
+                await upsertStepAssigneeFn({
+                  data: { project_step_id: stepId, ...payload },
+                });
+                toast.success("Assignee saved");
+                invalidate();
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+              }
+            : undefined
+        }
+      />
 
       {/* OPERATIONAL EDIT DIALOG */}
       <Dialog open={editingMeta} onOpenChange={setEditingMeta}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit project details</DialogTitle>
-            <DialogDescription>Operational fields. Financial fields (rate, hours, billable) are edited from the Phases tab.</DialogDescription>
+            <DialogDescription>Operational fields. Financial fields (rate, hours, billable) are edited from Settings or project financial controls.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>

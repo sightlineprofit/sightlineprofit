@@ -8,6 +8,10 @@ import { fmtUsd } from "@/lib/finance";
 import { AlignedRateBreakdown } from "./AlignedRateBreakdown";
 import { MetricBreakdown } from "./MetricBreakdown";
 import { listRateHistory } from "@/lib/rate-history.functions";
+import {
+  normalizePricingStructure,
+  referenceProjectHours,
+} from "@/lib/pricing-structure";
 
 type Calc = ReturnType<typeof calc>;
 
@@ -54,6 +58,7 @@ export function RateArchitecturePanel({
   expenses,
   targetMarginPct,
   configUpdatedAt,
+  projectScopedHours = [],
 }: {
   c: Calc;
   cfg: any;
@@ -61,7 +66,10 @@ export function RateArchitecturePanel({
   expenses: any[];
   targetMarginPct: number;
   configUpdatedAt?: string | null;
+  projectScopedHours?: number[];
 }) {
+  const pricingStructure = normalizePricingStructure(cfg?.pricing_structure);
+  const isFlatFeePricing = pricingStructure === "flat_fee";
   const pill = pillFor(c.rateHealth);
   const aligned = c.alignedRate || 0;
   const billed = c.billedRate || 0;
@@ -141,6 +149,7 @@ export function RateArchitecturePanel({
   const annualGap = gap * c.annualBillableHrs;
   const monthlyGap = annualGap / 12;
   const hoursNeeded = billed > 0 ? Math.max(0, costFloor / billed - c.annualBillableHrs) : 0;
+  const referenceHours = referenceProjectHours(projectScopedHours);
 
   return (
     <div
@@ -192,162 +201,276 @@ export function RateArchitecturePanel({
 
       {/* Aligned rate primary display */}
       <div style={{ marginTop: 18 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            color: MUTED,
-          }}
-        >
-          Aligned rate
-        </div>
-        <div className="flex items-baseline gap-2 flex-wrap" style={{ marginTop: 4 }}>
-          <span
-            data-tour="aligned-rate-value"
-            style={{
-              fontFamily: "'Cormorant Garamond', serif",
-              fontSize: "clamp(44px, 6vw, 56px)",
-              lineHeight: 1,
-              color: CHARCOAL,
-              fontWeight: 400,
-            }}
-          >
-            {fmtUsd(aligned, { decimals: 0 })}
-          </span>
-          <span style={{ fontSize: 14, color: MUTED }}>/hr</span>
-          <span
-            style={{
-              marginLeft: 10,
-              fontSize: 11,
-              fontWeight: 500,
-              padding: "3px 8px",
-              borderRadius: 3,
-              background: pill.bg,
-              color: pill.color,
-            }}
-          >
-            {pill.label}
-          </span>
-          <AlignedRateBreakdown c={c} targetMarginPct={targetMarginPct} side="bottom" />
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 400,
-            color: MUTED,
-            marginTop: 6,
-          }}
-        >
-          Your floor. The minimum hourly rate your cost structure requires.
-        </div>
+        {isFlatFeePricing ? (
+          <>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.2em",
+                textTransform: "uppercase",
+                color: MUTED,
+              }}
+            >
+              Your aligned rate
+            </div>
+            <div className="flex items-baseline gap-2 flex-wrap" style={{ marginTop: 4 }}>
+              <span
+                data-tour="aligned-rate-value"
+                style={{
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: 36,
+                  lineHeight: 1,
+                  color: CHARCOAL,
+                  fontWeight: 400,
+                }}
+              >
+                {fmtUsd(aligned, { decimals: 0 })}
+              </span>
+              <span style={{ fontSize: 14, color: MUTED }}>/hr</span>
+              <AlignedRateBreakdown c={c} targetMarginPct={targetMarginPct} side="bottom" />
+            </div>
+            <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+              {referenceHours.map((hrs) => (
+                <div
+                  key={hrs}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    fontFamily: "Jost, sans-serif",
+                    fontSize: 13,
+                    color: "#6B6259",
+                  }}
+                >
+                  <span>{hrs}-hour project:</span>
+                  <span style={{ color: CHARCOAL, fontWeight: 500 }}>
+                    min fee {fmtUsd(aligned * hrs, { decimals: 0 })}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p
+              style={{
+                marginTop: 12,
+                fontFamily: "Jost, sans-serif",
+                fontSize: 11,
+                fontStyle: "italic",
+                color: MUTED,
+                lineHeight: 1.6,
+              }}
+            >
+              These are minimum fees at your aligned rate. Add your target margin to get your quoted fee.
+            </p>
+          </>
+        ) : (
+          <>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.2em",
+                textTransform: "uppercase",
+                color: MUTED,
+              }}
+            >
+              Aligned rate
+            </div>
+            <div className="flex items-baseline gap-2 flex-wrap" style={{ marginTop: 4 }}>
+              <span
+                data-tour="aligned-rate-value"
+                style={{
+                  fontFamily: "'Cormorant Garamond', serif",
+                  fontSize: "clamp(44px, 6vw, 56px)",
+                  lineHeight: 1,
+                  color: CHARCOAL,
+                  fontWeight: 400,
+                }}
+              >
+                {fmtUsd(aligned, { decimals: 0 })}
+              </span>
+              <span style={{ fontSize: 14, color: MUTED }}>/hr</span>
+              <span
+                style={{
+                  marginLeft: 10,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: "3px 8px",
+                  borderRadius: 3,
+                  background: pill.bg,
+                  color: pill.color,
+                }}
+              >
+                {pill.label}
+              </span>
+              <AlignedRateBreakdown c={c} targetMarginPct={targetMarginPct} side="bottom" />
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 400,
+                color: MUTED,
+                marginTop: 6,
+              }}
+            >
+              Your floor. The minimum hourly rate your cost structure requires.
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Three-number row */}
-      <div
-        data-tour="rate-stats-row"
-        className="grid grid-cols-3"
-        style={{ marginTop: 22, borderTop: `1px solid ${BORDER}`, paddingTop: 18 }}
-      >
-        <NumCell
-          label="Your rate"
-          value={fmtUsd(billed, { decimals: 0 }) + "/hr"}
-          valueColor={rateColor(c.rateHealth)}
-          hint={
-            billed <= 0 ? null : billed < aligned
-              ? `-${fmtUsd(gap, { decimals: 0 })}/hr below floor`
-              : `+${fmtUsd(surplus, { decimals: 0 })}/hr above floor`
-          }
-          hintColor={billed < aligned ? (c.rateHealth === "critical" ? TERRA : GOLD) : SAGE}
-          trailing={
-            <MetricBreakdown metric="billed" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={12} />
-          }
-          divider
-        />
-        <NumCell
-          label="Break-even"
-          value={fmtUsd(be, { decimals: 0 }) + "/hr"}
-          valueColor={CHARCOAL}
-          hint="Cost-only floor"
-          hintColor={MUTED}
-          trailing={
-            <MetricBreakdown metric="breakeven" c={c} cfg={cfg} side="bottom" iconSize={12} />
-          }
-          divider
-          center
-        />
-        <NumCell
-          label="Margin target"
-          value={`${(targetMarginPct || 0).toFixed(0)}%`}
-          valueColor={billed >= aligned ? SAGE : GOLD}
-          hint={`${fmtUsd(marginPerHr, { decimals: 0 })}/hr per billable hour`}
-          hintColor={MUTED}
-          trailing={
-            <MetricBreakdown metric="margin" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={12} />
-          }
-        />
-      </div>
+      {!isFlatFeePricing ? (
+        <>
+          {/* Three-number row */}
+          <div
+            data-tour="rate-stats-row"
+            className="grid grid-cols-3"
+            style={{ marginTop: 22, borderTop: `1px solid ${BORDER}`, paddingTop: 18 }}
+          >
+            <NumCell
+              label="Your rate"
+              value={fmtUsd(billed, { decimals: 0 }) + "/hr"}
+              valueColor={rateColor(c.rateHealth)}
+              hint={
+                billed <= 0 ? null : billed < aligned
+                  ? `-${fmtUsd(gap, { decimals: 0 })}/hr below floor`
+                  : `+${fmtUsd(surplus, { decimals: 0 })}/hr above floor`
+              }
+              hintColor={billed < aligned ? (c.rateHealth === "critical" ? TERRA : GOLD) : SAGE}
+              trailing={
+                <MetricBreakdown metric="billed" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={12} />
+              }
+              divider
+            />
+            <NumCell
+              label="Break-even"
+              value={fmtUsd(be, { decimals: 0 }) + "/hr"}
+              valueColor={CHARCOAL}
+              hint="Cost-only floor"
+              hintColor={MUTED}
+              trailing={
+                <MetricBreakdown metric="breakeven" c={c} cfg={cfg} side="bottom" iconSize={12} />
+              }
+              divider
+              center
+            />
+            <NumCell
+              label="Margin target"
+              value={`${(targetMarginPct || 0).toFixed(0)}%`}
+              valueColor={billed >= aligned ? SAGE : GOLD}
+              hint={`${fmtUsd(marginPerHr, { decimals: 0 })}/hr per billable hour`}
+              hintColor={MUTED}
+              trailing={
+                <MetricBreakdown metric="margin" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={12} />
+              }
+            />
+          </div>
 
-      {/* Rate position bar */}
-      <div style={{ marginTop: 20 }}>
-        <div
-          data-tour="rate-bar"
-          style={{
-            position: "relative",
-            height: 8,
-            borderRadius: 4,
-            overflow: "visible",
-            background: "transparent",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              borderRadius: 4,
-              display: "flex",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ width: `${bePct}%`, background: "rgba(44,44,44,0.08)" }} />
-            <div style={{ flex: 1, background: "rgba(184,134,11,0.10)" }} />
+          {/* Rate position bar */}
+          <div style={{ marginTop: 20 }}>
+            <div
+              data-tour="rate-bar"
+              style={{
+                position: "relative",
+                height: 8,
+                borderRadius: 4,
+                overflow: "visible",
+                background: "transparent",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: 4,
+                  display: "flex",
+                  overflow: "hidden",
+                }}
+              >
+                <div style={{ width: `${bePct}%`, background: "rgba(44,44,44,0.08)" }} />
+                <div style={{ flex: 1, background: "rgba(184,134,11,0.10)" }} />
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${billedPct}%`,
+                  top: -5,
+                  height: 18,
+                  width: 2,
+                  background: rateColor(c.rateHealth),
+                  transform: "translateX(-1px)",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${billedPct}%`,
+                  top: -22,
+                  transform: "translateX(-50%)",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: rateColor(c.rateHealth),
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {fmtUsd(billed, { decimals: 0 })}/hr ▾
+              </div>
+            </div>
+            <div className="flex justify-between" style={{ marginTop: 4, fontSize: 11, color: MUTED }}>
+              <span>{fmtUsd(be, { decimals: 0 })}</span>
+              <span style={{ color: GOLD }}>{fmtUsd(aligned, { decimals: 0 })}</span>
+            </div>
           </div>
-          {/* Billed indicator */}
-          <div
-            style={{
-              position: "absolute",
-              left: `${billedPct}%`,
-              top: -5,
-              height: 18,
-              width: 2,
-              background: rateColor(c.rateHealth),
-              transform: "translateX(-1px)",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              left: `${billedPct}%`,
-              top: -22,
-              transform: "translateX(-50%)",
-              fontSize: 11,
-              fontWeight: 500,
-              color: rateColor(c.rateHealth),
-              whiteSpace: "nowrap",
-            }}
-          >
-            {fmtUsd(billed, { decimals: 0 })}/hr ▾
-          </div>
-        </div>
-        <div className="flex justify-between" style={{ marginTop: 4, fontSize: 11, color: MUTED }}>
-          <span>{fmtUsd(be, { decimals: 0 })}</span>
-          <span style={{ color: GOLD }}>{fmtUsd(aligned, { decimals: 0 })}</span>
-        </div>
-      </div>
+
+          {/* Decision prompt */}
+          {billed > 0 && billed < aligned && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: "10px 14px",
+                borderRadius: "0 4px 4px 0",
+                fontSize: 11,
+                fontWeight: 400,
+                lineHeight: 1.7,
+                background:
+                  c.rateHealth === "critical" ? "rgba(196,113,74,0.06)" : "rgba(184,134,11,0.06)",
+                borderLeft: `2px solid ${c.rateHealth === "critical" ? TERRA : GOLD}`,
+              }}
+            >
+              {c.rateHealth === "critical" ? (
+                <>
+                  At {fmtUsd(billed, { decimals: 0 })}/hr you need to raise your rate by{" "}
+                  <strong>{fmtUsd(toBreakeven, { decimals: 0 })}/hr</strong> just to cover costs — or bill{" "}
+                  <strong>{Math.round(hoursNeeded)}</strong> more hours per year at your current rate.
+                </>
+              ) : (
+                <>
+                  At {fmtUsd(billed, { decimals: 0 })}/hr you're leaving{" "}
+                  <strong>{fmtUsd(annualGap, { decimals: 0 })}/yr</strong> in margin on the table. That's{" "}
+                  <strong>{fmtUsd(monthlyGap, { decimals: 0 })}/mo</strong> in uncaptured profit.
+                </>
+              )}
+              <div className="flex gap-4" style={{ marginTop: 6 }}>
+                <Link to="/settings" style={{ color: GOLD }} className="hover:underline">
+                  Model a rate increase →
+                </Link>
+                <Link to="/projects" style={{ color: GOLD }} className="hover:underline">
+                  {c.rateHealth === "critical" ? "See what this rate looks like on a project →" : "Apply to an active project →"}
+                </Link>
+              </div>
+            </div>
+          )}
+        </>
+      ) : null}
 
       {/* Annual impact row */}
-      <div className="grid grid-cols-2 gap-6" style={{ marginTop: 22 }}>
+      <div
+        className="grid grid-cols-2 gap-6"
+        style={{
+          marginTop: 22,
+          ...(isFlatFeePricing ? { borderTop: `1px solid ${BORDER}`, paddingTop: 18 } : {}),
+        }}
+      >
         <div>
           <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
             Cost floor (annual)
@@ -417,45 +540,6 @@ export function RateArchitecturePanel({
           </div>
         </div>
       </div>
-
-      {/* Decision prompt */}
-      {billed > 0 && billed < aligned && (
-        <div
-          style={{
-            marginTop: 14,
-            padding: "10px 14px",
-            borderRadius: "0 4px 4px 0",
-            fontSize: 11,
-            fontWeight: 400,
-            lineHeight: 1.7,
-            background:
-              c.rateHealth === "critical" ? "rgba(196,113,74,0.06)" : "rgba(184,134,11,0.06)",
-            borderLeft: `2px solid ${c.rateHealth === "critical" ? TERRA : GOLD}`,
-          }}
-        >
-          {c.rateHealth === "critical" ? (
-            <>
-              At {fmtUsd(billed, { decimals: 0 })}/hr you need to raise your rate by{" "}
-              <strong>{fmtUsd(toBreakeven, { decimals: 0 })}/hr</strong> just to cover costs — or bill{" "}
-              <strong>{Math.round(hoursNeeded)}</strong> more hours per year at your current rate.
-            </>
-          ) : (
-            <>
-              At {fmtUsd(billed, { decimals: 0 })}/hr you're leaving{" "}
-              <strong>{fmtUsd(annualGap, { decimals: 0 })}/yr</strong> in margin on the table. That's{" "}
-              <strong>{fmtUsd(monthlyGap, { decimals: 0 })}/mo</strong> in uncaptured profit.
-            </>
-          )}
-          <div className="flex gap-4" style={{ marginTop: 6 }}>
-            <Link to="/settings" style={{ color: GOLD }} className="hover:underline">
-              Model a rate increase →
-            </Link>
-            <Link to="/projects" style={{ color: GOLD }} className="hover:underline">
-              {c.rateHealth === "critical" ? "See what this rate looks like on a project →" : "Apply to an active project →"}
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* Rate history + "How is this built" */}
       <div className="flex items-center justify-between" style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>

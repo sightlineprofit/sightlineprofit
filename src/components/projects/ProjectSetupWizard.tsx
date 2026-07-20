@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Plus, Trash2, ArrowLeft, ArrowRight, Library } from "lucide-react";
@@ -16,6 +16,9 @@ import { createProject } from "@/lib/sightline.functions";
 import { listSopTemplatesLite } from "@/lib/sightline.functions";
 import { getSopTemplatePhases } from "@/lib/sop.functions";
 import { getMyContext } from "@/lib/firm.functions";
+import { getDashboardData } from "@/lib/dashboard.functions";
+import { calc, fmtUsd } from "@/lib/finance";
+import { normalizePricingStructure } from "@/lib/pricing-structure";
 
 export type WizardPhase = {
   name: string;
@@ -41,12 +44,30 @@ export function ProjectSetupWizard({
   const listTemplatesFn = useServerFn(listSopTemplatesLite);
   const getTemplatePhasesFn = useServerFn(getSopTemplatePhases);
   const ctxFn = useServerFn(getMyContext);
+  const dashFn = useServerFn(getDashboardData);
   const ctxQ = useQuery({ queryKey: ["me"], queryFn: () => ctxFn(), staleTime: 60_000 });
-  const firmRate = Number((ctxQ.data?.config as { rate_billed?: number | null } | null | undefined)?.rate_billed) || 0;
+  const dashQ = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => dashFn(),
+    enabled: open,
+    staleTime: 30_000,
+  });
+  const firmConfig = ctxQ.data?.config as { rate_billed?: number | null; pricing_structure?: string } | null | undefined;
+  const pricingStructure = normalizePricingStructure(firmConfig?.pricing_structure);
+  const isFlatFeeFirm = pricingStructure === "flat_fee";
+  const firmRate = Number(firmConfig?.rate_billed) || 0;
+  const alignedRate = useMemo(
+    () =>
+      calc(dashQ.data?.config ?? null, dashQ.data?.expenses ?? [], {
+        ownerComp: (dashQ.data as { ownerComp?: unknown[] } | undefined)?.ownerComp ?? [],
+        teamProfiles: (dashQ.data as { teamBurdens?: unknown[] } | undefined)?.teamBurdens ?? [],
+      }).alignedRate,
+    [dashQ.data],
+  );
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
-  const [pricing, setPricing] = useState<PricingMethod>("flat");
+  const [pricing, setPricing] = useState<PricingMethod>(isFlatFeeFirm ? "flat" : "flat");
   const [fee, setFee] = useState("");
   const [hourlyHours, setHourlyHours] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -81,6 +102,11 @@ export function ProjectSetupWizard({
     }
   }
 
+  useEffect(() => {
+    if (!open) return;
+    if (isFlatFeeFirm) setPricing("flat");
+  }, [open, isFlatFeeFirm]);
+
   // Re-seed phases when the wizard is reopened with a different template.
   const seededKey = useMemo(
     () => `${templateId ?? "none"}::${(initialPhases ?? []).length}`,
@@ -95,7 +121,7 @@ export function ProjectSetupWizard({
   function reset() {
     setStep(1);
     setName(""); setClientName("");
-    setPricing("flat"); setFee(""); setHourlyHours("");
+    setPricing(isFlatFeeFirm ? "flat" : "flat"); setFee(""); setHourlyHours("");
     setStartDate(""); setEndDate("");
     setPhases(initialPhases ?? []);
     setLastSeed(null);
@@ -178,6 +204,7 @@ export function ProjectSetupWizard({
   });
 
   const totalHrs = phases.reduce((s, p) => s + (Number(p.expected_hrs) || 0), 0);
+  const suggestedMinFee = alignedRate > 0 && totalHrs > 0 ? alignedRate * totalHrs : 0;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -245,6 +272,23 @@ export function ProjectSetupWizard({
                   onChange={(e) => setFee(e.target.value)}
                   placeholder="$0.00"
                 />
+                {isFlatFeeFirm && alignedRate > 0 && totalHrs > 0 ? (
+                  <p
+                    className="mt-2"
+                    style={{ fontFamily: "Jost, sans-serif", fontSize: 12, color: "#6B6259", lineHeight: 1.6 }}
+                  >
+                    Your aligned rate of {fmtUsd(alignedRate, { decimals: 0 })}/hr across {totalHrs.toFixed(1)} scoped
+                    hours suggests a minimum fee of {fmtUsd(suggestedMinFee, { decimals: 0 })}.
+                  </p>
+                ) : isFlatFeeFirm && alignedRate > 0 ? (
+                  <p
+                    className="mt-2"
+                    style={{ fontFamily: "Jost, sans-serif", fontSize: 12, color: "#6B6259", lineHeight: 1.6 }}
+                  >
+                    Your aligned rate is {fmtUsd(alignedRate, { decimals: 0 })}/hr. Add scope in the next step to see a
+                    suggested minimum fee.
+                  </p>
+                ) : null}
               </Field>
             )}
             {pricing === "hourly" && (
@@ -302,6 +346,15 @@ export function ProjectSetupWizard({
 
         {step === 2 && (
           <div className="space-y-3 py-2">
+            {isFlatFeeFirm && pricing === "flat" && alignedRate > 0 && totalHrs > 0 ? (
+              <div
+                className="rounded-md border border-border bg-cream/40 px-3 py-2"
+                style={{ fontFamily: "Jost, sans-serif", fontSize: 12, color: "#6B6259", lineHeight: 1.6 }}
+              >
+                Your aligned rate of {fmtUsd(alignedRate, { decimals: 0 })}/hr across {totalHrs.toFixed(1)} scoped hours
+                suggests a minimum fee of {fmtUsd(suggestedMinFee, { decimals: 0 })}.
+              </div>
+            ) : null}
             <div className="rounded-md border border-border bg-cream/50 px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-ch/60">
               Total scoped: <span className="text-ch">{totalHrs.toFixed(1)} hrs</span> · {phases.length} phase{phases.length === 1 ? "" : "s"}
             </div>

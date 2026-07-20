@@ -9,7 +9,13 @@ import { getFoundingQuote, type FoundingBillingFrequency } from "@/lib/founding.
 import { StripeEmbeddedCheckoutPane } from "@/components/billing/StripeEmbeddedCheckout";
 import { getBillingSummary } from "@/lib/billing.functions";
 import type { CheckoutPriceKey } from "@/lib/stripe.server";
-import { canUseStripeEnvironment, getPreferredCheckoutEnvironment, getStripeEnvironment, type StripeEnv } from "@/lib/stripe";
+import {
+  canUseStripeEnvironment,
+  getPreferredCheckoutEnvironment,
+  getStripeEnvironment,
+  isStripeCheckoutTestingHost,
+  type StripeEnv,
+} from "@/lib/stripe";
 
 type Step = "account" | "payment";
 
@@ -374,7 +380,7 @@ function RegisterPage() {
             loadingFirm={currentFirm.isLoading}
             checkoutEnvironment={checkoutEnvironment}
             checkoutConfigError={checkoutConfigError}
-            canSwitchToTestMode={canUseStripeEnvironment("sandbox")}
+            canSwitchToTestMode={canUseStripeEnvironment("sandbox") && isStripeCheckoutTestingHost()}
             onCheckoutEnvironmentChange={switchCheckoutEnvironment}
           />
         )}

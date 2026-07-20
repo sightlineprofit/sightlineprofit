@@ -141,6 +141,39 @@ export const getTourStep6Progress = createServerFn({ method: "GET" })
     };
   });
 
+export const getTourStep7Progress = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const firmId = await getTourFirmId(supabase, userId);
+    if (!firmId) {
+      return { timeLogged: false, historyImported: false, importedCount: 0 };
+    }
+
+    const { count: entryCount } = await supabase
+      .from("time_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", firmId)
+      .eq("user_id", userId);
+
+    const { data: importLog } = await supabase
+      .from("time_import_logs")
+      .select("rows_imported")
+      .eq("firm_id", firmId)
+      .gt("rows_imported", 0)
+      .order("imported_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const importedCount = Number(importLog?.rows_imported) || 0;
+
+    return {
+      timeLogged: (entryCount ?? 0) > 0,
+      historyImported: importedCount > 0,
+      importedCount,
+    };
+  });
+
 /**
  * Reconcile tour progress against existing data. For users who came through
  * the old /onboarding wizard (or set things up in Settings), auto-advance
@@ -176,7 +209,8 @@ export const reconcileTour = createServerFn({ method: "POST" })
     const step1Done = compTotal > 0;
     const step2Done = (expenses ?? []).length > 0;
     const step3Done =
-      Number(c.target_billable_hrs_per_week) > 0 && Number(c.rate_billed) > 0;
+      Number(c.target_billable_hrs_per_week) > 0 &&
+      (c.pricing_structure === "flat_fee" || Number(c.rate_billed) > 0);
     const step4Done = (members ?? []).length > 0;
 
     const doneFlags = [step1Done, step2Done, step3Done, step4Done];

@@ -72,8 +72,14 @@ function isPreviewTestingHost(hostname: string): boolean {
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
     hostname.includes("preview--") ||
-    hostname.endsWith("-dev.lovable.app")
+    hostname.endsWith(".workers.dev")
   );
+}
+
+/** True on localhost / preview hosts — used to show Stripe test-vs-live dev notices. */
+export function isStripeCheckoutTestingHost(): boolean {
+  if (typeof window === "undefined") return false;
+  return isPreviewTestingHost(window.location.hostname);
 }
 
 export function getPreferredCheckoutEnvironment(): StripeEnv {

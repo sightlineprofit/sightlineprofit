@@ -6,6 +6,7 @@ import { computeBurden } from "@/lib/cost";
 import { seedDefaultSops } from "@/lib/sop-seed.server";
 import { recordAlignedRate } from "@/lib/rate-history.server";
 import { logChange, diffFields, type ChangedField } from "@/lib/change-log.server";
+import { capTargetBillableToAvailable } from "@/lib/finance";
 
 // Single-plan model: no tier parameter. All new firms are Practice-access
 // with a 27-day trial. Optional Stripe billing fields (billing_frequency,
@@ -210,6 +211,7 @@ const configSchema = z.object({
   target_billable_hrs_per_week: z.number().min(0).max(168).nullable().optional(),
   target_gross_margin_pct: z.number().min(0).max(100).nullable().optional(),
   rate_billed: z.number().min(0).max(100000).nullable().optional(),
+  pricing_structure: z.enum(["hourly", "flat_fee", "both"]).optional(),
   actual_billed_rate: z.number().min(0).max(100000).nullable().optional(),
   accounting_basis: z.enum(["cash", "accrual"]).optional(),
   business_structure: z
@@ -240,19 +242,22 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
       .select("*")
       .eq("firm_id", profile.firm_id)
       .maybeSingle();
+    const payload = { ...data } as Record<string, unknown>;
+    capTargetBillableToAvailable(payload, (prevConfig ?? {}) as Record<string, unknown>);
     const { error } = await supabase
       .from("firm_config")
       .upsert(
-        { firm_id: profile.firm_id, ...data, updated_at: new Date().toISOString() },
+        { firm_id: profile.firm_id, ...payload, updated_at: new Date().toISOString() },
         { onConflict: "firm_id" },
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Capacity or rate updated");
     const rateChanges = diffFields(
       (prevConfig ?? {}) as Record<string, unknown>,
-      data as Record<string, unknown>,
+      payload,
       [
         { key: "rate_billed", label: "Billed rate", type: "rate_per_hour" },
+        { key: "pricing_structure", label: "Pricing structure", type: "text" },
         { key: "target_billable_hrs_per_week", label: "Target billable hours / week", type: "hours_per_week" },
         { key: "target_gross_margin_pct", label: "Target margin", type: "percent" },
         { key: "available_hrs_per_week", label: "Available hours / week", type: "hours_per_week" },
@@ -418,9 +423,9 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
 
-    // Mirror invite state on firm_members (so the Team panel shows Pending on
-    // an internal record). If no internal record exists yet, create a stub.
-    {
+    // Mirror invite state on firm_members for non-principal roles (Team cost
+    // panel). Principals use profiles + owner_compensation, not firm_members.
+    if (data.role !== "principal") {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const { data: existing } = await supabaseAdmin
         .from("firm_members")
@@ -446,6 +451,8 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
           employment_type: "employee",
           is_platform_user: false,
           invite_sent_at: patch.invite_sent_at,
+          expected_hrs_per_week: data.expected_hrs_per_week ?? 40,
+          weeks_per_year: data.weeks_per_year ?? 48,
         });
       }
     }
@@ -608,9 +615,8 @@ export const acceptInvite = createServerFn({ method: "POST" })
       .update({ accepted_at: new Date().toISOString() })
       .eq("id", inv.id);
 
-    // Link firm_members: reuse an existing internal record for this email,
-    // otherwise create one so cost/capacity data lives in a single table.
-    {
+    // Link firm_members for non-principal roles (team cost lives here).
+    if (inv.role !== "principal") {
       const nowIso = new Date().toISOString();
       const { data: existing } = await supabaseAdmin
         .from("firm_members")
@@ -642,6 +648,8 @@ export const acceptInvite = createServerFn({ method: "POST" })
           is_platform_user: true,
           invite_sent_at: inv.invited_at,
           invite_accepted_at: nowIso,
+          expected_hrs_per_week: inv.expected_hrs_per_week ?? 40,
+          weeks_per_year: inv.weeks_per_year ?? 48,
         });
       }
     }
@@ -1123,7 +1131,7 @@ export const claimPrincipalRole = createServerFn({ method: "POST" })
 
     if (!isOwner && hasPrincipal) {
       throw new Error(
-        "This firm already has a principal. Ask them to update your role in Settings → Team.",
+        "This firm already has a principal. Ask them to update your role in Settings → Owner compensation or Team.",
       );
     }
 

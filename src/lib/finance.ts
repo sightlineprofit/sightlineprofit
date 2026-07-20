@@ -1,5 +1,9 @@
 // Shared finance math for Sightline. All values in USD/year unless noted.
 
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
 export type FirmConfig = {
   comp_draw_annual: number | null;
   comp_ptax_pct: number | null;
@@ -9,6 +13,7 @@ export type FirmConfig = {
   target_billable_hrs_per_week: number | null;
   target_gross_margin_pct: number | null;
   rate_billed: number | null;
+  pricing_structure?: string | null;
   actual_billed_rate: number | null;
   accounting_basis?: string | null;
   business_structure?: string | null;
@@ -16,6 +21,37 @@ export type FirmConfig = {
   comp_reserve_target_annual?: number | null;
   planned_activity_allocation?: Record<string, number> | unknown | null;
 };
+
+/** Principal billable target capped at available hours when available is set. */
+export function effectivePrincipalBillableHrsWeek(
+  config: FirmConfig | null | undefined,
+  hrsOverride?: number | null,
+): number {
+  const raw = (hrsOverride ?? Number(config?.target_billable_hrs_per_week)) || 0;
+  const available = Number(config?.available_hrs_per_week) || 0;
+  if (available <= 0) return raw;
+  return Math.min(raw, available);
+}
+
+/** Clamp target billable to available on a config patch (mutates copy). */
+export function capTargetBillableToAvailable(
+  data: Record<string, unknown>,
+  prevConfig?: Record<string, unknown> | null,
+): void {
+  const mergedAvailable =
+    data.available_hrs_per_week !== undefined
+      ? data.available_hrs_per_week
+      : prevConfig?.available_hrs_per_week;
+  const mergedTarget =
+    data.target_billable_hrs_per_week !== undefined
+      ? data.target_billable_hrs_per_week
+      : prevConfig?.target_billable_hrs_per_week;
+  const availN = Number(mergedAvailable) || 0;
+  const targetN = Number(mergedTarget) || 0;
+  if (availN > 0 && targetN > availN) {
+    data.target_billable_hrs_per_week = availN;
+  }
+}
 
 /** One principal's compensation record (from owner_compensation table). */
 export type OwnerCompensationRow = {
@@ -158,8 +194,7 @@ export function calc(config: FirmConfig | null, expenses: Expense[], ov: RateOve
 
   const totalCost = compTotal + opexRecurring + opexOneTime + teamCostTotal;
 
-  const principalBillableHrsWeek =
-    (ov.hrsOverride ?? Number(config?.target_billable_hrs_per_week)) || 0;
+  const principalBillableHrsWeek = effectivePrincipalBillableHrsWeek(config, ov.hrsOverride);
   const targetBillableHrsWeek = principalBillableHrsWeek + teamBillableHrsWeek;
   const weeksPerYear = WEEKS_DEFAULT;
   // Firm billable capacity: principal target + Σ team expected, annualized.
@@ -418,7 +453,197 @@ export type ProjectCostSnapshot = {
   total_cost_floor: number;
   snapshotted_at?: string | null;
   is_retroactive?: boolean | null;
+  cost_basis_method?: "firm_average" | "task_assignee";
+  assignee_cost_breakdown?: AssigneeCostItem[] | null;
+  project_break_even_rate?: number | null;
 };
+
+export type AssigneeCostItem = {
+  firmMemberId: string | null;
+  memberName: string;
+  burdenedRatePerHour: number;
+  billableHrs: number;
+  nonBillableHrs: number;
+  totalHrs: number;
+  costContribution: number;
+  isPrincipal?: boolean;
+};
+
+export type ProjectBreakEvenResult = {
+  method: "task_assignee" | "firm_average";
+  projectBreakEvenRate: number;
+  assigneeBreakdown: AssigneeCostItem[];
+  totalAssigneeCost: number;
+  opexContribution: number;
+  totalProjectCost: number;
+  hasAssigneeData: boolean;
+  opexPerHour: number;
+  billableScopedHrs: number;
+  nonBillableScopedHrs: number;
+  totalScopedHrs: number;
+};
+
+/** Raw assignee row used to compute project break-even (from DB or snapshot). */
+export type TaskAssigneeRow = {
+  firmMemberId: string | null;
+  memberName: string;
+  isPrincipal: boolean;
+  burdenedRatePerHour: number;
+  estimatedHrs: number;
+  isBillable: boolean;
+};
+
+export function calculateProjectBreakEven(
+  snapshot: ProjectCostSnapshot,
+  assigneeRows: TaskAssigneeRow[],
+): ProjectBreakEvenResult {
+  const opexPerHour = Number(snapshot.opex_per_hour) || 0;
+  const firmBreakEven = Number(snapshot.break_even_rate) || 0;
+
+  const withHours = assigneeRows.filter((r) => Number(r.estimatedHrs) > 0);
+  if (withHours.length === 0) {
+    return {
+      method: "firm_average",
+      projectBreakEvenRate: firmBreakEven,
+      assigneeBreakdown: [],
+      totalAssigneeCost: 0,
+      opexContribution: 0,
+      totalProjectCost: 0,
+      hasAssigneeData: false,
+      opexPerHour,
+      billableScopedHrs: 0,
+      nonBillableScopedHrs: 0,
+      totalScopedHrs: 0,
+    };
+  }
+
+  const byMember = new Map<string, AssigneeCostItem>();
+  let billableScopedHrs = 0;
+  let nonBillableScopedHrs = 0;
+
+  for (const row of withHours) {
+    const hrs = Number(row.estimatedHrs) || 0;
+    if (row.isBillable) billableScopedHrs += hrs;
+    else nonBillableScopedHrs += hrs;
+
+    const key = row.isPrincipal ? "__principal__" : row.firmMemberId ?? row.memberName;
+    const existing = byMember.get(key) ?? {
+      firmMemberId: row.isPrincipal ? null : row.firmMemberId,
+      memberName: row.memberName,
+      burdenedRatePerHour: row.burdenedRatePerHour,
+      billableHrs: 0,
+      nonBillableHrs: 0,
+      totalHrs: 0,
+      costContribution: 0,
+      isPrincipal: row.isPrincipal,
+    };
+    if (row.isBillable) existing.billableHrs += hrs;
+    else existing.nonBillableHrs += hrs;
+    byMember.set(key, existing);
+  }
+
+  const assigneeBreakdown: AssigneeCostItem[] = [];
+  let totalAssigneeCost = 0;
+  let totalAssigneeHrs = 0;
+
+  for (const item of byMember.values()) {
+    item.totalHrs = item.billableHrs + item.nonBillableHrs;
+    item.costContribution = item.burdenedRatePerHour * item.totalHrs;
+    totalAssigneeCost += item.costContribution;
+    totalAssigneeHrs += item.totalHrs;
+    assigneeBreakdown.push(item);
+  }
+
+  const opexContribution = opexPerHour * totalAssigneeHrs;
+  const totalProjectCost = totalAssigneeCost + opexContribution;
+  const projectBreakEvenRate =
+    totalAssigneeHrs > 0 ? totalProjectCost / totalAssigneeHrs : firmBreakEven;
+
+  return {
+    method: "task_assignee",
+    projectBreakEvenRate,
+    assigneeBreakdown,
+    totalAssigneeCost,
+    opexContribution,
+    totalProjectCost,
+    hasAssigneeData: true,
+    opexPerHour,
+    billableScopedHrs,
+    nonBillableScopedHrs,
+    totalScopedHrs: totalAssigneeHrs,
+  };
+}
+
+export function parseAssigneeBreakdownFromJson(raw: unknown): AssigneeCostItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row: Record<string, unknown>) => {
+    const billableHrs = Number(row.scoped_hrs_billable ?? row.billableHrs) || 0;
+    const nonBillableHrs = Number(row.scoped_hrs_nonbillable ?? row.nonBillableHrs) || 0;
+    return {
+      firmMemberId: (row.firm_member_id ?? row.firmMemberId ?? null) as string | null,
+      memberName: String(row.member_name ?? row.memberName ?? "Unknown"),
+      burdenedRatePerHour: Number(row.burdened_rate ?? row.burdenedRatePerHour) || 0,
+      billableHrs,
+      nonBillableHrs,
+      totalHrs: billableHrs + nonBillableHrs,
+      costContribution: Number(row.cost_contribution ?? row.costContribution) || 0,
+      isPrincipal: !!(row.is_principal ?? row.isPrincipal),
+    };
+  });
+}
+
+export function breakEvenResultFromSnapshot(
+  snapshot: ProjectCostSnapshot,
+): ProjectBreakEvenResult | null {
+  if (snapshot.cost_basis_method !== "task_assignee") return null;
+  const rate = Number(snapshot.project_break_even_rate);
+  if (!Number.isFinite(rate) || rate <= 0) return null;
+
+  const breakdown = parseAssigneeBreakdownFromJson(snapshot.assignee_cost_breakdown);
+  const totalAssigneeCost = breakdown.reduce((s, a) => s + (Number(a.costContribution) || 0), 0);
+  const totalScopedHrs = breakdown.reduce((s, a) => s + (Number(a.totalHrs) || 0), 0);
+  const billableScopedHrs = breakdown.reduce((s, a) => s + (Number(a.billableHrs) || 0), 0);
+  const nonBillableScopedHrs = breakdown.reduce((s, a) => s + (Number(a.nonBillableHrs) || 0), 0);
+  const opexPerHour = Number(snapshot.opex_per_hour) || 0;
+  const opexContribution = opexPerHour * totalScopedHrs;
+
+  return {
+    method: "task_assignee",
+    projectBreakEvenRate: rate,
+    assigneeBreakdown: breakdown,
+    totalAssigneeCost,
+    opexContribution,
+    totalProjectCost: totalAssigneeCost + opexContribution,
+    hasAssigneeData: breakdown.length > 0,
+    opexPerHour,
+    billableScopedHrs,
+    nonBillableScopedHrs,
+    totalScopedHrs,
+  };
+}
+
+export function snapshotAssigneePayload(result: ProjectBreakEvenResult) {
+  if (result.method !== "task_assignee" || !result.hasAssigneeData) {
+    return {
+      cost_basis_method: "firm_average" as const,
+      assignee_cost_breakdown: [],
+      project_break_even_rate: null,
+    };
+  }
+  return {
+    cost_basis_method: "task_assignee" as const,
+    assignee_cost_breakdown: result.assigneeBreakdown.map((a) => ({
+      firm_member_id: a.firmMemberId,
+      member_name: a.memberName,
+      burdened_rate: a.burdenedRatePerHour,
+      scoped_hrs_billable: a.billableHrs,
+      scoped_hrs_nonbillable: a.nonBillableHrs,
+      cost_contribution: a.costContribution,
+      is_principal: !!a.isPrincipal,
+    })),
+    project_break_even_rate: result.projectBreakEvenRate,
+  };
+}
 
 export type ProjectFinancialsInput = {
   project: {
@@ -431,6 +656,10 @@ export type ProjectFinancialsInput = {
   snapshot: ProjectCostSnapshot;
   hoursLogged: number;
   lastEntryDate?: Date | string | null;
+  /** Live assignee calculation; takes precedence over snapshot when provided. */
+  breakEvenResult?: ProjectBreakEvenResult | null;
+  /** When true, live assignees exist but snapshot still uses firm_average. */
+  assigneesNewerThanSnapshot?: boolean;
 };
 
 export type ProjectFinancials = {
@@ -470,6 +699,13 @@ export type ProjectFinancials = {
   effectiveRate: number | null;
   effectiveVsAligned: number;
   effectiveVsBreakEven: number;
+  // Cost basis
+  costBasisMethod: "firm_average" | "task_assignee";
+  projectBreakEvenRate: number;
+  assigneeAllocations: AssigneeCostItem[];
+  assigneesNewerThanSnapshot: boolean;
+  billableScopedFromAssignees: number | null;
+  nonBillableScopedFromAssignees: number | null;
   // Freshness
   lastEntryDate: Date | null;
   daysSinceEntry: number;
@@ -489,6 +725,15 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
   const scopedHrsField = Number(project.scoped_hrs) || 0;
   const hourlyScopedHours = Number(project.hourly_scoped_hours) || 0;
 
+  const liveBreakEven =
+    input.breakEvenResult ??
+    (input.assigneesNewerThanSnapshot ? null : breakEvenResultFromSnapshot(snapshot));
+
+  const useTaskAssignee = liveBreakEven?.method === "task_assignee" && liveBreakEven.hasAssigneeData;
+  const costBasisMethod: "firm_average" | "task_assignee" = useTaskAssignee
+    ? "task_assignee"
+    : "firm_average";
+
   let totalRevenue = 0;
   let hourlyRevenue = 0;
   let scopedHours = 0;
@@ -501,21 +746,47 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
     hourlyRevenue = scopedRate * scopedHours;
     totalRevenue = hourlyRevenue;
   } else {
-    // hybrid: flat portion + hourly portion
     hourlyRevenue = scopedRate * hourlyScopedHours;
     totalRevenue = flatFeeAmount + hourlyRevenue;
-    scopedHours = scopedHrsField; // total scoped (flat phase hrs + hourly hrs)
+    scopedHours = scopedHrsField;
   }
 
-  const breakEven = Number(snapshot.break_even_rate) || 0;
+  if (useTaskAssignee && liveBreakEven && liveBreakEven.totalScopedHrs > 0) {
+    scopedHours = liveBreakEven.totalScopedHrs;
+  }
+
+  const breakEven = useTaskAssignee && liveBreakEven
+    ? liveBreakEven.projectBreakEvenRate
+    : Number(snapshot.break_even_rate) || 0;
   const aligned = Number(snapshot.aligned_rate) || 0;
   const taxReservePct = Number(snapshot.tax_reserve_pct) || 0.25;
   const targetMarginPct = Number(snapshot.target_margin_pct) || 0;
 
-  const compAllocation = (Number(snapshot.comp_per_hour) || 0) * scopedHours;
-  const opexAllocation = (Number(snapshot.opex_per_hour) || 0) * scopedHours;
-  const teamAllocation = (Number(snapshot.team_per_hour) || 0) * scopedHours;
-  const totalCostAllocation = breakEven * scopedHours;
+  let compAllocation = 0;
+  let opexAllocation = 0;
+  let teamAllocation = 0;
+  let totalCostAllocation = 0;
+  let assigneeAllocations: AssigneeCostItem[] = [];
+
+  if (useTaskAssignee && liveBreakEven) {
+    assigneeAllocations = liveBreakEven.assigneeBreakdown;
+    opexAllocation = liveBreakEven.opexContribution;
+    totalCostAllocation = liveBreakEven.totalProjectCost;
+    if (scopedHours > 0 && liveBreakEven.totalScopedHrs > 0 && scopedHours !== liveBreakEven.totalScopedHrs) {
+      const scale = scopedHours / liveBreakEven.totalScopedHrs;
+      assigneeAllocations = assigneeAllocations.map((a) => ({
+        ...a,
+        costContribution: a.costContribution * scale,
+      }));
+      opexAllocation *= scale;
+      totalCostAllocation = breakEven * scopedHours;
+    }
+  } else {
+    compAllocation = (Number(snapshot.comp_per_hour) || 0) * scopedHours;
+    opexAllocation = (Number(snapshot.opex_per_hour) || 0) * scopedHours;
+    teamAllocation = (Number(snapshot.team_per_hour) || 0) * scopedHours;
+    totalCostAllocation = breakEven * scopedHours;
+  }
 
   const lockedMargin = totalRevenue - totalCostAllocation;
   const lockedMarginPct = totalRevenue > 0 ? (lockedMargin / totalRevenue) * 100 : 0;
@@ -592,6 +863,12 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
     effectiveRate,
     effectiveVsAligned,
     effectiveVsBreakEven,
+    costBasisMethod,
+    projectBreakEvenRate: breakEven,
+    assigneeAllocations,
+    assigneesNewerThanSnapshot: !!input.assigneesNewerThanSnapshot,
+    billableScopedFromAssignees: useTaskAssignee && liveBreakEven ? liveBreakEven.billableScopedHrs : null,
+    nonBillableScopedFromAssignees: useTaskAssignee && liveBreakEven ? liveBreakEven.nonBillableScopedHrs : null,
     lastEntryDate,
     daysSinceEntry,
     freshnessState,
@@ -628,3 +905,165 @@ export function buildSnapshotFromCalc(
     is_retroactive: !!opts.isRetroactive,
   };
 }
+
+// ─── Utilization reality check ─────────────────────────────────────────────
+// Compares principal target billable hours/week to actual logged billable hours
+// over the trailing 90 days. Informational only — does not change live rates.
+
+const UTILIZATION_MIN_WEEKS = 8;
+const UTILIZATION_LOOKBACK_DAYS = 90;
+
+export type UtilizationRealityCheck = {
+  has_sufficient_data: boolean;
+  target_weekly_hrs: number;
+  actual_weekly_avg: number;
+  variance_hrs: number;
+  variance_pct: number;
+  actual_annual_hrs: number;
+  aligned_rate_at_target: number;
+  aligned_rate_at_actual: number;
+  rate_difference: number;
+  weeks_of_data: number;
+};
+
+type TimeEntryRow = { hrs: number; date: string };
+
+function mondayKeyFromDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  const dow = d.getDay();
+  const diff = (dow + 6) % 7;
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function aggregateBillableWeeks(entries: TimeEntryRow[]): { totalHours: number; weeksWithEntries: number } {
+  const weekSet = new Set<string>();
+  let totalHours = 0;
+  for (const e of entries) {
+    totalHours += Number(e.hrs) || 0;
+    weekSet.add(mondayKeyFromDate(e.date));
+  }
+  return { totalHours, weeksWithEntries: weekSet.size };
+}
+
+export function buildUtilizationRealityCheck(args: {
+  targetWeeklyHrs: number;
+  weeksPerYear: number;
+  totalBillableHours: number;
+  weeksWithEntries: number;
+  alignedRateAtTarget: number;
+  alignedRateAtActual: number;
+}): UtilizationRealityCheck {
+  const {
+    targetWeeklyHrs,
+    weeksPerYear,
+    totalBillableHours,
+    weeksWithEntries,
+    alignedRateAtTarget,
+    alignedRateAtActual,
+  } = args;
+
+  const actualWeeklyAvg = weeksWithEntries > 0 ? totalBillableHours / weeksWithEntries : 0;
+  const varianceHrs = targetWeeklyHrs - actualWeeklyAvg;
+  const variancePct = targetWeeklyHrs > 0 ? (varianceHrs / targetWeeklyHrs) * 100 : 0;
+  const actualAnnualHrs = actualWeeklyAvg * weeksPerYear;
+
+  return {
+    has_sufficient_data: weeksWithEntries >= UTILIZATION_MIN_WEEKS,
+    target_weekly_hrs: targetWeeklyHrs,
+    actual_weekly_avg: actualWeeklyAvg,
+    variance_hrs: varianceHrs,
+    variance_pct: variancePct,
+    actual_annual_hrs: actualAnnualHrs,
+    aligned_rate_at_target: alignedRateAtTarget,
+    aligned_rate_at_actual: alignedRateAtActual,
+    rate_difference: alignedRateAtActual - alignedRateAtTarget,
+    weeks_of_data: weeksWithEntries,
+  };
+}
+
+export const getUtilizationReality = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ firmId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id, firm_id, is_super_admin, impersonated_firm_id")
+      .eq("id", userId)
+      .single();
+
+    const effectiveFirmId = profile?.impersonated_firm_id ?? profile?.firm_id;
+    if (!effectiveFirmId || effectiveFirmId !== data.firmId) {
+      if (!profile?.is_super_admin) {
+        throw new Error("Unauthorized firm access");
+      }
+    }
+
+    const [
+      { data: config },
+      { data: expenses },
+      { data: ownerComp },
+      { data: teamBurdens },
+      { data: entries },
+    ] = await Promise.all([
+      supabase.from("firm_config").select("*").eq("firm_id", data.firmId).maybeSingle(),
+      supabase.from("expenses").select("*").eq("firm_id", data.firmId),
+      supabase.from("owner_compensation").select("*").eq("firm_id", data.firmId),
+      supabase
+        .from("firm_members")
+        .select("burdened_weekly_cost, weeks_per_year, expected_hrs_per_week, billed_rate")
+        .eq("firm_id", data.firmId)
+        .eq("is_active", true)
+        .neq("role_type", "principal"),
+      supabase
+        .from("time_entries")
+        .select("hrs, date")
+        .eq("firm_id", data.firmId)
+        .eq("user_id", userId)
+        .eq("billable", true)
+        .gte(
+          "date",
+          new Date(Date.now() - UTILIZATION_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10),
+        ),
+    ]);
+
+    const targetWeeklyHrs = effectivePrincipalBillableHrsWeek(firmConfig);
+    const weeksPerYear = WEEKS_DEFAULT;
+
+    const firmConfig = (config ?? null) as FirmConfig | null;
+    const expenseRows = (expenses ?? []) as Expense[];
+    const ownerRows = (ownerComp ?? []) as OwnerCompensationRow[];
+    const teamRows = (teamBurdens ?? []).map((t) => ({
+      burdened_weekly_cost: t.burdened_weekly_cost as number | null,
+      weeks_per_year: t.weeks_per_year as number | null,
+      expected_hrs_per_week: t.expected_hrs_per_week as number | null,
+      billed_rate: t.billed_rate as number | null,
+    }));
+
+    const calcOverrides = {
+      ownerComp: ownerRows,
+      teamProfiles: teamRows,
+    };
+
+    const atTarget = calc(firmConfig, expenseRows, calcOverrides);
+    const { totalHours, weeksWithEntries } = aggregateBillableWeeks(
+      (entries ?? []) as TimeEntryRow[],
+    );
+    const actualWeeklyAvg = weeksWithEntries > 0 ? totalHours / weeksWithEntries : 0;
+
+    const atActual = calc(firmConfig, expenseRows, {
+      ...calcOverrides,
+      hrsOverride: actualWeeklyAvg > 0 ? actualWeeklyAvg : undefined,
+    });
+
+    return buildUtilizationRealityCheck({
+      targetWeeklyHrs,
+      weeksPerYear,
+      totalBillableHours: totalHours,
+      weeksWithEntries,
+      alignedRateAtTarget: atTarget.alignedRate,
+      alignedRateAtActual: atActual.alignedRate,
+    });
+  });

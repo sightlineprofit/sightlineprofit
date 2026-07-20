@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { getProjectFinancials, type ProjectCostSnapshot, type ProjectPricingMethod } from "@/lib/finance";
-import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { useNavigate } from "@tanstack/react-router";
 
 // ─── Formatting helpers ────────────────────────────────────────────────────
@@ -12,13 +11,6 @@ function fmtMoney(n: number): string {
 }
 function fmtPct1(n: number): string {
   return `${(Math.round(n * 10) / 10).toFixed(1)}%`;
-}
-function fmtHours(n: number): string {
-  if (n < 10 && n % 1 !== 0) return `${(Math.round(n * 10) / 10).toFixed(1)} hrs`;
-  return `${Math.round(n)} hrs`;
-}
-function fmtRate(n: number): string {
-  return `$${Math.round(n).toLocaleString("en-US")}/hr`;
 }
 
 // ─── Colors ────────────────────────────────────────────────────────────────
@@ -109,42 +101,11 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
   const health = healthColorFor(fin.marginRemainingPct, fin.marginRemaining, fin.targetMarginPct, hoursLogged);
   const isCritical = fin.freshnessState === "critical" && hoursLogged > 0;
 
-  // ─── Effective rate drop animation ─────────────────────────────────────
-  const prevRateRef = useRef<number | null>(null);
-  const [rateDropped, setRateDropped] = useState(false);
-  useEffect(() => {
-    if (fin.effectiveRate == null) return;
-    const prev = prevRateRef.current;
-    prevRateRef.current = fin.effectiveRate;
-    if (prev != null && fin.effectiveRate < prev) {
-      setRateDropped(true);
-      const t = setTimeout(() => setRateDropped(false), 620);
-      return () => clearTimeout(t);
-    }
-  }, [fin.effectiveRate]);
-
   // ─── Empty scope card ──────────────────────────────────────────────────
   const noScope = fin.scopedHours === 0;
 
   const pricingLabel =
     fin.pricingMethod === "hourly" ? "Hourly" : fin.pricingMethod === "hybrid" ? "Hybrid" : "Flat fee";
-
-  // Sub-label describing revenue calc
-  let revenueSubLabel = "";
-  let revenueSubColor = MUTED;
-  if (fin.pricingMethod === "flat_fee") {
-    revenueSubLabel = "Fixed project fee";
-  } else if (fin.pricingMethod === "hourly") {
-    revenueSubLabel = `${fmtHours(fin.scopedHours)} × $${Math.round(Number(project.scoped_rate || 0))}/hr`;
-  } else {
-    const hrs = Number(project.hourly_scoped_hours);
-    if (!hrs) {
-      revenueSubLabel = "Hourly hours not set";
-      revenueSubColor = GOLD;
-    } else {
-      revenueSubLabel = `$${Math.round(fin.flatFeeAmount).toLocaleString("en-US")} + ${fmtHours(hrs)} × $${Math.round(Number(project.scoped_rate || 0))}/hr`;
-    }
-  }
 
   const stripeStyle: React.CSSProperties = {
     position: "absolute",
@@ -168,25 +129,18 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
         ? GOLD
         : TERRA;
 
-  // Margin color
   const marginColor =
     fin.marginRemaining <= 0 ? TERRA : fin.isBelowTarget ? GOLD : SAGE;
 
-  // Effective rate color
-  const effRateColor =
-    fin.effectiveRate == null
-      ? CHARCOAL
-      : fin.effectiveRate >= (Number(snapshot.aligned_rate) || 0)
-        ? SAGE
-        : fin.effectiveRate >= (Number(snapshot.break_even_rate) || 0)
-          ? GOLD
-          : TERRA;
-
-  // Cost allocation shares
-  const rev = Math.max(fin.totalRevenue, 1);
-  const seg = (v: number) => Math.max(0, (v / rev) * 100);
-  const marginSegPct = fin.marginRemaining > 0 ? seg(fin.marginRemaining) : 0;
-  const staleOverlayOpacity = fin.freshnessState !== "current" && hoursLogged > 0 ? 0.6 : 1;
+  const profitPool = fin.netProfit;
+  const hoursOver = fin.overHours > 0;
+  const inScopePct =
+    fin.scopedHours > 0
+      ? hoursOver
+        ? (fin.scopedHours / hoursLogged) * 100
+        : Math.min(100, fin.pctConsumed)
+      : 0;
+  const overPct = hoursOver && hoursLogged > 0 ? (fin.overHours / hoursLogged) * 100 : 0;
 
   const daysAgoLabel = (n: number) => (n === 1 ? "1 day ago" : `${n} days ago`);
 
@@ -332,288 +286,95 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
         </div>
       ) : (
         <>
-          {/* ─── Row 2 — Revenue + Margin ─── */}
+          {/* ─── Three headline metrics ─── */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 12,
               paddingBottom: 14,
               borderBottom: "0.5px solid rgba(44,44,44,0.07)",
               marginBottom: 14,
             }}
           >
-            <div>
-              <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED, marginBottom: 3 }}>
-                TOTAL REVENUE
-              </div>
-              <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, fontWeight: 300, color: CHARCOAL, lineHeight: 1.05 }}>
-                {fin.totalRevenue > 0 ? fmtMoney(fin.totalRevenue) : "$0"}
-              </div>
-              <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: revenueSubColor, marginTop: 2 }}>
-                {revenueSubLabel}
-              </div>
-              {fin.pricingMethod === "flat_fee" && fin.totalRevenue === 0 && (
-                <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: GOLD, marginTop: 2 }}>
-                  Project fee not entered. Edit project to set fee.
-                </div>
-              )}
-            </div>
-            <div>
-              <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED, marginBottom: 3 }}>
-                PROFIT REMAINING
-              </div>
-              <div
-                style={{
-                  fontFamily: "'Cormorant Garamond', serif",
-                  fontSize: 24,
-                  fontWeight: 300,
-                  color: marginColor,
-                  lineHeight: 1.05,
-                  opacity: fin.freshnessState !== "current" && hoursLogged > 0 ? 0.7 : 1,
-                  textDecoration: isCritical ? "line-through" : undefined,
-                }}
-              >
-                {fin.freshnessState !== "current" && hoursLogged > 0 ? "~" : ""}
-                {fmtMoney(fin.marginRemaining)}
-                {isCritical ? "?" : ""}
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 3 }}>
-                <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 500, color: marginColor }}>
-                  {fmtPct1(fin.marginRemainingPct)}
-                </span>
-                {hoursLogged > 0 && (fin.isAboveTarget || fin.isBelowTarget) && (
-                  <span
-                    style={{
-                      fontFamily: "'Jost', sans-serif",
-                      fontSize: 9,
-                      padding: "1px 5px",
-                      borderRadius: 2,
-                      background: fin.isAboveTarget ? "rgba(92,138,110,0.10)" : "rgba(196,113,74,0.10)",
-                      color: fin.isAboveTarget ? SAGE : TERRA,
-                    }}
-                  >
-                    {fin.isAboveTarget ? "↑" : "↓"}
-                    {Math.abs(Math.round(fin.marginVariance * 10) / 10).toFixed(1)}% vs target
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ─── Row 3 — Hours progress ─── */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED }}>
-                HOURS
-              </span>
-              <span
-                style={{
-                  fontFamily: "'Jost', sans-serif",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  color: fin.scopedHours === 0 ? MUTED : CHARCOAL,
-                }}
-              >
-                {fin.scopedHours === 0
+            <MetricCol
+              label="Profit pool"
+              value={fmtMoney(profitPool)}
+              sub={fin.totalRevenue > 0 ? `from ${fmtMoney(fin.totalRevenue)} fee` : undefined}
+              valueColor={SAGE}
+            />
+            <MetricCol
+              label="Remaining profit"
+              value={`${fmtMoney(fin.marginRemaining)}${isCritical ? "?" : ""}`}
+              sub={hoursLogged > 0 ? fmtPct1(fin.marginRemainingPct) : "No hours logged"}
+              valueColor={marginColor}
+              strike={isCritical}
+              faded={fin.freshnessState !== "current" && hoursLogged > 0}
+            />
+            <MetricCol
+              label="Hours available"
+              value={
+                fin.scopedHours === 0
+                  ? "—"
+                  : hoursOver
+                    ? `${formatHoursShort(fin.overHours)} over`
+                    : formatHoursShort(fin.hoursRemaining)
+              }
+              sub={
+                fin.scopedHours === 0
                   ? "No scope set"
-                  : `${fmtHours(hoursLogged).replace(" hrs", "")} of ${fmtHours(fin.scopedHours)}`}
-              </span>
-            </div>
-            <div style={{ position: "relative", height: 6, background: "rgba(44,44,44,0.08)", borderRadius: 3, overflow: "visible" }}>
+                  : `${formatHoursShort(hoursLogged)} of ${formatHoursShort(fin.scopedHours)} logged`
+              }
+              valueColor={hoursOver ? TERRA : fin.hoursRemaining > 0 ? SAGE : MUTED}
+            />
+          </div>
+
+          {/* ─── Hours bar (contained — no overflow past card edge) ─── */}
+          {fin.scopedHours > 0 && (
+            <div style={{ marginBottom: hoursLogged > 0 && fin.freshnessState !== "current" ? 10 : 0 }}>
               <div
                 style={{
-                  position: "absolute",
-                  left: 0,
-                  top: 0,
+                  position: "relative",
                   height: 6,
-                  width: `${Math.min(100, fin.pctConsumed)}%`,
+                  background: "rgba(44,44,44,0.08)",
                   borderRadius: 3,
-                  background: health,
-                  transition: "width 0.4s ease",
-                }}
-              />
-              {fin.overHours > 0 && fin.scopedHours > 0 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    left: "100%",
-                    top: -1,
-                    height: 8,
-                    background: TERRA,
-                    borderRadius: "0 3px 3px 0",
-                    minWidth: 4,
-                    width: `${Math.min(40, (fin.overHours / fin.scopedHours) * 100)}%`,
-                  }}
-                />
-              )}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 5 }}>
-              <span
-                style={{
-                  fontFamily: "'Jost', sans-serif",
-                  fontSize: 10,
-                  fontWeight: fin.overHours > 0 ? 500 : 400,
-                  color: fin.overHours > 0 ? TERRA : MUTED,
+                  overflow: "hidden",
+                  width: "100%",
                 }}
               >
-                {hoursLogged === 0
-                  ? "No time logged yet"
-                  : fin.overHours > 0
-                    ? `${fmtHours(fin.overHours)} over scope`
-                    : `${fmtHours(fin.hoursRemaining)} remaining`}
-              </span>
-              {fin.overHours > 0 && (
-                <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 500, color: TERRA }}>
-                  −{fmtMoney(fin.marginErosion)} margin
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* ─── Row 4 — Cost allocation ─── */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED, marginBottom: 5 }}>
-              REVENUE ALLOCATION
-            </div>
-            <div style={{ position: "relative" }}>
-            <div style={{ height: 10, borderRadius: 4, overflow: "hidden", display: "flex", width: "100%", opacity: staleOverlayOpacity }}>
-              {fin.compAllocation > 0 && (
-                <span style={{ background: "#2C2C2C", flexBasis: `${seg(fin.compAllocation)}%`, minWidth: 2 }} />
-              )}
-              {fin.opexAllocation > 0 && (
-                <span style={{ background: "#6B6259", flexBasis: `${seg(fin.opexAllocation)}%` }} />
-              )}
-              {fin.teamAllocation > 0 && (
-                <span style={{ background: "#8A7F75", flexBasis: `${seg(fin.teamAllocation)}%` }} />
-              )}
-              {fin.taxReserve > 0 && (
-                <span
-                  style={{
-                    background: "#C4C0BB",
-                    flexBasis: `${seg(fin.taxReserve)}%`,
-                    backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.2) 3px, rgba(255,255,255,0.2) 6px)`,
-                  }}
-                />
-              )}
-              {marginSegPct > 0 && (
-                <span style={{ background: health, flexBasis: `${marginSegPct}%` }} />
-              )}
-            </div>
-            {staleOverlayOpacity < 1 && (
-              <div
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  borderRadius: 4,
-                  pointerEvents: "none",
-                  backgroundImage:
-                    "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.25) 5px, rgba(255,255,255,0.25) 10px)",
-                }}
-              />
-            )}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px", marginTop: 6 }}>
-              {fin.compAllocation > 0 && <LegendItem color="#2C2C2C" label="Comp" amount={fmtMoney(fin.compAllocation)} />}
-              {fin.opexAllocation > 0 && <LegendItem color="#6B6259" label="Op Ex" amount={fmtMoney(fin.opexAllocation)} />}
-              {fin.teamAllocation > 0 && <LegendItem color="#8A7F75" label="Team" amount={fmtMoney(fin.teamAllocation)} />}
-              {fin.taxReserve > 0 && (
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "#C4C0BB", display: "inline-block" }} />
-                  <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, color: MUTED }}>Tax</span>
-                  <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, fontWeight: 500, color: CHARCOAL }}>
-                    ~{fmtMoney(fin.taxReserve)}
-                  </span>
-                  <HoverCard>
-                    <HoverCardTrigger asChild>
-                      <span
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ fontSize: 9, color: GOLD, cursor: "pointer" }}
-                      >
-                        ⓘ
-                      </span>
-                    </HoverCardTrigger>
-                    <HoverCardContent
-                      side="top"
-                      className="max-w-[240px] text-[12px]"
-                      style={{ fontFamily: "'Jost', sans-serif", color: "#6B6259" }}
-                    >
-                      Estimated at 25% of gross margin — the profit remaining after your cost obligations are met. Tax is owed on profit, not on total revenue. Consult your accountant for the exact figure for your situation.
-                    </HoverCardContent>
-                  </HoverCard>
-                </span>
-              )}
-              <LegendItem
-                color={fin.marginRemaining > 0 ? health : TERRA}
-                label="Profit"
-                amount={fin.marginRemaining > 0 ? fmtMoney(fin.marginRemaining) : "$0"}
-              />
-            </div>
-          </div>
-
-          {/* ─── Row 5 — Effective rate ─── */}
-          {hoursLogged > 0 && fin.effectiveRate != null && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 16,
-                borderTop: "0.5px solid rgba(44,44,44,0.07)",
-                paddingTop: 12,
-                marginTop: 2,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED, marginBottom: 2 }}>
-                  EFFECTIVE RATE
-                </div>
-                <div
-                  key={String(fin.effectiveRate)}
-                  style={{
-                    fontFamily: "'Cormorant Garamond', serif",
-                    fontSize: 20,
-                    fontWeight: 300,
-                    color: effRateColor,
-                    animation: rateDropped ? "sightlineRateDrop 600ms ease-out" : undefined,
-                  }}
-                >
-                  {fmtRate(fin.effectiveRate)}
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2, marginLeft: "auto", textAlign: "right" }}>
-                <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: MUTED }}>
-                  vs {fmtRate(Number(snapshot.aligned_rate) || 0)} aligned
-                </span>
-                {(() => {
-                  const alignedRate = Number(snapshot.aligned_rate) || 0;
-                  const breakEvenRate = Number(snapshot.break_even_rate) || 0;
-                  const diff = Math.abs(fin.effectiveRate! - alignedRate);
-                  if (fin.effectiveRate! < breakEvenRate) {
-                    return (
-                      <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, fontWeight: 500, color: TERRA }}>
-                        ⚠ Below break-even
-                      </span>
-                    );
-                  }
-                  if (fin.effectiveRate! >= alignedRate) {
-                    return (
-                      <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: SAGE }}>
-                        ↑ {fmtMoney(diff)} above aligned
-                      </span>
-                    );
-                  }
-                  return (
-                    <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: GOLD }}>
-                      ↓ {fmtMoney(diff)} below aligned
-                    </span>
-                  );
-                })()}
+                {hoursLogged > 0 && (
+                  <>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        height: 6,
+                        width: `${inScopePct}%`,
+                        background: hoursOver ? health : health,
+                        transition: "width 0.4s ease",
+                      }}
+                    />
+                    {hoursOver && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: `${inScopePct}%`,
+                          top: 0,
+                          height: 6,
+                          width: `${overPct}%`,
+                          background: TERRA,
+                          transition: "width 0.4s ease",
+                        }}
+                      />
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
 
-          {/* ─── Row 6 — Stale warning ─── */}
+          {/* ─── Stale / critical one-liner ─── */}
           {hoursLogged > 0 && fin.freshnessState === "stale" && (
             <div
               style={{
@@ -621,11 +382,11 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
                 borderLeft: `2px solid ${GOLD}`,
                 borderRadius: "0 4px 4px 0",
                 padding: "8px 10px",
-                marginTop: 10,
+                marginTop: 4,
               }}
             >
               <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: CHARCOAL, lineHeight: 1.5 }}>
-                ⚠ Last entry {daysAgoLabel(fin.daysSinceEntry)} — figures are estimates. Log time to restore accuracy.
+                Last entry {daysAgoLabel(fin.daysSinceEntry)} — figures are estimates. Log time to restore accuracy.
               </div>
             </div>
           )}
@@ -636,34 +397,64 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
                 borderLeft: `2px solid ${TERRA}`,
                 borderRadius: "0 4px 4px 0",
                 padding: "8px 10px",
-                marginTop: 10,
+                marginTop: 4,
               }}
             >
               <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: TERRA, lineHeight: 1.5 }}>
-                ⚠ No time logged in {daysAgoLabel(fin.daysSinceEntry)}. Profit figures cannot be trusted.
+                No time logged in {daysAgoLabel(fin.daysSinceEntry)}. Profit figures cannot be trusted.
               </div>
             </div>
           )}
         </>
       )}
-      <style>{`
-        @keyframes sightlineRateDrop {
-          0%   { transform: scale(1); }
-          30%  { color: ${TERRA}; transform: scale(0.95); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
     </button>
   );
 }
 
-function LegendItem({ color, label, amount }: { color: string; label: string; amount: string }) {
+function formatHoursShort(n: number): string {
+  const v = Math.round(n * 10) / 10;
+  return `${v}`.replace(/\.0$/, "");
+}
+
+function MetricCol({
+  label,
+  value,
+  sub,
+  valueColor,
+  strike,
+  faded,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  valueColor: string;
+  strike?: boolean;
+  faded?: boolean;
+}) {
   return (
-    <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-      <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: "inline-block" }} />
-      <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, color: MUTED }}>{label}</span>
-      <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 9, fontWeight: 500, color: CHARCOAL }}>{amount}</span>
-    </span>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: MUTED, marginBottom: 3 }}>
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: "'Cormorant Garamond', serif",
+          fontSize: 22,
+          fontWeight: 300,
+          color: valueColor,
+          lineHeight: 1.05,
+          opacity: faded ? 0.7 : 1,
+          textDecoration: strike ? "line-through" : undefined,
+        }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 10, color: MUTED, marginTop: 2, lineHeight: 1.3 }}>
+          {sub}
+        </div>
+      )}
+    </div>
   );
 }
 

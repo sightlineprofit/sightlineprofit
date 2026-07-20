@@ -13,11 +13,20 @@ import {
   reconcileTour,
   dismissTourWelcomeBanner,
   getTourStep6Progress,
+  getTourStep7Progress,
 } from "@/lib/tour.functions";
 import { upsertFirmConfig, addExpense, upsertOwnerCompensation } from "@/lib/firm.functions";
 import { getDashboardData } from "@/lib/dashboard.functions";
 import { getMyContext } from "@/lib/firm.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { TimeImportWizard } from "@/components/settings/TimeImportWizard";
+import type { ImportResult } from "@/lib/time-import/types";
+import { PricingStructureSelector } from "@/components/pricing/PricingStructureSelector";
+import {
+  normalizePricingStructure,
+  requiresBilledRate,
+  type PricingStructure,
+} from "@/lib/pricing-structure";
 
 type TourPrefs = {
   tour_completed: boolean;
@@ -30,7 +39,7 @@ type TourCtx = {
   prefs: TourPrefs;
   isOpen: boolean;
   currentStep: number; // 1..7
-  startTour: () => void;
+  startTour: (options?: { fromBeginning?: boolean }) => void;
   resumeTour: () => void;
   skipTour: () => Promise<void>;
   nextStep: () => Promise<void>;
@@ -73,9 +82,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const reconciledRef = useRef(false);
 
   // Run reconciliation once per session, before any auto-launch decision.
+  // Skip after an explicit "Redo tour" — user wants the full walkthrough again.
   useEffect(() => {
     if (reconciledRef.current) return;
     if (!prefs) return;
+    if (typeof window !== "undefined" && sessionStorage.getItem("sightline-tour-replay") === "1") {
+      reconciledRef.current = true;
+      return;
+    }
     if (prefs.tour_completed) { reconciledRef.current = true; return; }
     reconciledRef.current = true;
     (async () => {
@@ -105,8 +119,10 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [prefs, location.pathname]);
 
-  const startTour = useCallback(() => {
-    const resumeAt = Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
+  const startTour = useCallback((options?: { fromBeginning?: boolean }) => {
+    const resumeAt = options?.fromBeginning
+      ? 1
+      : Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
     setCurrent(resumeAt);
     setOpen(true);
     if (location.pathname !== "/dashboard") navigate({ to: "/dashboard" });
@@ -151,14 +167,23 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     setCurrent((s) => Math.min(7, s + 1));
   }, [currentStep, setStep, refetch, completeFn, qc, location.pathname, navigate]);
 
-  const previousStep = useCallback(() => {
+  const previousStep = useCallback(async () => {
+    if (currentStep <= 1) return;
+    // Step 7 lives on /time-calendar; step 6 may open /sightline — return to dashboard when going back.
+    if (currentStep === 7 || currentStep === 6) {
+      if (location.pathname !== "/dashboard") {
+        await navigate({ to: "/dashboard" });
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
     setCurrent((s) => Math.max(1, s - 1));
-  }, []);
+  }, [currentStep, location.pathname, navigate]);
 
   const performSkip = useCallback(async () => {
     try {
       await skipFn();
     } finally {
+      if (typeof window !== "undefined") sessionStorage.removeItem("sightline-tour-replay");
       qc.invalidateQueries({ queryKey: ["firm-preferences"] });
       setOpen(false);
       setSkipConfirmOpen(false);
@@ -178,6 +203,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     try {
       await completeFn();
     } finally {
+      if (typeof window !== "undefined") sessionStorage.removeItem("sightline-tour-replay");
       qc.invalidateQueries({ queryKey: ["firm-preferences"] });
       setOpen(false);
     }
@@ -185,9 +211,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   const resetTour = useCallback(async () => {
     await resetFn();
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("sightline-tour-replay", "1");
+    }
+    reconciledRef.current = true;
+    autoLaunchedRef.current = true;
+    setCurrent(1);
+    setOpen(false);
     await refetch();
-    autoLaunchedRef.current = false;
-    reconciledRef.current = false;
     qc.invalidateQueries({ queryKey: ["firm-preferences"] });
   }, [resetFn, refetch, qc]);
 
@@ -239,14 +270,33 @@ function TourOverlay() {
   const { currentStep, previousStep, nextStep, skipTour, completeTour } = useTour();
   const isMobile = useIsMobile();
   const location = useLocation();
-  // While the project setup wizard is auto-opening on /sightline, keep the
-  // tour mounted (so realtime listeners for `projects` / `project_phases`
-  // keep firing) but hide it visually so the wizard is fully usable. The
-  // Sightline route strips `?new=1` from the URL when the wizard closes.
-  const suppressed =
+  const [step7ImportOpen, setStep7ImportOpen] = useState(false);
+
+  useEffect(() => {
+    if (currentStep !== 7) setStep7ImportOpen(false);
+  }, [currentStep]);
+
+  // While the project setup wizard or SOP attach flow is active on /sightline,
+  // keep the tour mounted (realtime listeners keep firing) but hide the overlay
+  // so the page underneath is fully usable.
+  const search = (location.search ?? {}) as Record<string, unknown>;
+  const sightlineSuppressed =
     location.pathname === "/sightline" &&
-    (location.search as Record<string, unknown> | undefined)?.new != null &&
-    String((location.search as Record<string, unknown>).new) !== "";
+    (
+      (search.new != null && String(search.new) !== "") ||
+      (search.openProject != null && String(search.openProject) !== "")
+    );
+
+  // Step 7 on the time calendar: float a compact card so Quick log stays usable.
+  const step7OnCalendar = currentStep === 7 && location.pathname === "/time-calendar";
+  const step7Float = step7OnCalendar && !step7ImportOpen;
+  const suppressed = sightlineSuppressed || step7Float;
+
+  const step7Props = {
+    onComplete: completeTour,
+    onSkip: skipTour,
+    onBack: previousStep,
+  };
 
   const cardStyle: React.CSSProperties = isMobile
     ? {
@@ -288,32 +338,91 @@ function TourOverlay() {
         padding: 16,
       };
 
+  const floatPanelStyle: React.CSSProperties = isMobile
+    ? {
+        position: "fixed",
+        left: 12,
+        right: 12,
+        bottom: 12,
+        zIndex: 1001,
+        background: "#FAF7F2",
+        borderRadius: 10,
+        boxShadow: "0 8px 40px rgba(44,44,44,0.2)",
+        padding: 16,
+        maxHeight: "40vh",
+        overflowY: "auto",
+        fontFamily: "Jost, system-ui, sans-serif",
+        pointerEvents: "auto",
+      }
+    : {
+        position: "fixed",
+        left: 24,
+        bottom: 24,
+        zIndex: 1001,
+        background: "#FAF7F2",
+        borderRadius: 10,
+        boxShadow: "0 8px 40px rgba(44,44,44,0.2)",
+        padding: 20,
+        width: 360,
+        maxWidth: "calc(100vw - 360px)",
+        maxHeight: "calc(100vh - 48px)",
+        overflowY: "auto",
+        fontFamily: "Jost, system-ui, sans-serif",
+        pointerEvents: "auto",
+      };
+
+  const showFullOverlay = !step7Float;
+
   return (
-    <div
-      style={{
-        ...wrapStyle,
-        ...(suppressed
-          ? { background: "transparent", pointerEvents: "none", visibility: "hidden" as const }
-          : null),
-      }}
-      aria-hidden={suppressed || undefined}
-    >
+    <>
       <style>{`@keyframes tourSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes tourPulseGold { 0% { box-shadow: 0 0 0 0 rgba(184,134,11,0.4);} 100% { box-shadow: 0 0 0 8px rgba(184,134,11,0);} }`}</style>
-      <div style={cardStyle}>
-        {isMobile ? (
-          <div style={{ width: 36, height: 4, background: "rgba(44,44,44,0.15)", borderRadius: 2, margin: "0 auto 16px" }} />
-        ) : null}
-        <StepHeader step={currentStep} />
-        <StepBody
-          step={currentStep}
-          onAdvance={nextStep}
-          onBack={previousStep}
-          onSkip={skipTour}
-          onComplete={completeTour}
-        />
-      </div>
-    </div>
+      {step7Float ? (
+        <div style={floatPanelStyle}>
+          <StepHeader step={7} />
+          <Step7TimeEntry
+            {...step7Props}
+            variant="compact"
+            onOpenImport={() => setStep7ImportOpen(true)}
+          />
+        </div>
+      ) : null}
+      {showFullOverlay ? (
+        <div
+          style={{
+            ...wrapStyle,
+            ...(suppressed
+              ? { background: "transparent", pointerEvents: "none", visibility: "hidden" as const }
+              : null),
+          }}
+          aria-hidden={suppressed || undefined}
+        >
+          <div style={cardStyle}>
+            {isMobile ? (
+              <div style={{ width: 36, height: 4, background: "rgba(44,44,44,0.15)", borderRadius: 2, margin: "0 auto 16px" }} />
+            ) : null}
+            <StepHeader step={currentStep} />
+            {currentStep === 7 ? (
+              <Step7TimeEntry
+                {...step7Props}
+                variant="modal"
+                importOpen={step7ImportOpen}
+                onOpenImport={() => setStep7ImportOpen(true)}
+                onCloseImport={() => setStep7ImportOpen(false)}
+              />
+            ) : (
+              <StepBody
+                step={currentStep}
+                onAdvance={nextStep}
+                onBack={previousStep}
+                onSkip={skipTour}
+                onComplete={completeTour}
+              />
+            )}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -424,8 +533,7 @@ function NavRow({
   nextLabel: string;
   nextDisabled?: boolean;
 }) {
-  // Back only on steps 2, 3, 4 (data-entry). Never on 1 (first) or 5/6/7 (orientation).
-  const showBack = step === 2 || step === 3 || step === 4;
+  const showBack = step > 1;
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
       <button
@@ -661,6 +769,7 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
   const [hrs, setHrs] = useState("");
   const [weeks, setWeeks] = useState("48");
   const [rate, setRate] = useState("");
+  const [pricingStructure, setPricingStructure] = useState<PricingStructure>("hourly");
   const [margin, setMargin] = useState("40");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -696,8 +805,12 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
     const w = Number(weeks);
     const r = Number(rate);
     const m = Number(margin);
-    if (!h || !w || !r || !m) {
-      setErr("All four fields are required.");
+    if (!h || !w || !m) {
+      setErr("Billable hours, working weeks, and margin are required.");
+      return;
+    }
+    if (requiresBilledRate(pricingStructure) && !r) {
+      setErr("Enter your current billed rate to continue.");
       return;
     }
     setSaving(true);
@@ -706,20 +819,22 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
         data: {
           target_billable_hrs_per_week: h,
           available_hrs_per_week: h,
-          rate_billed: r,
+          pricing_structure: pricingStructure,
+          rate_billed: requiresBilledRate(pricingStructure) && r > 0 ? r : null,
           target_gross_margin_pct: m,
         },
       });
       // Race condition fix: wait for aligned rate to recalculate before Step 5.
       setCalculating(true);
       const start = Date.now();
-      // Poll dashboard config until rate_billed is present, capped at 3s.
       while (Date.now() - start < 3000) {
         try {
           const fresh: any = await fetchDashDirect();
-          if (Number(fresh?.config?.rate_billed) > 0 && Number(fresh?.config?.target_billable_hrs_per_week) > 0) {
-            break;
-          }
+          const freshStructure = normalizePricingStructure(fresh?.config?.pricing_structure);
+          const hasCapacity = Number(fresh?.config?.target_billable_hrs_per_week) > 0;
+          const hasRate =
+            freshStructure === "flat_fee" || Number(fresh?.config?.rate_billed) > 0;
+          if (hasCapacity && hasRate) break;
         } catch { /* keep polling */ }
         await new Promise((r2) => setTimeout(r2, 300));
       }
@@ -751,16 +866,26 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
           <div style={helperStyle}>Most firms work 46–48 weeks</div>
         </div>
         <div>
-          <label style={labelStyle}>Your current billed rate</label>
-          <input style={inputStyle} inputMode="numeric" placeholder="$225" value={rate} onChange={(e) => setRate(e.target.value.replace(/[^0-9.]/g, ""))} />
-          <div style={helperStyle}>What you charge clients per hour</div>
-        </div>
-        <div>
           <label style={labelStyle}>Target profit margin</label>
           <input style={inputStyle} inputMode="numeric" value={margin} onChange={(e) => setMargin(e.target.value.replace(/[^0-9.]/g, ""))} />
           <div style={helperStyle}>Profit % on each dollar billed</div>
         </div>
       </div>
+      <PricingStructureSelector
+        value={pricingStructure}
+        onChange={(nextStructure) => {
+          setPricingStructure(nextStructure);
+          if (!requiresBilledRate(nextStructure)) setRate("");
+        }}
+        className="mt-4"
+      />
+      {requiresBilledRate(pricingStructure) ? (
+        <div style={{ marginTop: 14 }}>
+          <label style={labelStyle}>Your current billed rate *</label>
+          <input style={inputStyle} inputMode="numeric" placeholder="$225" value={rate} onChange={(e) => setRate(e.target.value.replace(/[^0-9.]/g, ""))} />
+          <div style={helperStyle}>What you charge clients per hour</div>
+        </div>
+      ) : null}
       <div style={{ background: "rgba(184,134,11,0.07)", border: "0.5px solid rgba(184,134,11,0.2)", borderRadius: 6, padding: "12px 14px", marginTop: 16 }}>
         {preview && preview.totalCost > 0 ? (
           <>
@@ -945,8 +1070,25 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
 
   const goToProjectCreate = () =>
     navigate({ to: "/sightline", search: { new: 1 } as any });
-  const goToSopLibrary = () => {
-    if (projectId) navigate({ to: "/sightline", search: { openProject: projectId } as any });
+  const goToSopLibrary = async () => {
+    let pid = projectId;
+    if (!pid) {
+      try {
+        const progress = await getStep6Progress();
+        pid = progress?.projectId ?? null;
+        if (pid) setProjectId(pid);
+      } catch {
+        // fall through to toast below
+      }
+    }
+    if (!pid) {
+      toast.error("We couldn't find your project. Try creating one again.");
+      return;
+    }
+    navigate({
+      to: "/sightline",
+      search: { openProject: pid, onboarded: 1, attachSop: 1 } as any,
+    });
   };
 
   const item = (label: string, done: boolean, doneLabel: string) => (
@@ -986,6 +1128,9 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
           Skip for now →
         </button>
         <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={onBack} style={ghostBtn}>
+            Back
+          </button>
           {!projectCreated ? (
             <button type="button" onClick={goToProjectCreate} style={primaryBtn}>Create my first project →</button>
           ) : !sopAttached ? (
@@ -1009,57 +1154,121 @@ function Step6Project({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<
   );
 }
 
-function Step7TimeEntry({ onComplete, onSkip, onBack }: { onComplete: () => Promise<void>; onSkip: () => void; onBack: () => void }) {
+function Step7TimeEntry({
+  onComplete,
+  onSkip,
+  onBack,
+  variant = "modal",
+  importOpen = false,
+  onOpenImport,
+  onCloseImport,
+}: {
+  onComplete: () => Promise<void>;
+  onSkip: () => void;
+  onBack: () => void;
+  variant?: "compact" | "modal";
+  importOpen?: boolean;
+  onOpenImport?: () => void;
+  onCloseImport?: () => void;
+}) {
   const [saving, setSaving] = useState(false);
   const [entrySaved, setEntrySaved] = useState(false);
+  const [importCompleted, setImportCompleted] = useState(false);
+  const [importedCount, setImportedCount] = useState(0);
 
-  // Realtime watcher for new time entries.
+  const getCtx = useServerFn(getMyContext);
+  const getStep7Progress = useServerFn(getTourStep7Progress);
+  const { data: meCtx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { data: step7Progress } = useQuery({
+    queryKey: ["tour-step-7-progress"],
+    queryFn: () => getStep7Progress(),
+    staleTime: 0,
+  });
+  const firmId = (meCtx as { profile?: { firm_id?: string } } | undefined)?.profile?.firm_id;
+  const userId = (meCtx as { profile?: { id?: string } } | undefined)?.profile?.id;
+
+  const readyToFinish = entrySaved || importCompleted;
+
   useEffect(() => {
-    if (entrySaved) return;
+    if (!step7Progress) return;
+    if (step7Progress.timeLogged) setEntrySaved(true);
+    if (step7Progress.historyImported) {
+      setImportCompleted(true);
+      setImportedCount(step7Progress.importedCount);
+    }
+  }, [step7Progress]);
+
+  // Realtime: manual time entry on calendar
+  useEffect(() => {
+    if (entrySaved || !firmId) return;
     const ch = supabase
       .channel("tour-time-entries")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "time_entries" },
-        () => setEntrySaved(true),
+        { event: "INSERT", schema: "public", table: "time_entries", filter: `firm_id=eq.${firmId}` },
+        (payload: { new?: { user_id?: string; import_log_id?: string | null } }) => {
+          const row = payload?.new;
+          if (!row) return;
+          if (userId && row.user_id !== userId) return;
+          // Manual log path only — imports are tracked via time_import_logs
+          if (row.import_log_id) return;
+          setEntrySaved(true);
+        },
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [entrySaved]);
+  }, [entrySaved, firmId, userId]);
+
+  // Realtime: history import completed
+  useEffect(() => {
+    if (importCompleted || !firmId) return;
+    const ch = supabase
+      .channel("tour-time-import-logs")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "time_import_logs", filter: `firm_id=eq.${firmId}` },
+        (payload: { new?: { rows_imported?: number } }) => {
+          const count = Number(payload?.new?.rows_imported) || 0;
+          if (count > 0) {
+            setImportCompleted(true);
+            setImportedCount(count);
+            onCloseImport?.();
+          }
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [importCompleted, firmId, onCloseImport]);
 
   const finish = async () => {
     setSaving(true);
     try { await onComplete(); } finally { setSaving(false); }
   };
-  return (
-    <>
-      <h2 style={titleStyle}>Log your first hour.</h2>
-      <p style={bodyStyle}>
-        Every hour you log moves the margin needle on your projects and tells Sightline whether you're on track to hit your billable targets.{"\n\n"}Log time in the Time Calendar as you work — or import existing entries if you've been tracking elsewhere.
-      </p>
-      <ol style={{ paddingLeft: 18, color: "#6B6259", fontSize: 13, lineHeight: 1.9, margin: 0 }}>
-        <li>Pick a date</li>
-        <li>Select an activity type</li>
-        <li>Enter hours worked</li>
-        <li>Assign to a project (or log as firm time)</li>
-        <li>Hit Log time</li>
-      </ol>
-      {entrySaved ? (
-        <div style={{ background: "rgba(92,138,110,0.07)", borderLeft: "2px solid #5C8A6E", borderRadius: "0 4px 4px 0", padding: "6px 10px", marginTop: 10, fontSize: 12, color: "#5C8A6E" }}>
-          First entry logged ✓ You're ready to finish.
-        </div>
-      ) : null}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8 }}>
-        <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
-          or skip this step →
+
+  const onImportComplete = (result: ImportResult) => {
+    if (result.imported > 0) {
+      setImportCompleted(true);
+      setImportedCount(result.imported);
+      onCloseImport?.();
+    }
+  };
+
+  const finishRow = (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 16, gap: 8 }}>
+      <button type="button" onClick={onSkip} style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer" }}>
+        or skip this step →
+      </button>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" onClick={onBack} style={ghostBtn}>
+          Back
         </button>
         <button
           type="button"
           onClick={finish}
-          disabled={!entrySaved || saving}
-          title={!entrySaved ? "Log at least one hour to finish setup" : undefined}
+          disabled={!readyToFinish || saving}
+          title={!readyToFinish ? "Import history or log at least one hour to finish setup" : undefined}
           style={
-            entrySaved
+            readyToFinish
               ? { ...primaryBtn, animation: "tourPulseGold 600ms ease-out 1" }
               : { ...primaryBtn, background: "rgba(44,44,44,0.25)", color: "rgba(255,255,255,0.4)", cursor: "not-allowed" }
           }
@@ -1067,6 +1276,85 @@ function Step7TimeEntry({ onComplete, onSkip, onBack }: { onComplete: () => Prom
           {saving ? "Finishing…" : "Finish setup ✓"}
         </button>
       </div>
+    </div>
+  );
+
+  const successBanner = importCompleted ? (
+    <div style={{ background: "rgba(92,138,110,0.07)", borderLeft: "2px solid #5C8A6E", borderRadius: "0 4px 4px 0", padding: "6px 10px", marginTop: 10, fontSize: 12, color: "#5C8A6E" }}>
+      {importedCount} entries imported ✓ Your utilization picture is ready.
+    </div>
+  ) : entrySaved ? (
+    <div style={{ background: "rgba(92,138,110,0.07)", borderLeft: "2px solid #5C8A6E", borderRadius: "0 4px 4px 0", padding: "6px 10px", marginTop: 10, fontSize: 12, color: "#5C8A6E" }}>
+      First entry logged ✓ You're ready to finish.
+    </div>
+  ) : null;
+
+  if (variant === "modal" && importOpen) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={onCloseImport}
+          style={{ ...ghostBtn, marginBottom: 12, padding: "6px 12px", fontSize: 12 }}
+        >
+          ← Back to options
+        </button>
+        <TimeImportWizard embedded onImportComplete={onImportComplete} />
+      </>
+    );
+  }
+
+  if (variant === "compact") {
+    return (
+      <>
+        <h2 style={{ ...titleStyle, fontSize: 20, marginTop: 8 }}>Log your first hour.</h2>
+        <p style={{ ...bodyStyle, marginBottom: 12, fontSize: 13 }}>
+          Use <strong>Quick log</strong> on the right, or click the calendar to log time. Sightline tracks your billable target as you go.
+        </p>
+        <button
+          type="button"
+          onClick={onOpenImport}
+          style={{ fontSize: 12, color: "#8A7F75", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: 8 }}
+        >
+          Import time history instead →
+        </button>
+        {successBanner}
+        {finishRow}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h2 style={titleStyle}>Add your time history.</h2>
+      <p style={bodyStyle}>
+        Sightline compares your target billable hours to how you actually work. If you've been tracking time in another tool, import your history now so utilization and project margins reflect reality from day one.{"\n\n"}Or log your first hour manually in the Time Calendar below.
+      </p>
+
+      <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={onOpenImport}
+          style={{ ...primaryBtn, padding: 14, width: "100%", textAlign: "left" }}
+        >
+          Import time history →
+          <div style={{ fontSize: 11, color: "rgba(250,247,242,0.75)", marginTop: 4, fontWeight: 400 }}>
+            Clockify, Harvest, Toggl, Studio Designer, or spreadsheet
+          </div>
+        </button>
+        <div style={{ fontSize: 12, color: "#8A7F75", textAlign: "center" }}>or log manually on the calendar</div>
+      </div>
+
+      <ol style={{ paddingLeft: 18, color: "#6B6259", fontSize: 13, lineHeight: 1.9, margin: 0 }}>
+        <li>Pick a date on the calendar</li>
+        <li>Select an activity type</li>
+        <li>Enter hours worked</li>
+        <li>Assign to a project (or log as firm time)</li>
+        <li>Hit Log time</li>
+      </ol>
+
+      {successBanner}
+      {finishRow}
     </>
   );
 }

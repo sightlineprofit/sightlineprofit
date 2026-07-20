@@ -6,9 +6,26 @@ import {
   getProjectMarginCalc,
   buildSnapshotFromCalc,
   getProjectFinancials,
+  breakEvenResultFromSnapshot,
   type Expense,
   type FirmConfig,
 } from "@/lib/finance";
+import {
+  copySopAssigneesToProjectSteps,
+  fetchProjectStepAssigneeRows,
+  isTaskAssigneeSchemaMissingError,
+  listFirmMembersForAssigneePicker,
+  refreshProjectCostSnapshot,
+} from "@/lib/project-cost-snapshot.server";
+
+function assigneeDbError(error: { message: string }): Error {
+  if (isTaskAssigneeSchemaMissingError(error)) {
+    return new Error(
+      "Team assignments require a database update. In the Supabase SQL editor, run supabase/migrations/20260716120000_task_assignee_cost_basis.sql",
+    );
+  }
+  return new Error(error.message);
+}
 
 export const getProjectList = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -255,6 +272,49 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     const { data: steps } = phaseIds.length
       ? await supabase.from("project_steps").select("*").in("project_phase_id", phaseIds).order("sort_order")
       : { data: [] as never[] };
+
+    let stepAssignees: unknown[] = [];
+    let assigneePickerMembers: unknown[] = [];
+    let assigneePickerPrincipal: { name: string } | null = null;
+    if (phaseIds.length) {
+      const stepIds = (steps ?? []).map((s: { id: string }) => s.id);
+      if (stepIds.length) {
+        const { data: assignees, error: assigneeErr } = await supabase
+          .from("project_step_assignees")
+          .select("*")
+          .in("project_step_id", stepIds);
+        if (assigneeErr) {
+          if (!isTaskAssigneeSchemaMissingError(assigneeErr)) {
+            throw new Error(assigneeErr.message);
+          }
+        } else {
+          stepAssignees = assignees ?? [];
+        }
+      }
+      if (isAdmin) {
+        const picker = await listFirmMembersForAssigneePicker(supabase, profile.firm_id);
+        assigneePickerMembers = picker.members;
+        assigneePickerPrincipal = picker.principal;
+      }
+    }
+
+    const sopPhaseIds = (phases ?? [])
+      .map((p) => p.sop_phase_id)
+      .filter((id): id is string => !!id);
+    const { data: sopPhases } = sopPhaseIds.length
+      ? await supabase.from("sop_phases").select("id, description").in("id", sopPhaseIds)
+      : { data: [] as { id: string; description: string | null }[] };
+
+    const importLogIds = [
+      ...new Set(
+        (entries ?? [])
+          .map((e: { import_log_id?: string | null }) => e.import_log_id)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const { data: importLogs } = importLogIds.length
+      ? await supabase.from("time_import_logs").select("*").in("id", importLogIds).order("imported_at", { ascending: false })
+      : { data: [] as never[] };
     const { data: audit } = isPrincipal
       ? await supabase
           .from("project_financial_audit")
@@ -310,12 +370,32 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       .filter(Boolean)
       .sort()
       .slice(-1)[0] ?? null;
+
+    let breakEvenResult = null;
+    let assigneesNewerThanSnapshot = false;
+    if (snapshot) {
+      const { liveResult } = await fetchProjectStepAssigneeRows(
+        supabase,
+        data.id,
+        snapshot as any,
+        profile.firm_id,
+      );
+      const snapshotResult = breakEvenResultFromSnapshot(snapshot as any);
+      assigneesNewerThanSnapshot =
+        liveResult.hasAssigneeData &&
+        (!snapshotResult || (snapshot as { cost_basis_method?: string }).cost_basis_method === "firm_average");
+      breakEvenResult =
+        liveResult.hasAssigneeData && !assigneesNewerThanSnapshot ? liveResult : snapshotResult;
+    }
+
     const financials = snapshot
       ? getProjectFinancials({
           project: project as any,
           snapshot: snapshot as any,
           hoursLogged,
           lastEntryDate,
+          breakEvenResult,
+          assigneesNewerThanSnapshot,
         })
       : null;
 
@@ -323,6 +403,9 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       project,
       phases: phases ?? [],
       steps: steps ?? [],
+      stepAssignees,
+      assigneePickerMembers,
+      assigneePickerPrincipal,
       entries: entries ?? [],
       config,
       template,
@@ -330,11 +413,14 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       audit: audit ?? [],
       activityLog: activityLog ?? [],
       milestones: milestones ?? [],
+      sopPhases: sopPhases ?? [],
+      importLogs: importLogs ?? [],
       isPrincipal,
       isAdmin,
       firmMetrics,
       snapshot,
       financials,
+      assigneesNewerThanSnapshot,
     };
   });
 
@@ -549,18 +635,29 @@ export const createProject = createServerFn({ method: "POST" })
         if (phErr) throw new Error(phErr.message);
         const steps = (allSteps ?? []).filter((s) => s.phase_id === p.id);
         if (steps.length) {
-          await supabase.from("project_steps").insert(
-            steps.map((s) => ({
-              project_phase_id: ins.id,
-              sop_step_id: s.id,
-              description: s.description,
-              estimated_hrs: Number(s.estimated_hrs) || 0,
-              template_estimated_hrs: Number(s.estimated_hrs) || 0,
-              is_custom: false,
-              sort_order: s.sort_order,
-              actual_hrs: 0,
-            })),
-          );
+          const { data: insertedSteps, error: stepErr } = await supabase
+            .from("project_steps")
+            .insert(
+              steps.map((s) => ({
+                project_phase_id: ins.id,
+                sop_step_id: s.id,
+                description: s.description,
+                estimated_hrs: Number(s.estimated_hrs) || 0,
+                template_estimated_hrs: Number(s.estimated_hrs) || 0,
+                is_custom: false,
+                sort_order: s.sort_order,
+                actual_hrs: 0,
+              })),
+            )
+            .select("id, sop_step_id");
+          if (stepErr) throw new Error(stepErr.message);
+          const pairs = (insertedSteps ?? [])
+            .filter((row: { sop_step_id?: string | null }) => row.sop_step_id)
+            .map((row: { id: string; sop_step_id: string }) => ({
+              sopStepId: row.sop_step_id,
+              projectStepId: row.id,
+            }));
+          await copySopAssigneesToProjectSteps(supabase, pairs);
         }
       }
     }
@@ -600,6 +697,7 @@ export const createProject = createServerFn({ method: "POST" })
         firm_id: profile.firm_id,
         ...snapshotBody,
       });
+      await refreshProjectCostSnapshot(supabase, project.id, profile.firm_id);
     } catch (e) {
       // Don't fail project creation if snapshot insert races or errors — the
       // retroactive backfill in getProjectDetail will create one on first load.
@@ -676,15 +774,36 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
       id: z.string().uuid(),
       name: z.string().trim().min(1).max(160).optional(),
       client_name: z.string().trim().max(160).optional().nullable(),
+      status: z.enum([
+        "pursuit",
+        "pipeline",
+        "active",
+        "invoiced",
+        "collected",
+        "completed",
+        "on_hold",
+      ]).optional(),
+      pricing_method: z.enum(["flat_fee", "hourly", "hybrid"]).optional(),
       scoped_rate: z.number().min(0).max(100000).optional().nullable(),
       fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
+      flat_fee_amount: z.number().min(0).max(100000000).optional().nullable(),
+      hourly_scoped_hours: z.number().min(0).max(100000).optional().nullable(),
+      scoped_hrs: z.number().min(0).max(100000).optional().nullable(),
       start_date: z.string().optional().nullable(),
       end_date: z.string().optional().nullable(),
       est_weekly_hrs: z.number().min(0).max(200).optional().nullable(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    if (profile?.role !== "principal" && profile?.role !== "admin") {
+      throw new Error("Only firm admins can edit project details");
+    }
     const { id, ...patch } = data;
     const { error } = await supabase.from("projects").update(patch).eq("id", id);
     if (error) throw new Error(error.message);
@@ -739,15 +858,15 @@ export const deleteProjectMilestone = createServerFn({ method: "POST" })
 
 // --- Financial mutations (principal-only) -----------------------------------
 
-async function ensurePrincipal(supabase: any, userId: string) {
+async function ensureAdminOrPrincipal(supabase: any, userId: string) {
   const { data: profile } = await supabase
     .from("profiles")
     .select("firm_id, role")
     .eq("id", userId)
     .single();
   if (!profile?.firm_id) throw new Error("No firm");
-  if (profile.role !== "principal") {
-    throw new Error("Only the firm principal can change financial parameters");
+  if (profile.role !== "principal" && profile.role !== "admin") {
+    throw new Error("Only firm admins can change financial parameters");
   }
   return { firmId: profile.firm_id as string };
 }
@@ -759,22 +878,23 @@ export const updateProjectFinancial = createServerFn({ method: "POST" })
       project_id: z.string().uuid(),
       scoped_rate: z.number().min(0).max(100000).nullable().optional(),
       fixed_fee: z.number().min(0).max(100000000).nullable().optional(),
+      flat_fee_amount: z.number().min(0).max(100000000).nullable().optional(),
       reason: z.string().trim().max(500).optional().nullable(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { firmId } = await ensurePrincipal(supabase, userId);
+    const { firmId } = await ensureAdminOrPrincipal(supabase, userId);
     const { data: existing } = await supabase
       .from("projects")
-      .select("id, firm_id, scoped_rate, fixed_fee")
+      .select("id, firm_id, scoped_rate, fixed_fee, flat_fee_amount")
       .eq("id", data.project_id)
       .eq("firm_id", firmId)
       .single();
     if (!existing) throw new Error("Project not found");
 
     const audits: { field_changed: string; old_value: string | null; new_value: string | null }[] = [];
-    const patch: { scoped_rate?: number | null; fixed_fee?: number | null } = {};
+    const patch: { scoped_rate?: number | null; fixed_fee?: number | null; flat_fee_amount?: number | null } = {};
     if (data.scoped_rate !== undefined) {
       const oldVal = existing.scoped_rate == null ? null : String(existing.scoped_rate);
       const newVal = data.scoped_rate == null ? null : String(data.scoped_rate);
@@ -791,6 +911,16 @@ export const updateProjectFinancial = createServerFn({ method: "POST" })
       if (oldVal !== newVal) {
         patch.fixed_fee = data.fixed_fee;
         audits.push({ field_changed: "fixed_fee", old_value: oldVal, new_value: newVal });
+      }
+    }
+    if (data.flat_fee_amount !== undefined) {
+      const oldVal = (existing as { flat_fee_amount?: number | null }).flat_fee_amount == null
+        ? null
+        : String((existing as { flat_fee_amount?: number | null }).flat_fee_amount);
+      const newVal = data.flat_fee_amount == null ? null : String(data.flat_fee_amount);
+      if (oldVal !== newVal) {
+        patch.flat_fee_amount = data.flat_fee_amount;
+        audits.push({ field_changed: "flat_fee_amount", old_value: oldVal, new_value: newVal });
       }
     }
     if (Object.keys(patch).length === 0) return { ok: true, changed: 0 };
@@ -823,7 +953,7 @@ export const updateProjectPhaseFinancial = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { firmId } = await ensurePrincipal(supabase, userId);
+    const { firmId } = await ensureAdminOrPrincipal(supabase, userId);
     const { data: phase } = await supabase
       .from("project_phases")
       .select("id, name, expected_hrs, billable, project_id, projects:project_id(firm_id)")
@@ -1023,4 +1153,109 @@ export const deleteProjectStep = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     await recomputePhaseExpectedFromSteps(supabase, existing.project_phase_id as string);
     return { ok: true };
+  });
+
+const stepAssigneeSchema = z.object({
+  project_step_id: z.string().uuid(),
+  assignee_kind: z.enum(["member", "principal"]).default("member"),
+  firm_member_id: z.string().uuid().optional().nullable(),
+  estimated_hrs: z.number().min(0).max(9999).optional(),
+  is_billable: z.boolean().optional(),
+  notes: z.string().max(500).optional().nullable(),
+});
+
+export const upsertProjectStepAssignee = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => stepAssigneeSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (profile.role !== "principal" && profile.role !== "admin") {
+      throw new Error("Admin only");
+    }
+
+    if (data.assignee_kind === "member" && !data.firm_member_id) {
+      throw new Error("firm_member_id required for member assignees");
+    }
+
+    const match =
+      data.assignee_kind === "principal"
+        ? { project_step_id: data.project_step_id, assignee_kind: "principal" as const }
+        : {
+            project_step_id: data.project_step_id,
+            firm_member_id: data.firm_member_id!,
+            assignee_kind: "member" as const,
+          };
+
+    const { data: existing, error: lookupErr } = await supabase
+      .from("project_step_assignees")
+      .select("id")
+      .match(match)
+      .maybeSingle();
+    if (lookupErr) throw assigneeDbError(lookupErr);
+
+    const row = {
+      project_step_id: data.project_step_id,
+      assignee_kind: data.assignee_kind,
+      firm_member_id: data.assignee_kind === "principal" ? null : data.firm_member_id,
+      estimated_hrs: data.estimated_hrs ?? 0,
+      is_billable: data.is_billable ?? true,
+      notes: data.notes ?? null,
+    };
+
+    if (existing?.id) {
+      const { data: updated, error } = await supabase
+        .from("project_step_assignees")
+        .update(row)
+        .eq("id", existing.id)
+        .select("*")
+        .single();
+      if (error) throw assigneeDbError(error);
+      return updated;
+    }
+
+    const { data: inserted, error } = await supabase
+      .from("project_step_assignees")
+      .insert(row)
+      .select("*")
+      .single();
+    if (error) throw assigneeDbError(error);
+    return inserted;
+  });
+
+export const deleteProjectStepAssignee = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { error } = await supabase.from("project_step_assignees").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const refreshProjectCostSnapshotFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (profile.role !== "principal" && profile.role !== "admin") {
+      throw new Error("Admin only");
+    }
+    const updated = await refreshProjectCostSnapshot(
+      supabase,
+      data.project_id,
+      profile.firm_id,
+    );
+    return { snapshot: updated };
   });

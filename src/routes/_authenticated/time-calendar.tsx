@@ -59,6 +59,36 @@ function toHourFloat(t: string | null): number {
   const [h, m] = t.split(":").map(Number);
   return h + m / 60;
 }
+
+/** Map a time entry to pixel top/height within the 7am–8pm calendar grid. */
+function calendarEntryLayout(
+  entry: { start_time: string | null; end_time: string | null; hrs: number },
+  rowH: number,
+): { top: number; height: number } {
+  const gridPx = HOURS * rowH;
+  const minBlockPx = rowH * 0.25;
+
+  let startHrs = entry.start_time ? toHourFloat(entry.start_time) : HOUR_START;
+  startHrs = Math.max(HOUR_START, Math.min(startHrs, HOUR_END - minBlockPx / rowH));
+
+  let durHrs = Math.max(0.25, Number(entry.hrs) || 0);
+  if (entry.start_time && entry.end_time) {
+    const endHrs = toHourFloat(entry.end_time);
+    if (endHrs > startHrs) durHrs = endHrs - startHrs;
+  }
+
+  const maxDurHrs = HOUR_END - startHrs;
+  durHrs = Math.min(durHrs, maxDurHrs);
+
+  let top = (startHrs - HOUR_START) * rowH;
+  top = Math.max(0, Math.min(top, gridPx - minBlockPx));
+
+  let height = durHrs * rowH;
+  height = Math.min(height, gridPx - top);
+  height = Math.max(minBlockPx, height);
+
+  return { top, height };
+}
 function formatHour(h: number) {
   const hh = Math.floor(h);
   const mm = Math.round((h - hh) * 60);
@@ -417,7 +447,7 @@ function Grid({
               if (el) dayRefs.current.set(iso, el);
               else dayRefs.current.delete(iso);
             }}
-            className="relative border-l border-border"
+            className="relative border-l border-border overflow-hidden"
           >
             {Array.from({ length: HOURS }).map((_, i) => (
               <button
@@ -429,8 +459,7 @@ function Grid({
               />
             ))}
             {dayEntries.map((e) => {
-              const top = (toHourFloat(e.start_time) - HOUR_START) * rowH;
-              const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
+              const { top, height: h } = calendarEntryLayout(e, rowH);
               const isMine = e.user_id === myId;
               const proj = project(e.project_id);
               const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
@@ -1018,13 +1047,12 @@ function TeamCalendarGrid({
           );
           const subCount = visibleMembers.length;
           return (
-            <div key={d.toISOString()} className="relative border-l border-border">
+            <div key={d.toISOString()} className="relative border-l border-border overflow-hidden">
               {Array.from({ length: HOURS }).map((_, i) => (
                 <div key={i} className="border-t border-border" style={{ height: rowH }} />
               ))}
               {dayEntries.map((e) => {
-                const top = (toHourFloat(e.start_time) - HOUR_START) * rowH;
-                const h = Math.max(0.25, Number(e.hrs || 0)) * rowH;
+                const { top, height: h } = calendarEntryLayout(e, rowH);
                 const member = memberOf(e.user_id);
                 const idx = visibleMembers.findIndex((m) => m.id === e.user_id);
                 const widthPct = 100 / subCount;

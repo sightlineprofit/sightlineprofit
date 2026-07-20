@@ -37,6 +37,31 @@ function resolveCheckoutEnvironment(searchEnv?: StripeEnv): StripeEnv {
   return explicitEnv ? getStripeEnvironment(explicitEnv) : getPreferredCheckoutEnvironment();
 }
 
+/** Complete the Supabase OAuth PKCE redirect before post-auth routing runs. */
+async function ensureOAuthSession(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) throw error;
+
+    params.delete("code");
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+    window.history.replaceState({}, "", next);
+    return;
+  }
+
+  // Implicit/hash callback (some providers still return #access_token=...)
+  const hash = window.location.hash;
+  if (hash.includes("access_token=")) {
+    const { error } = await supabase.auth.getSession();
+    if (error) throw error;
+    window.history.replaceState({}, "", window.location.pathname + window.location.search);
+  }
+}
+
 export const Route = createFileRoute("/post-auth")({
   head: () => ({ meta: [{ title: "Setting up — Sightline" }] }),
   validateSearch: (s: Record<string, unknown>): { session_id?: string; env?: StripeEnv } => ({
@@ -61,6 +86,7 @@ function PostAuth() {
   const fromStripe = !!search.session_id;
 
   const run = useCallback(async (): Promise<void> => {
+    await ensureOAuthSession();
     const { data } = await supabase.auth.getUser();
     if (!data.user) {
       nav({ to: "/login" });

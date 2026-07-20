@@ -1,5 +1,5 @@
 import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js";
-import { getStripe, getStripeEnvironment, type StripeEnv } from "@/lib/stripe";
+import { getStripe, getStripeEnvironment, isStripeCheckoutTestingHost, type StripeEnv } from "@/lib/stripe";
 import { createCheckoutSession } from "@/lib/billing.functions";
 import type { CheckoutPriceKey } from "@/lib/stripe.server";
 
@@ -40,6 +40,8 @@ export function StripeEmbeddedCheckoutPane({
 }
 
 function PaymentEnvironmentNotice({ environment }: { environment: StripeEnv }) {
+  if (!isStripeCheckoutTestingHost()) return null;
+
   if (environment === "sandbox") {
     return (
       <div className="rounded-md border px-3 py-2 text-center text-xs" style={{ background: "#FFF7ED", borderColor: "#FDBA74", color: "#9A3412" }}>

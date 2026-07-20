@@ -20,6 +20,12 @@ import {
   type BurdenedCostValue,
 } from "@/components/team/BurdenedCostCalculator";
 import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
+import { PricingStructureSelector } from "@/components/pricing/PricingStructureSelector";
+import {
+  requiresBilledRate,
+  type PricingStructure,
+} from "@/lib/pricing-structure";
+import { effectivePrincipalBillableHrsWeek } from "@/lib/finance";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({ meta: [{ title: "Set up your studio — Sightline" }] }),
@@ -80,6 +86,7 @@ function Onboarding() {
   const [availHrs, setAvailHrs] = useState<string>("40");
   const [billHrs, setBillHrs] = useState<string>("24");
   const [targetMargin, setTargetMargin] = useState<string>("55");
+  const [pricingStructure, setPricingStructure] = useState<PricingStructure>("hourly");
   const [rateBilled, setRateBilled] = useState<string>("");
   const [weeksPerYear, setWeeksPerYear] = useState<string>("48");
 
@@ -116,7 +123,42 @@ function Onboarding() {
   const [saving, setSaving] = useState(false);
   const [sentInvites, setSentInvites] = useState<string[]>([]);
 
-  const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  const capBillableHrs = (bill: string, avail: string) => {
+    const availN = Number(avail) || 0;
+    const billN = Number(bill) || 0;
+    if (availN > 0 && billN > availN) return String(availN);
+    return bill;
+  };
+
+  const next = () => {
+    if (step === 1) {
+      const availN = Number(availHrs) || 0;
+      const billHrsN = effectivePrincipalBillableHrsWeek({
+        available_hrs_per_week: availN || null,
+        target_billable_hrs_per_week: Number(billHrs) || null,
+      } as any);
+      const marginN = Number(targetMargin);
+      if (!Number.isFinite(billHrsN) || billHrsN <= 0) {
+        toast.error("Enter target billable hours per week.");
+        return;
+      }
+      if (availN > 0 && Number(billHrs) > availN) {
+        setBillHrs(String(availN));
+      }
+      if (!Number.isFinite(marginN) || marginN <= 0) {
+        toast.error("Enter a target gross margin.");
+        return;
+      }
+      if (requiresBilledRate(pricingStructure)) {
+        const rateN = Number(rateBilled);
+        if (!Number.isFinite(rateN) || rateN <= 0) {
+          toast.error("Enter your current billed rate.");
+          return;
+        }
+      }
+    }
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  };
   const back = () => setStep((s) => Math.max(s - 1, 0));
 
   const addExpenseLocal = () => {
@@ -199,7 +241,10 @@ function Onboarding() {
       const drawCombined = (Number(salary) || 0) + (Number(distributions) || 0);
       // 1) Capacity & targets → firm_config
       try {
-        const billHrsN = Number(billHrs);
+        const billHrsN = effectivePrincipalBillableHrsWeek({
+          available_hrs_per_week: Number(availHrs) || null,
+          target_billable_hrs_per_week: Number(billHrs) || null,
+        } as any);
         const marginN = Number(targetMargin);
         const rateN = Number(rateBilled);
         await saveConfig({
@@ -211,7 +256,11 @@ function Onboarding() {
             available_hrs_per_week: Number(availHrs) || null,
             target_billable_hrs_per_week: Number.isFinite(billHrsN) ? billHrsN : 0,
             target_gross_margin_pct: Number.isFinite(marginN) && marginN > 0 ? marginN : 42,
-            rate_billed: Number.isFinite(rateN) ? rateN : 0,
+            pricing_structure: pricingStructure,
+            rate_billed:
+              requiresBilledRate(pricingStructure) && Number.isFinite(rateN) && rateN > 0
+                ? rateN
+                : null,
           },
         });
       } catch (e) {
@@ -471,7 +520,10 @@ function Onboarding() {
                 <Field
                   label="Available hours / week"
                   value={availHrs}
-                  onChange={setAvailHrs}
+                  onChange={(v) => {
+                    setAvailHrs(v);
+                    setBillHrs((prev) => capBillableHrs(prev, v));
+                  }}
                   tip={{
                     term: "Available hours / week",
                     definition:
@@ -482,13 +534,13 @@ function Onboarding() {
                 <Field
                   label="Target billable hours / week"
                   value={billHrs}
-                  onChange={setBillHrs}
+                  onChange={(v) => setBillHrs(capBillableHrs(v, availHrs))}
                   tip={{
                     term: "Target billable hours / week",
                     definition:
                       "This number drives your aligned rate. Fewer billable hours means each hour carries more of the cost load, which raises your floor. Enter the number you actually hit most weeks — not your best week or your goal. Overestimating here produces a rate that looks right but won't hold up.",
                   }}
-                  helper="Most designers bill 60–75% of their available hours once admin, business development, and non-client time are accounted for. If you work 40 hours, a realistic target is often 24–30 billable hours."
+                  helper="Most designers bill 60–75% of their available hours once admin, business development, and non-client time are accounted for. If you work 40 hours, a realistic target is often 24–30 billable hours. Cannot exceed available hours."
                 />
               </Row>
               <Row>
@@ -511,21 +563,31 @@ function Onboarding() {
                   helper="Most design firms work 46–48 weeks after accounting for holidays and time off."
                 />
               </Row>
-              <Row>
-                <Field
-                  label="Your current billed rate"
-                  prefix="$"
-                  value={rateBilled}
-                  onChange={setRateBilled}
-                  tip={{
-                    term: "Billed rate",
-                    definition:
-                      "The hourly rate you currently charge clients. Sightline compares this against your aligned rate — the rate math says you need to charge to hit your margin target — so you can see whether you're pricing above or below your floor. Leave blank if you don't have one yet; you can add it in Settings later.",
-                  }}
-                  helper="Leave blank if you don't charge hourly yet. You can set it later in Settings."
-                />
-                <div />
-              </Row>
+              <PricingStructureSelector
+                value={pricingStructure}
+                onChange={(nextStructure) => {
+                  setPricingStructure(nextStructure);
+                  if (!requiresBilledRate(nextStructure)) setRateBilled("");
+                }}
+                className="pt-1"
+              />
+              {requiresBilledRate(pricingStructure) ? (
+                <Row>
+                  <Field
+                    label="Your current billed rate"
+                    prefix="$"
+                    value={rateBilled}
+                    onChange={setRateBilled}
+                    tip={{
+                      term: "Billed rate",
+                      definition:
+                        "The hourly rate you currently charge clients. Sightline compares this against your aligned rate — the rate math says you need to charge to hit your margin target — so you can see whether you're pricing above or below your floor.",
+                    }}
+                    helper="Required for hourly and hybrid pricing."
+                  />
+                  <div />
+                </Row>
+              ) : null}
             </div>
           )}
 
@@ -694,7 +756,20 @@ function Onboarding() {
                   ["Billable target hrs/wk", billHrs],
                   ["Target gross margin", `${targetMargin}%`],
                   ["Working weeks/yr", weeksPerYear || "48"],
-                  ["Current billed rate", rateBilled ? `$${Number(rateBilled).toLocaleString()}/hr` : "Not set"],
+                  [
+                    "Pricing structure",
+                    pricingStructure === "flat_fee"
+                      ? "Flat project fee"
+                      : pricingStructure === "both"
+                        ? "Hourly and flat"
+                        : "Hourly",
+                  ],
+                  [
+                    "Current billed rate",
+                    requiresBilledRate(pricingStructure) && rateBilled
+                      ? `$${Number(rateBilled).toLocaleString()}/hr`
+                      : "Not applicable",
+                  ],
                 ]} />
                 <Summary title={`Expenses (${expenses.length})`} rows={expenses.map((e) => [e.name, `$${e.amount.toLocaleString()} ${e.frequency}`])} />
                 <Summary title={`Team (${team.length})`} rows={team.length ? team.map((t) => [t.name, t.role]) : [["No team members", "—"]]} />

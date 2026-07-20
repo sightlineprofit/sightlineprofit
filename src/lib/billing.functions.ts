@@ -8,7 +8,7 @@ import {
   CHECKOUT_PRICE_KEYS,
   PRICE_TO_TIER,
 } from "@/lib/stripe.server";
-import { resolveOrCreateCustomerForFirm, resolvePriceKey, updateFirmBillingFromBackend } from "@/lib/stripe-billing-sync.server";
+import { reconcileLegacyFirmStripeBilling, resolvePriceKey, updateFirmBillingFromBackend } from "@/lib/stripe-billing-sync.server";
 
 const envSchema = z.enum(["sandbox", "live"]);
 const priceKeySchema = z.enum(CHECKOUT_PRICE_KEYS);
@@ -52,37 +52,11 @@ export const createCheckoutSession = createServerFn({ method: "POST" })
       if (!prices.data.length) return { error: `Price not found: ${priceLookup}` };
       const price = prices.data[0];
 
-      const hadCachedCustomerId = !!firm.stripe_customer_id;
-      let customerId = firm.stripe_customer_id ?? undefined;
-      if (customerId) {
-        try {
-          const existingCustomer: any = await stripe.customers.retrieve(customerId);
-          if (existingCustomer?.deleted) customerId = undefined;
-        } catch (e) {
-          console.warn(
-            "[createCheckoutSession] cached customer id is not available in this Stripe environment; creating one for current mode",
-            (e as Error).message,
-          );
-          customerId = undefined;
-        }
-      }
-      if (!customerId) {
-        customerId = await resolveOrCreateCustomerForFirm(stripe, {
-          firmId: firm.id,
-          email: profile.email ?? undefined,
-          firmName: firm.name,
-        });
-        if (!hadCachedCustomerId) {
-          // Persist immediately so we don't re-search Stripe on every retry
-          // while the webhook is still in flight.
-          try {
-            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-            await updateFirmBillingFromBackend(supabaseAdmin, firm.id, { stripe_customer_id: customerId });
-          } catch (e) {
-            console.warn("[createCheckoutSession] failed to cache customer id", e);
-          }
-        }
-      }
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const customerId = await reconcileLegacyFirmStripeBilling(supabaseAdmin, stripe, firm, {
+        email: profile.email ?? undefined,
+        logPrefix: "[createCheckoutSession]",
+      });
 
       // Honour remaining trial time on new subscriptions.
       const trialEnd = firm.trial_ends_at ? Math.floor(new Date(firm.trial_ends_at).getTime() / 1000) : 0;
@@ -124,21 +98,27 @@ export const createBillingPortalSession = createServerFn({ method: "POST" })
       const { supabase, userId } = context;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("firm_id")
+        .select("firm_id, email")
         .eq("id", userId)
         .maybeSingle();
       if (!profile?.firm_id) return { error: "No firm associated with user" };
 
       const { data: firm } = await supabase
         .from("firms")
-        .select("stripe_customer_id")
+        .select("id, name, stripe_customer_id, stripe_subscription_id, stripe_payment_method_id, subscription_status")
         .eq("id", profile.firm_id)
         .maybeSingle();
-      if (!firm?.stripe_customer_id) return { error: "No billing account yet — subscribe first" };
+      if (!firm) return { error: "Firm not found" };
 
       const stripe = createStripeClient(data.environment);
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const customerId = await reconcileLegacyFirmStripeBilling(supabaseAdmin, stripe, firm, {
+        email: profile.email ?? undefined,
+        logPrefix: "[createBillingPortalSession]",
+      });
+
       const portal = await stripe.billingPortal.sessions.create({
-        customer: firm.stripe_customer_id,
+        customer: customerId,
         return_url: data.returnUrl,
       });
       return { url: portal.url };
@@ -154,7 +134,7 @@ export const getBillingSummary = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data: profile } = await supabase
       .from("profiles")
-      .select("firm_id")
+      .select("firm_id, email")
       .eq("id", userId)
       .maybeSingle();
     if (!profile?.firm_id) return null;
@@ -164,27 +144,45 @@ export const getBillingSummary = createServerFn({ method: "GET" })
       .eq("id", profile.firm_id)
       .maybeSingle();
     if (!firm) return null;
+
+    const env: StripeEnv = process.env.STRIPE_LIVE_API_KEY ? "live" : "sandbox";
+    const stripe = createStripeClient(env);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      await reconcileLegacyFirmStripeBilling(supabaseAdmin, stripe, firm, {
+        email: profile.email ?? undefined,
+        logPrefix: "[getBillingSummary]",
+      });
+    } catch (e) {
+      console.warn("[getBillingSummary] legacy billing reconcile failed", (e as Error).message);
+    }
+
+    const { data: refreshed } = await supabaseAdmin
+      .from("firms")
+      .select("id, name, subscription_tier, subscription_status, trial_ends_at, current_period_end, past_due_since, stripe_customer_id, stripe_subscription_id, stripe_price_id, stripe_payment_method_id, billing_frequency")
+      .eq("id", firm.id)
+      .maybeSingle();
+    const billingFirm = refreshed ?? firm;
+
     // Best-effort: attach card summary + upcoming invoice amount from Stripe.
     let card: { brand: string; last4: string; exp_month: number; exp_year: number } | null = null;
     let nextChargeAmountCents: number | null = null;
     try {
-      const env: StripeEnv = process.env.STRIPE_LIVE_API_KEY ? "live" : "sandbox";
-      const stripe = createStripeClient(env);
-      if (firm.stripe_payment_method_id) {
-        const pm = await stripe.paymentMethods.retrieve(firm.stripe_payment_method_id);
+      if (billingFirm.stripe_payment_method_id) {
+        const pm = await stripe.paymentMethods.retrieve(billingFirm.stripe_payment_method_id);
         if (pm.card) {
           card = { brand: pm.card.brand, last4: pm.card.last4, exp_month: pm.card.exp_month, exp_year: pm.card.exp_year };
         }
       }
-      if (firm.stripe_subscription_id) {
-        const sub = await stripe.subscriptions.retrieve(firm.stripe_subscription_id);
+      if (billingFirm.stripe_subscription_id) {
+        const sub = await stripe.subscriptions.retrieve(billingFirm.stripe_subscription_id);
         const item = sub.items?.data?.[0];
         nextChargeAmountCents = (item?.price?.unit_amount ?? null) as number | null;
       }
     } catch (e) {
       console.warn("[getBillingSummary] stripe enrichment failed", (e as Error).message);
     }
-    return { ...firm, card, nextChargeAmountCents };
+    return { ...billingFirm, card, nextChargeAmountCents };
   });
 
 export const activateSubscription = createServerFn({ method: "POST" })
@@ -203,60 +201,77 @@ export const activateSubscription = createServerFn({ method: "POST" })
       const { supabase, userId } = context;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("firm_id")
+        .select("firm_id, email")
         .eq("id", userId)
         .maybeSingle();
       if (!profile?.firm_id) return { error: "No firm associated with user" };
 
       const { data: firm } = await supabase
         .from("firms")
-        .select("id, stripe_customer_id, stripe_payment_method_id, stripe_price_id, stripe_subscription_id, trial_ends_at")
+        .select("id, name, stripe_customer_id, stripe_payment_method_id, stripe_price_id, stripe_subscription_id, trial_ends_at, subscription_status")
         .eq("id", profile.firm_id)
         .maybeSingle();
       if (!firm) return { error: "Firm not found" };
-      if (!firm.stripe_customer_id) return { error: "No billing account on file" };
-      if (firm.stripe_subscription_id) return { error: "Subscription already active" };
 
       const paymentMethodId = data.paymentMethodId ?? firm.stripe_payment_method_id;
       if (!paymentMethodId) return { error: "No payment method on file" };
 
       const stripe = createStripeClient(data.environment);
-      const priceKey = resolvePriceKey(data.frequency, firm.stripe_price_id);
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await reconcileLegacyFirmStripeBilling(supabaseAdmin, stripe, firm, {
+        email: profile.email ?? undefined,
+        logPrefix: "[activateSubscription]",
+      });
+
+      const { data: refreshed } = await supabaseAdmin
+        .from("firms")
+        .select("id, name, stripe_customer_id, stripe_payment_method_id, stripe_price_id, stripe_subscription_id, trial_ends_at, subscription_status")
+        .eq("id", firm.id)
+        .maybeSingle();
+      const billingFirm = refreshed ?? firm;
+      if (billingFirm.stripe_subscription_id) return { error: "Subscription already active" };
+
+      const customerId = billingFirm.stripe_customer_id;
+      if (!customerId) return { error: "No billing account on file" };
+
+      const priceKey = resolvePriceKey(data.frequency, billingFirm.stripe_price_id);
       const prices = await stripe.prices.list({ lookup_keys: [priceKey] });
       if (!prices.data.length) return { error: `Price not found: ${priceKey}` };
       const price = prices.data[0];
 
       // Attach the payment method if it isn't already, and set it as default.
       try {
-        await stripe.paymentMethods.attach(paymentMethodId, { customer: firm.stripe_customer_id });
+        await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
       } catch (e: any) {
         // Ignore "already attached" errors; rethrow otherwise.
         if (!/already been attached/i.test(String(e?.raw?.message ?? e?.message ?? ""))) throw e;
       }
-      await stripe.customers.update(firm.stripe_customer_id, {
+      await stripe.customers.update(customerId, {
         invoice_settings: { default_payment_method: paymentMethodId },
       });
 
       // Honour remaining trial time (if the user is still trialing).
-      const trialEnd = firm.trial_ends_at ? Math.floor(new Date(firm.trial_ends_at).getTime() / 1000) : 0;
+      const trialEnd = billingFirm.trial_ends_at
+        ? Math.floor(new Date(billingFirm.trial_ends_at).getTime() / 1000)
+        : 0;
       const now = Math.floor(Date.now() / 1000);
       const trialParam = trialEnd > now + 60 ? { trial_end: trialEnd } : {};
 
       const sub = await stripe.subscriptions.create({
-        customer: firm.stripe_customer_id,
+        customer: customerId,
         items: [{ price: price.id }],
         default_payment_method: paymentMethodId,
-        metadata: { firmId: firm.id, userId, priceKey },
+        metadata: { firmId: billingFirm.id, userId, priceKey },
         ...trialParam,
       });
 
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await updateFirmBillingFromBackend(supabaseAdmin, firm.id, {
+      await updateFirmBillingFromBackend(supabaseAdmin, billingFirm.id, {
           subscription_status: sub.status,
           billing_frequency: data.frequency,
           stripe_subscription_id: sub.id,
           stripe_price_id: priceKey,
           stripe_payment_method_id: paymentMethodId,
+          stripe_customer_id: customerId,
         });
 
       return { ok: true };

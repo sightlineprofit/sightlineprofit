@@ -492,7 +492,7 @@ function MarginContent({ c, targetMarginPct }: { c: Calc; targetMarginPct: numbe
 function BreakevenContent({ c, cfg }: { c: Calc; cfg: any }) {
   const be = c.breakEvenRate || 0;
   const hrs = c.annualBillableHrs || 0;
-  const perWeek = Number(cfg?.target_billable_hrs_per_week) || c.targetBillableHrsWeek || 0;
+  const perWeek = c.principalBillableHrsWeek || Number(cfg?.target_billable_hrs_per_week) || c.targetBillableHrsWeek || 0;
   const weeks = c.weeksPerYear || 48;
   const owner = c.compTotal || 0;
   const team = c.teamCostTotal || 0;
@@ -766,8 +766,9 @@ function BudgetRevenueContent({
         </div>
       ) : (
         <Paragraph>
-          Budget revenue is what your firm would earn if every billable contributor billed
-          their target hours at their current rate.
+          Budget revenue is the potential annual revenue if every billable contributor hits
+          their target billable hours at their current billed rates (principal billable hours
+          are capped at available hours per week).
         </Paragraph>
       )}
       <div
@@ -794,6 +795,9 @@ function BudgetRevenueContent({
           {fmtUsd(total)}/yr
         </span>
       </div>
+      <Paragraph>
+        Potential revenue if everyone hits their target billable hours at their billed rates.
+      </Paragraph>
 
       <SectionHead>What this revenue does</SectionHead>
       <RowLine
@@ -803,10 +807,14 @@ function BudgetRevenueContent({
         hint={covers ? `${fmtUsd(floor)}/yr` : `Shortfall: ${fmtUsd(floor - total)}/yr`}
       />
       <RowLine
-        label="Generates margin"
+        label="Potential margin if targets are hit"
         value={covers ? `${fmtUsd(marginAnnual)}/yr` : `-${fmtUsd(Math.abs(marginAnnual))}/yr`}
         valueColor={covers ? GOLD : TERRA}
-        hint={covers ? `${marginPct}% margin` : "Negative margin"}
+        hint={
+          covers
+            ? `${marginPct}% of budget revenue at billed rates — not your target gross margin %`
+            : "Negative margin at billed rates"
+        }
       />
       <RowLine
         label="vs. Revenue at aligned rate"
