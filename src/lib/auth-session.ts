@@ -16,7 +16,7 @@ function cleanAuthParamsFromUrl(): void {
 let exchangeInFlight: Promise<void> | null = null;
 
 function isOAuthCallbackError(message: string): boolean {
-  return /Unable to exchange external code|invalid grant|PKCE|code verifier|oauth/i.test(
+  return /Unable to exchange external code|invalid grant|PKCE|code verifier|oauth state has expired|state has expired/i.test(
     message,
   );
 }
@@ -70,6 +70,11 @@ export async function waitForAuthSession(): Promise<void> {
       } catch (error) {
         cleanAuthParamsFromUrl();
         const message = error instanceof Error ? error.message : "Sign-in failed";
+        if (/oauth state has expired|state has expired/i.test(message)) {
+          throw new Error(
+            "Google sign-in timed out in your browser. Close this tab, open a fresh window at https://sightlineprofit.com/login, and try again — do not refresh.",
+          );
+        }
         if (isOAuthCallbackError(message)) {
           throw new Error(
             "Google sign-in failed: Supabase could not verify your Google account. " +

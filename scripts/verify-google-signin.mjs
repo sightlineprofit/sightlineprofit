@@ -51,17 +51,20 @@ if (!secret || secret.length < 10) {
   console.log("✗ No Google client secret (or too short)");
   ok = false;
 } else {
-  console.log(`✓ Client secret is set (${secret.length} chars)`);
-  if (/\s/.test(secret)) {
-    console.log("  ⚠ Secret contains whitespace — re-paste without spaces");
-    ok = false;
-  }
-  if (!secret.startsWith("GOCSPX-") || secret.length < 30 || secret.length > 45) {
-    console.log(
-      "  ⚠ Unusual secret length/format — Google Web client secrets are usually ~35 chars starting with GOCSPX-",
-    );
-    console.log("    Regenerate in Google Cloud → paste fresh into Supabase → Auth → Google → Save");
-    ok = false;
+  // GET /config/auth returns a hash (e.g. "hash:…", ~64 chars), not plaintext GOCSPX-.
+  const looksHashed = secret.startsWith("hash:") || (secret.length >= 60 && !secret.startsWith("GOCSPX-"));
+  if (looksHashed) {
+    console.log("✓ Client secret is configured (stored as hash — length check not applicable)");
+  } else {
+    console.log(`✓ Client secret is set (${secret.length} chars)`);
+    if (/\s/.test(secret)) {
+      console.log("  ⚠ Secret contains whitespace — re-paste without spaces");
+      ok = false;
+    }
+    if (!secret.startsWith("GOCSPX-") || secret.length < 30 || secret.length > 45) {
+      console.log("  ⚠ Unusual plaintext secret format — expected GOCSPX-… (~35 chars)");
+      ok = false;
+    }
   }
 }
 

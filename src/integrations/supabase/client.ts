@@ -2,6 +2,7 @@
 import "@/lib/auth-callback-redirect";
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { createAuthStorage } from '@/lib/auth-storage';
 
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
@@ -21,7 +22,7 @@ function createSupabaseClient() {
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {
-      storage: typeof window !== 'undefined' ? localStorage : undefined,
+      storage: typeof window !== 'undefined' ? createAuthStorage() : undefined,
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,

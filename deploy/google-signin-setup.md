@@ -35,7 +35,7 @@ No trailing slash on the Supabase callback URI.
 
 After pasting the secret, click **Save**. Re-copy if unsure — trailing spaces break exchange.
 
-Optional CLI sync (also sets Site URL + redirect allow list):
+**Do not** judge secret validity from `npm run verify:google-signin` length alone — the Supabase Management API returns a **hash** (~64 chars), not your plaintext `GOCSPX-…` value. The script only confirms a secret is **configured**.
 
 ```bash
 # Add to .env.local (gitignored):

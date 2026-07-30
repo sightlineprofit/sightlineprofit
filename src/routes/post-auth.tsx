@@ -204,7 +204,7 @@ function PostAuth() {
           nav({ to: "/login" });
           return;
         }
-        if (/Google sign-in|Unable to exchange external code|invalid grant|PKCE/i.test(msg)) {
+        if (/Google sign-in|Unable to exchange external code|invalid grant|PKCE|state has expired|OAuth state/i.test(msg)) {
           toast.error(msg);
           nav({ to: "/login" });
           return;
