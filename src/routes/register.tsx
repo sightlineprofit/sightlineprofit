@@ -16,6 +16,7 @@ import {
   writeSavedCheckoutEnvironment,
   type StripeEnv,
 } from "@/lib/stripe";
+import { getAuthAppOrigin } from "@/lib/auth-callback-redirect";
 
 type Step = "account" | "payment";
 
@@ -270,7 +271,7 @@ function RegisterPage() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/post-auth?env=${redirectEnv}`,
+        emailRedirectTo: `${getAuthAppOrigin()}/post-auth?env=${redirectEnv}`,
         data: { name: ownerName, firm_name: firmName },
       },
     });
@@ -308,7 +309,7 @@ function RegisterPage() {
       }),
     );
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/post-auth?env=${redirectEnv}`,
+      redirect_uri: `${getAuthAppOrigin()}/post-auth?env=${redirectEnv}`,
     });
     if (result.error) {
       toast.error(result.error.message || "Google sign-in failed");
@@ -717,7 +718,7 @@ function StepPayment(props: {
       ) : priceKey ? (
         <StripeEmbeddedCheckoutPane
           priceKey={priceKey}
-          returnUrl={`${window.location.origin}/post-auth?env=${props.checkoutEnvironment}&session_id={CHECKOUT_SESSION_ID}`}
+          returnUrl={`${getAuthAppOrigin()}/post-auth?env=${props.checkoutEnvironment}&session_id={CHECKOUT_SESSION_ID}`}
           environment={props.checkoutEnvironment}
         />
       ) : (

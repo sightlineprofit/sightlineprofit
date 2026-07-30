@@ -31,6 +31,7 @@
     "setup:resend-secrets": "bash scripts/setup-resend-secrets.sh",
     "setup:resend-templates": "node scripts/setup-resend-templates.mjs",
     "setup:auth-leaked-passwords": "node scripts/enable-auth-leaked-passwords.mjs",
+    "setup:google-signin": "node --env-file=.env.local scripts/setup-google-signin.mjs",
     "register:resend-domain": "node scripts/register-resend-domain.mjs",
     "test:resend-email": "node scripts/test-resend-email.mjs",
     "test:resend-team-invite": "node scripts/test-resend-team-invite.mjs"

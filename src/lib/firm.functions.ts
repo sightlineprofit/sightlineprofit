@@ -69,11 +69,33 @@ async function linkProfileToFirmIfNull(
   return typeof data === "string" ? data : null;
 }
 
+/** OAuth signups occasionally land before handle_new_user finishes — backfill profile row. */
+async function ensureUserProfile(userId: string): Promise<void> {
+  const { data: existing } = await supabaseAdmin
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (existing) return;
+
+  const { data: authUser, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (error || !authUser?.user) return;
+
+  const u = authUser.user;
+  const meta = (u.user_metadata ?? {}) as Record<string, string>;
+  await supabaseAdmin.from("profiles").insert({
+    id: userId,
+    email: u.email ?? "",
+    name: meta.name || meta.full_name || u.email?.split("@")[0] || "",
+  });
+}
+
 /** Admin read of firm_id — used at login before any bootstrap writes. */
 export const getAuthBootstrapState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId } = context;
+    await ensureUserProfile(userId);
     await linkOwnedFirmIfMissing(userId);
     const { data: profile } = await supabaseAdmin
       .from("profiles")
@@ -207,6 +229,7 @@ export const getMyContext = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    await ensureUserProfile(userId);
     await linkOwnedFirmIfMissing(userId);
     // Admin read for the signed-in user only — avoids RLS gaps during login/bootstrap.
     const { data: profile } = await supabaseAdmin

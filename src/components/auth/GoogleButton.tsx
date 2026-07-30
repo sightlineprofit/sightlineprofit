@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { getAuthAppOrigin } from "@/lib/auth-callback-redirect";
 import { lovable } from "@/integrations/lovable";
 import { ghostBtnClass } from "./AuthShell";
 
@@ -8,7 +9,7 @@ export function GoogleButton({ label }: { label: string }) {
   const onClick = async () => {
     setLoading(true);
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin + "/post-auth",
+      redirect_uri: `${getAuthAppOrigin()}/post-auth`,
     });
     if (result.error) {
       setLoading(false);

@@ -361,6 +361,76 @@ export const switchBillingFrequency = createServerFn({ method: "POST" })
     }
   });
 
+const CHECKOUT_SESSION_EXPAND = [
+  "subscription",
+  "subscription.items.data.price",
+  "customer",
+] as const;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Poll checkout session / customer until Stripe attaches a subscription (managed payments can lag). */
+async function resolveSubscriptionFromCheckoutSession(
+  stripe: ReturnType<typeof createStripeClient>,
+  sessionId: string,
+  opts?: { firmId?: string; maxAttempts?: number; intervalMs?: number },
+) {
+  const maxAttempts = opts?.maxAttempts ?? 24;
+  const intervalMs = opts?.intervalMs ?? 1500;
+  let session: any = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: [...CHECKOUT_SESSION_EXPAND],
+    });
+
+    const subRef: any = session.subscription;
+    const subId = typeof subRef === "string" ? subRef : subRef?.id;
+    const paid =
+      session.payment_status === "paid" ||
+      session.status === "complete";
+
+    if (subId && paid) {
+      const sub =
+        typeof subRef === "string"
+          ? await stripe.subscriptions.retrieve(subId, { expand: ["items.data.price"] })
+          : subRef;
+      return { session, sub };
+    }
+
+    if (attempt < maxAttempts - 1) {
+      await sleep(intervalMs);
+    }
+  }
+
+  const customerId =
+    typeof session?.customer === "string" ? session.customer : session?.customer?.id;
+  if (customerId) {
+    const listed = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 10,
+    });
+    const firmId = opts?.firmId;
+    const match =
+      (firmId
+        ? listed.data.find((s) => s.metadata?.firmId === firmId)
+        : undefined) ??
+      listed.data.find((s) => s.status === "active" || s.status === "trialing") ??
+      listed.data[0];
+    if (match?.id) {
+      const sub = await stripe.subscriptions.retrieve(match.id, {
+        expand: ["items.data.price"],
+      });
+      return { session, sub };
+    }
+  }
+
+  return { session, sub: null as any };
+}
+
 /**
  * Fallback used by /post-auth when the Stripe webhook is slow or fails.
  * Retrieves the checkout session server-side, then syncs the firm's billing
@@ -383,18 +453,16 @@ export const syncFirmFromStripeSession = createServerFn({ method: "POST" })
       if (!profile?.firm_id) return { error: "No firm associated with user" };
 
       const stripe = createStripeClient(data.environment);
-      const session = await stripe.checkout.sessions.retrieve(data.session_id, {
-        expand: ["subscription", "subscription.items.data.price", "customer"],
-      });
+      const { session, sub: resolvedSub } = await resolveSubscriptionFromCheckoutSession(
+        stripe,
+        data.session_id,
+        { firmId: profile.firm_id },
+      );
+      if (!resolvedSub?.id) {
+        return { error: "No subscription on this checkout session yet" };
+      }
 
-      const subRef: any = (session as any).subscription;
-      const subId = typeof subRef === "string" ? subRef : subRef?.id;
-      if (!subId) return { error: "No subscription on this checkout session yet" };
-
-      const sub =
-        typeof subRef === "string"
-          ? await stripe.subscriptions.retrieve(subId, { expand: ["items.data.price"] })
-          : subRef;
+      const sub = resolvedSub;
 
       let customer: any = null;
       const custRef: any = (session as any).customer;

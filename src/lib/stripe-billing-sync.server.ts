@@ -169,8 +169,13 @@ export async function syncFirmBillingFromSubscription(
     stripe_subscription_id: sub.id ?? null,
     subscription_status: status,
     subscription_tier: "practice",
-    trial_ends_at: trialEnd ? new Date(trialEnd * 1000).toISOString() : null,
   };
+  // Do not wipe an in-flight trial when Stripe has no trial_end yet (managed checkout).
+  if (trialEnd) {
+    patch.trial_ends_at = new Date(trialEnd * 1000).toISOString();
+  } else if (status === "active" || status === "canceled") {
+    patch.trial_ends_at = null;
+  }
   if (lookup) patch.stripe_price_id = lookup;
   if (freq) patch.billing_frequency = freq;
   if (periodEnd) patch.current_period_end = new Date(periodEnd * 1000).toISOString();

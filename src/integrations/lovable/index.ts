@@ -1,4 +1,5 @@
 import { supabase } from "../supabase/client";
+import { getAuthAppOrigin } from "@/lib/auth-callback-redirect";
 
 type SignInOptions = {
   redirect_uri?: string;
@@ -23,7 +24,7 @@ export const lovable = {
         };
       }
 
-      const redirectTo = opts?.redirect_uri ?? `${window.location.origin}/post-auth`;
+      const redirectTo = opts?.redirect_uri ?? `${getAuthAppOrigin()}/post-auth`;
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {

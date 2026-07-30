@@ -8,33 +8,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { landingPathFor } from "@/lib/role";
 import { firmHasAppAccess } from "@/lib/firm-access";
-
-/** Complete the Supabase OAuth PKCE redirect before post-auth routing runs. */
-async function ensureOAuthSession(): Promise<void> {
-  if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get("code");
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) throw error;
-
-    params.delete("code");
-    const qs = params.toString();
-    const next = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
-    window.history.replaceState({}, "", next);
-    return;
-  }
-
-  // Implicit/hash callback (some providers still return #access_token=...)
-  const hash = window.location.hash;
-  if (hash.includes("access_token=")) {
-    const { error } = await supabase.auth.getSession();
-    if (error) throw error;
-    window.history.replaceState({}, "", window.location.pathname + window.location.search);
-  }
-}
+import { waitForAuthSession } from "@/lib/auth-session";
 
 export const Route = createFileRoute("/post-auth")({
+  ssr: false,
   head: () => ({ meta: [{ title: "Setting up — Sightline" }] }),
   validateSearch: (s: Record<string, unknown>): { session_id?: string; env?: StripeEnv } => ({
     session_id: typeof s.session_id === "string" ? s.session_id : undefined,
@@ -52,7 +29,7 @@ function PostAuth() {
   const syncFromSession = useServerFn(syncFirmFromStripeSession);
   const [status, setStatus] = useState<
     | { kind: "working"; message: string }
-    | { kind: "timeout" }
+    | { kind: "timeout"; detail?: string }
   >({ kind: "working", message: "Setting up your studio…" });
   const [attempt, setAttempt] = useState(0);
 
@@ -61,7 +38,8 @@ function PostAuth() {
   const goToApp = useCallback(
     (ctx: Awaited<ReturnType<typeof getCtx>>) => {
       if (!ctx?.profile) {
-        nav({ to: "/login" });
+        toast.error("Your account is still setting up. Please try again in a moment.");
+        setAttempt((n) => n + 1);
         return;
       }
       const target = landingPathFor(ctx.profile, ctx.firm as any);
@@ -71,9 +49,10 @@ function PostAuth() {
   );
 
   const run = useCallback(async (): Promise<void> => {
-    await ensureOAuthSession();
+    await waitForAuthSession();
     const { data } = await supabase.auth.getUser();
     if (!data.user) {
+      toast.error("Could not complete sign-in. Please try Google again.");
       nav({ to: "/login" });
       return;
     }
@@ -114,15 +93,17 @@ function PostAuth() {
       });
       localStorage.removeItem("sightline_pending_firm");
       sessionStorage.removeItem("sightline_pending_firm");
+      bootstrap = await getBootstrap();
       ctx = await getCtx();
     }
 
-    const firmId = bootstrap.firmId ?? ctx?.profile?.firm_id;
+    let firmId = bootstrap.firmId ?? ctx?.profile?.firm_id;
     let firm = ctx?.firm as any;
 
     if (firmId && !firm) {
       ctx = await getCtx();
       firm = ctx?.firm as any;
+      firmId = bootstrap.firmId ?? ctx?.profile?.firm_id ?? firmId;
     }
 
     if (firmId && firmHasAppAccess(firm)) {
@@ -137,17 +118,19 @@ function PostAuth() {
 
     // Firm exists but billing is not active yet.
     if (fromStripe) {
-      const maxAttempts = 10;
+      const maxAttempts = 20;
       const intervalMs = 1500;
+      let lastSyncError: string | undefined;
+
       for (let i = 0; i < maxAttempts; i++) {
         setStatus({
           kind: "working",
           message:
             i < 2
               ? "Confirming your payment with Stripe…"
-              : i < 5
+              : i < 8
                 ? "Almost there — finalizing your subscription…"
-                : "Still working on it — this can take a few seconds…",
+                : "Still working on it — this can take up to a minute…",
         });
         await new Promise((r) => setTimeout(r, intervalMs));
         const next = await getCtx();
@@ -157,26 +140,49 @@ function PostAuth() {
           return;
         }
       }
+
       if (search.session_id) {
         setStatus({ kind: "working", message: "Finalizing your account…" });
-        try {
-          const env = resolveCheckoutEnvironment(search.env);
-          const res = await syncFromSession({ data: { session_id: search.session_id, environment: env } });
-          if ("ok" in res && res.ok) {
-            const refreshed = await getCtx();
-            const refFirm = refreshed?.firm as any;
-            if (refreshed?.profile && firmHasAppAccess(refFirm)) {
-              goToApp(refreshed);
-              return;
+        const env = resolveCheckoutEnvironment(search.env);
+        for (let syncAttempt = 0; syncAttempt < 3; syncAttempt++) {
+          try {
+            const res = await syncFromSession({
+              data: { session_id: search.session_id, environment: env },
+            });
+            if ("ok" in res && res.ok) {
+              const refreshed = await getCtx();
+              const refFirm = refreshed?.firm as any;
+              if (refreshed?.profile && firmHasAppAccess(refFirm)) {
+                goToApp(refreshed);
+                return;
+              }
+              break;
             }
-          } else if ("error" in res) {
-            console.warn("[post-auth] fallback sync error:", res.error);
+            if ("error" in res) {
+              lastSyncError = res.error;
+              console.warn("[post-auth] fallback sync error:", res.error);
+            }
+          } catch (e) {
+            lastSyncError = e instanceof Error ? e.message : "Could not finalize billing";
+            console.warn("[post-auth] fallback sync failed:", e);
           }
-        } catch (e) {
-          console.warn("[post-auth] fallback sync failed:", e);
+          if (syncAttempt < 2) {
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+        }
+
+        const refreshed = await getCtx();
+        const refFirm = refreshed?.firm as any;
+        if (refreshed?.profile && firmHasAppAccess(refFirm)) {
+          goToApp(refreshed);
+          return;
         }
       }
-      setStatus({ kind: "timeout" });
+
+      setStatus({
+        kind: "timeout",
+        detail: lastSyncError,
+      });
       return;
     }
 
@@ -191,8 +197,23 @@ function PostAuth() {
         await run();
       } catch (e) {
         if (cancelled) return;
-        toast.error(e instanceof Error ? e.message : "Setup failed");
-        nav({ to: "/login" });
+        const msg = e instanceof Error ? e.message : "Setup failed";
+        console.error("[post-auth]", e);
+        if (/Unauthorized|Invalid token|No authorization/i.test(msg)) {
+          toast.error("Sign-in session expired. Please try again.");
+          nav({ to: "/login" });
+          return;
+        }
+        if (/Google sign-in|Unable to exchange external code|invalid grant|PKCE/i.test(msg)) {
+          toast.error(msg);
+          nav({ to: "/login" });
+          return;
+        }
+        toast.error(msg);
+        setStatus({
+          kind: "timeout",
+          detail: msg,
+        });
       }
     })();
     return () => { cancelled = true; };
@@ -214,6 +235,11 @@ function PostAuth() {
               this usually resolves within a minute. Please refresh, or contact us
               if it persists.
             </p>
+            {status.detail ? (
+              <p className="mt-3 rounded-md bg-white/60 px-3 py-2 text-xs text-ch/70">
+                {status.detail}
+              </p>
+            ) : null}
             <div className="mt-6 flex flex-col items-center gap-2">
               <button
                 type="button"

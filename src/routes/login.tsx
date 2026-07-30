@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { AuthShell, FieldLabel, inputClass, primaryBtnClass } from "@/components/auth/AuthShell";
 import { GoogleButton } from "@/components/auth/GoogleButton";
 
 export const Route = createFileRoute("/login")({
+  ssr: false,
   head: () => ({ meta: [{ title: "Sign in — Sightline" }] }),
   component: LoginPage,
 });
@@ -15,6 +16,12 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) nav({ to: "/post-auth" });
+    });
+  }, [nav]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -2,12 +2,21 @@
 import { createMiddleware } from '@tanstack/react-start'
 import { supabase } from './client'
 
+async function bearerToken(): Promise<string | undefined> {
+  for (let i = 0; i < 40; i++) {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token
+    if (token) return token
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return undefined
+}
+
 // Must be registered as a global `functionMiddleware` in `src/start.ts`; otherwise
 // the browser never attaches the bearer token to serverFn RPCs.
 export const attachSupabaseAuth = createMiddleware({ type: 'function' }).client(
   async ({ next }) => {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
+    const token = await bearerToken()
     return next({
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
