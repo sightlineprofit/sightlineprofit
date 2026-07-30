@@ -68,8 +68,13 @@
   --color-success: var(--success);
   --color-terra: var(--terra);
   --color-danger: var(--danger);
+  --color-charcoal: var(--ch);
+  --color-muted-lt: var(--muted-foreground);
+  --color-sage: var(--success);
+  --color-pinterest: var(--pinterest);
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);
+  --font-voice: var(--font-display);
 }
 
 :root {
@@ -85,6 +90,7 @@
   --success: #5C8A6E;
   --terra: #C4714A;
   --danger: #B85C5C;
+  --pinterest: #E60023;
 
   --background: #FAF7F2;
   --foreground: #2C2C2C;

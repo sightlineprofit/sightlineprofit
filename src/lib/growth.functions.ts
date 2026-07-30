@@ -1,11 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requirePrincipalOrAdmin } from "@/lib/auth-guards.server";
 
 export const getGrowthData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("firm_id")

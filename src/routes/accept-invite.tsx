@@ -10,9 +10,18 @@ type Search = { token?: string };
 
 export const Route = createFileRoute("/accept-invite")({
   head: () => ({ meta: [{ title: "Accept invitation — Sightline" }] }),
-  validateSearch: (s: Record<string, unknown>): Search => ({
-    token: typeof s.token === "string" ? s.token : undefined,
-  }),
+  validateSearch: (s: Record<string, unknown>): Search => {
+    const raw = typeof s.token === "string" ? s.token : undefined;
+    let token = raw;
+    if (raw) {
+      try {
+        token = decodeURIComponent(raw).trim();
+      } catch {
+        token = raw.trim();
+      }
+    }
+    return { token };
+  },
   component: AcceptInvitePage,
 });
 
@@ -45,7 +54,12 @@ function AcceptInvitePage() {
     return <Centered title="Loading…" body="Checking your invitation." />;
   }
   if (data.status === "invalid") {
-    return <Centered title="Invitation not found" body="This link is not valid. Ask your firm principal to send a new invitation." />;
+    return (
+      <Centered
+        title="Invitation not found"
+        body="This link is not valid. Use the link from the most recent invitation email, or ask your firm principal to resend from Settings → Team."
+      />
+    );
   }
   if (data.status === "accepted") {
     return (
@@ -61,6 +75,15 @@ function AcceptInvitePage() {
       <Centered
         title="This invitation link has expired"
         body={`Ask ${data.firmName ?? "your firm"} to resend your invitation from their Settings page.`}
+      />
+    );
+  }
+  if (data.status === "existing_account") {
+    return (
+      <Centered
+        title="This email already has Sightline"
+        body={`${data.email} is already registered. If this was a delivery test, the invite email worked — sign in with your existing account.`}
+        cta={{ label: "Go to sign in", onClick: () => nav({ to: "/login" }) }}
       />
     );
   }

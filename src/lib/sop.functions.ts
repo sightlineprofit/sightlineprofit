@@ -1,6 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { DEFAULT_SOP_TEMPLATES } from "@/lib/sop-seed.server";
+import { listFirmProjects } from "@/lib/project-lifecycle.server";
+import { SOP_ASSIGNED_ROLE_VALUES } from "@/lib/sop-roles";
+
+const FIRM_RESOURCE_BUCKET = "firm-resources";
 
 const phaseSchema = z.object({
   id: z.string().uuid().optional(),
@@ -34,6 +40,87 @@ const templateSchema = z.object({
   phases: z.array(phaseSchema).max(40),
 });
 
+const workflowTypeSchema = z.enum(["project", "firm_operation"]);
+
+function isMissingSortOrderColumn(message: string | undefined) {
+  return !!message && /sort_order/i.test(message) && /(column|schema cache|does not exist)/i.test(message);
+}
+
+function isMissingRelation(message: string | undefined) {
+  return !!message && /(relation|table).*(does not exist|not found)/i.test(message);
+}
+
+async function loadSopTemplates(
+  supabase: {
+    from: (table: string) => {
+      select: (cols: string) => {
+        eq: (col: string, val: string) => {
+          is: (col: string, val: null) => {
+            order: (
+              col: string,
+              opts?: { ascending?: boolean },
+            ) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+          };
+        };
+      };
+    };
+  },
+  firmId: string,
+) {
+  const { data, error } = await supabase
+    .from("sop_templates")
+    .select("*")
+    .eq("firm_id", firmId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  const rows = [...(data ?? [])];
+  rows.sort((a, b) => {
+    const ao = (a as { sort_order?: number }).sort_order;
+    const bo = (b as { sort_order?: number }).sort_order;
+    if (ao != null && bo != null && ao !== bo) return ao - bo;
+    return String((b as { created_at?: string }).created_at ?? "").localeCompare(
+      String((a as { created_at?: string }).created_at ?? ""),
+    );
+  });
+  return rows;
+}
+
+async function safeTableRows<T>(
+  result: PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const { data, error } = await result;
+  if (!error) return data ?? [];
+  if (isMissingRelation(error.message)) return [];
+  throw new Error(error.message);
+}
+
+async function loadFirmResources(
+  supabase: Pick<typeof supabaseAdmin, "from">,
+  firmId: string,
+): Promise<Record<string, unknown>[]> {
+  const { data, error } = await supabase
+    .from("firm_resources")
+    .select("*")
+    .eq("firm_id", firmId)
+    .eq("is_active", true)
+    .order("sort_order")
+    .order("name");
+  if (!error) return data ?? [];
+  if (isMissingSortOrderColumn(error.message)) {
+    const fallback = await supabase
+      .from("firm_resources")
+      .select("*")
+      .eq("firm_id", firmId)
+      .eq("is_active", true)
+      .order("name");
+    if (fallback.error) throw new Error(fallback.error.message);
+    return fallback.data ?? [];
+  }
+  if (isMissingRelation(error.message)) return [];
+  throw new Error(error.message);
+}
+
 export const getSopLibrary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -46,33 +133,55 @@ export const getSopLibrary = createServerFn({ method: "GET" })
     if (!profile?.firm_id) {
       return { templates: [], phases: [], steps: [], projects: [], config: null, lastUsed: {}, usageCounts: {}, activeUsageCounts: {}, hiddenIds: [], role: profile?.role ?? "team" };
     }
-    const [{ data: templates }, { data: phases }, { data: config }, { data: projectsRaw }, { data: prefs }] = await Promise.all([
-      supabase.from("sop_templates").select("*").eq("firm_id", profile.firm_id).is("deleted_at", null).order("created_at", { ascending: false }),
+    const { count: defaultCount } = await supabaseAdmin
+      .from("sop_templates")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", profile.firm_id)
+      .eq("is_default", true)
+      .is("deleted_at", null);
+    if ((defaultCount ?? 0) < DEFAULT_SOP_TEMPLATES.length) {
+      const { ensureDefaultSopsForFirm } = await import("@/lib/sop-seed.server");
+      await ensureDefaultSopsForFirm(profile.firm_id);
+    }
+    const [templates, { data: phases }, { data: config }, projectsResult, { data: prefs }] = await Promise.all([
+      loadSopTemplates(supabase, profile.firm_id),
       supabase.from("sop_phases").select("*").eq("firm_id", profile.firm_id).order("sort_order"),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
-      supabase.from("projects")
-        .select("id, name, client_name, status, sop_template_id, created_at")
-        .eq("firm_id", profile.firm_id)
-        .order("created_at", { ascending: false }),
+      listFirmProjects(supabase, profile.firm_id, {
+        select: "id, name, client_name, status, sop_template_id, created_at",
+        orderBy: { column: "created_at", ascending: false },
+      }),
       (supabase.from("user_sop_preferences" as never) as never as { select: (s: string) => { eq: (k: string, v: string) => Promise<{ data: Array<{ template_id: string; hidden: boolean }> | null }> } })
         .select("template_id, hidden")
         .eq("user_id", userId),
     ]);
-    const projects = projectsRaw ?? [];
+    const projects = projectsResult.data;
     const phaseIds = (phases ?? []).map((p) => p.id);
     const { data: steps } = phaseIds.length
       ? await supabase.from("sop_steps").select("*").in("phase_id", phaseIds).order("sort_order")
       : { data: [] as never[] };
 
     const stepIds = (steps ?? []).map((s: { id: string }) => s.id);
-    const [{ data: stepAssignees }, picker] = stepIds.length
-      ? await Promise.all([
-          supabase.from("sop_step_assignees").select("*").in("sop_step_id", stepIds),
-          import("@/lib/project-cost-snapshot.server").then((m) =>
-            m.listFirmMembersForAssigneePicker(supabase, profile.firm_id),
-          ),
-        ])
-      : [{ data: [] as never[] }, { members: [], principal: { name: "Principal" } }];
+    const [stepAssignees, picker, resources, stepResources] = await Promise.all([
+      stepIds.length
+        ? safeTableRows(
+            supabase.from("sop_step_assignees").select("*").in("sop_step_id", stepIds),
+          )
+        : Promise.resolve([]),
+      import("@/lib/project-cost-snapshot.server").then((m) =>
+        m.listFirmMembersForAssigneePicker(supabase, profile.firm_id),
+      ),
+      loadFirmResources(supabase, profile.firm_id),
+      stepIds.length
+        ? safeTableRows(
+            supabase
+              .from("sop_step_resources")
+              .select("*")
+              .eq("firm_id", profile.firm_id)
+              .in("sop_step_id", stepIds),
+          )
+        : Promise.resolve([]),
+    ]);
 
     const lastUsed: Record<string, string> = {};
     const usageCounts: Record<string, number> = {};
@@ -89,10 +198,12 @@ export const getSopLibrary = createServerFn({ method: "GET" })
     }
     const hiddenIds = (prefs ?? []).filter((p) => p.hidden).map((p) => p.template_id);
     return {
-      templates: templates ?? [],
+      templates: templates as never[],
       phases: phases ?? [],
       steps: steps ?? [],
       stepAssignees: stepAssignees ?? [],
+      resources: resources ?? [],
+      stepResources: stepResources ?? [],
       assigneePickerMembers: picker.members,
       assigneePickerPrincipal: picker.principal,
       projects: projects.map((p) => ({ id: p.id, name: p.name, client_name: p.client_name, status: p.status })),
@@ -580,4 +691,667 @@ export const deleteSopStepAssignee = createServerFn({ method: "POST" })
     const { error } = await supabase.from("sop_step_assignees").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+async function requireFirmAdmin(
+  supabase: { from: (table: string) => unknown },
+  userId: string,
+) {
+  const { data: profile } = await supabase.from("profiles").select("firm_id, role").eq("id", userId).single();
+  if (!profile?.firm_id) throw new Error("No firm");
+  if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
+  return profile as { firm_id: string; role: string };
+}
+
+export const createSopWorkflow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        name: z.string().min(1).max(160),
+        description: z.string().max(4000).optional().nullable(),
+        workflow_type: workflowTypeSchema,
+        icon: z.string().max(80).optional().nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const row: Record<string, unknown> = {
+      firm_id: profile.firm_id,
+      name: data.name,
+      description: data.description ?? null,
+      workflow_type: data.workflow_type,
+      icon: data.icon ?? null,
+      is_active: true,
+      scope_risk_level: "low",
+    };
+    const { data: last, error: sortLookupErr } = await supabase
+      .from("sop_templates")
+      .select("sort_order")
+      .eq("firm_id", profile.firm_id)
+      .eq("workflow_type", data.workflow_type)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!sortLookupErr) {
+      row.sort_order = ((last as { sort_order?: number } | null)?.sort_order ?? -1) + 1;
+    } else if (!isMissingSortOrderColumn(sortLookupErr.message)) {
+      throw new Error(sortLookupErr.message);
+    }
+    const { data: ins, error } = await supabase
+      .from("sop_templates")
+      .insert(row)
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return ins;
+  });
+
+export const renameSopWorkflow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ id: z.string().uuid(), name: z.string().min(1).max(160) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("sop_templates")
+      .update({ name: data.name.trim() })
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const moveSopWorkflow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      id: z.string().uuid(),
+      workflow_type: workflowTypeSchema,
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("sop_templates")
+      .update({ workflow_type: data.workflow_type })
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const reorderSopWorkflows = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      workflow_type: workflowTypeSchema,
+      ordered_ids: z.array(z.string().uuid()).min(1),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { data: existing } = await supabase
+      .from("sop_templates")
+      .select("id")
+      .eq("firm_id", profile.firm_id)
+      .eq("workflow_type", data.workflow_type)
+      .is("deleted_at", null);
+    const allowed = new Set((existing ?? []).map((t: { id: string }) => t.id));
+    if (data.ordered_ids.some((id) => !allowed.has(id))) {
+      throw new Error("Invalid workflow order");
+    }
+    for (let i = 0; i < data.ordered_ids.length; i++) {
+      const { error } = await supabase
+        .from("sop_templates")
+        .update({ sort_order: i })
+        .eq("id", data.ordered_ids[i])
+        .eq("firm_id", profile.firm_id);
+      if (error) {
+        if (isMissingSortOrderColumn(error.message)) {
+          throw new Error("Workflow reorder requires a database update — run npm run db:apply-sop-migration");
+        }
+        throw new Error(error.message);
+      }
+    }
+    return { ok: true };
+  });
+
+export const addSopPhase = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({
+      template_id: z.string().uuid(),
+      name: z.string().min(1).max(120),
+      billable: z.boolean().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { data: phases } = await supabase
+      .from("sop_phases")
+      .select("sort_order")
+      .eq("template_id", data.template_id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const sort_order = (phases?.[0]?.sort_order ?? -1) + 1;
+    const { data: ins, error } = await supabase
+      .from("sop_phases")
+      .insert({
+        firm_id: profile.firm_id,
+        template_id: data.template_id,
+        name: data.name,
+        expected_hrs: 0,
+        estimated_hrs: 0,
+        billable: data.billable ?? true,
+        sort_order,
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return ins;
+  });
+
+const sopStepSaveSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    phase_id: z.string().uuid(),
+    name: z.string().min(1).max(500),
+    assigned_role: z.enum(SOP_ASSIGNED_ROLE_VALUES),
+    assigned_role_label: z.string().max(80).optional().nullable(),
+    estimated_hrs: z.number().min(0).max(10000).default(0),
+    trigger_description: z.string().max(2000).optional().nullable(),
+    completion_criteria: z.string().max(2000).optional().nullable(),
+    steps: z
+      .array(z.object({ order: z.number().int(), text: z.string().min(1).max(1000) }))
+      .optional()
+      .nullable(),
+    notes: z.string().max(4000).optional().nullable(),
+    is_billable: z.boolean().default(true),
+    resource_ids: z.array(z.string().uuid()).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.assigned_role === "other" && !data.assigned_role_label?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter who handles this task",
+        path: ["assigned_role_label"],
+      });
+    }
+  });
+
+export const saveSopStep = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => sopStepSaveSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { data: phase } = await supabase
+      .from("sop_phases")
+      .select("id, template_id, firm_id")
+      .eq("id", data.phase_id)
+      .single();
+    if (!phase || phase.firm_id !== profile.firm_id) throw new Error("Phase not found");
+
+    const row = {
+      phase_id: data.phase_id,
+      name: data.name,
+      description: data.name,
+      assigned_role: data.assigned_role,
+      assigned_role_label:
+        data.assigned_role === "other" ? data.assigned_role_label?.trim() || null : null,
+      estimated_hrs: data.estimated_hrs,
+      trigger_description: data.trigger_description ?? null,
+      completion_criteria: data.completion_criteria ?? null,
+      steps: data.steps ?? null,
+      notes: data.notes ?? null,
+      is_billable: data.is_billable,
+    };
+
+    let stepId = data.id;
+    if (stepId) {
+      const { error } = await supabase.from("sop_steps").update(row).eq("id", stepId);
+      if (error) throw new Error(error.message);
+    } else {
+      const { data: existing } = await supabase
+        .from("sop_steps")
+        .select("sort_order")
+        .eq("phase_id", data.phase_id)
+        .order("sort_order", { ascending: false })
+        .limit(1);
+      const sort_order = (existing?.[0]?.sort_order ?? -1) + 1;
+      const { data: ins, error } = await supabase
+        .from("sop_steps")
+        .insert({ ...row, sort_order })
+        .select("id")
+        .single();
+      if (error) throw new Error(error.message);
+      stepId = ins.id;
+    }
+
+    if (data.resource_ids !== undefined) {
+      await supabase.from("sop_step_resources").delete().eq("sop_step_id", stepId);
+      if (data.resource_ids.length) {
+        const { error: linkErr } = await supabase.from("sop_step_resources").insert(
+          data.resource_ids.map((resource_id) => ({
+            sop_step_id: stepId!,
+            resource_id,
+            firm_id: profile.firm_id,
+          })),
+        );
+        if (linkErr) throw new Error(linkErr.message);
+      }
+    }
+
+    await supabaseAdmin.rpc("refresh_sop_template_estimated_hrs", { p_template_id: phase.template_id });
+    return { id: stepId };
+  });
+
+const bulkStepRolesSchema = z
+  .object({
+    step_ids: z.array(z.string().uuid()).min(1).max(500),
+    assigned_role: z.enum(SOP_ASSIGNED_ROLE_VALUES),
+    assigned_role_label: z.string().max(80).optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.assigned_role === "other" && !data.assigned_role_label?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter who handles these tasks",
+        path: ["assigned_role_label"],
+      });
+    }
+  });
+
+export const bulkUpdateSopStepRoles = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => bulkStepRolesSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+
+    const { data: steps, error: stepErr } = await supabase
+      .from("sop_steps")
+      .select("id, phase_id")
+      .in("id", data.step_ids);
+    if (stepErr) throw new Error(stepErr.message);
+    if (!steps?.length) throw new Error("No tasks found");
+
+    const phaseIds = [...new Set(steps.map((s) => s.phase_id))];
+    const { data: phases, error: phErr } = await supabase
+      .from("sop_phases")
+      .select("id, template_id")
+      .in("id", phaseIds)
+      .eq("firm_id", profile.firm_id);
+    if (phErr) throw new Error(phErr.message);
+
+    const allowedPhases = new Set((phases ?? []).map((p) => p.id));
+    const allowedStepIds = steps.filter((s) => allowedPhases.has(s.phase_id)).map((s) => s.id);
+    if (!allowedStepIds.length) throw new Error("No tasks found");
+
+    const patch = {
+      assigned_role: data.assigned_role,
+      assigned_role_label:
+        data.assigned_role === "other" ? data.assigned_role_label?.trim() || null : null,
+      updated_at: new Date().toISOString(),
+    };
+
+    for (const id of allowedStepIds) {
+      const { error } = await supabase.from("sop_steps").update(patch).eq("id", id);
+      if (error) throw new Error(error.message);
+    }
+
+    const templateIds = [...new Set((phases ?? []).map((p) => p.template_id))];
+    for (const templateId of templateIds) {
+      await supabaseAdmin.rpc("refresh_sop_template_estimated_hrs", { p_template_id: templateId });
+    }
+
+    return { updated: allowedStepIds.length };
+  });
+
+export const reorderSopPhases = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ template_id: z.string().uuid(), ordered_ids: z.array(z.string().uuid()).min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireFirmAdmin(supabase, userId);
+    for (let i = 0; i < data.ordered_ids.length; i++) {
+      const { error } = await supabase
+        .from("sop_phases")
+        .update({ sort_order: i })
+        .eq("id", data.ordered_ids[i])
+        .eq("template_id", data.template_id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+export const reorderSopSteps = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ phase_id: z.string().uuid(), ordered_ids: z.array(z.string().uuid()).min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireFirmAdmin(supabase, userId);
+    for (let i = 0; i < data.ordered_ids.length; i++) {
+      const { error } = await supabase
+        .from("sop_steps")
+        .update({ sort_order: i })
+        .eq("id", data.ordered_ids[i])
+        .eq("phase_id", data.phase_id);
+      if (error) throw new Error(error.message);
+    }
+    return { ok: true };
+  });
+
+const resourceSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1).max(200),
+  resource_type: z.enum([
+    "email_template",
+    "document_template",
+    "process_doc",
+    "video",
+    "external_link",
+    "contract",
+    "checklist",
+    "other",
+  ]),
+  url: z.string().max(2000).optional().nullable(),
+  file_path: z.string().max(500).optional().nullable(),
+  file_name: z.string().max(255).optional().nullable(),
+  content: z.string().max(50000).optional().nullable(),
+  subject_line: z.string().max(500).optional().nullable(),
+  tags: z.array(z.string().max(40)).max(20).optional().nullable(),
+});
+
+export const saveFirmResource = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => resourceSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const body: {
+      firm_id: string;
+      name: string;
+      resource_type: string;
+      url: string | null;
+      content: string | null;
+      subject_line: string | null;
+      tags: string[] | null;
+      updated_at: string;
+      file_path?: string | null;
+      file_name?: string | null;
+    } = {
+      firm_id: profile.firm_id,
+      name: data.name,
+      resource_type: data.resource_type,
+      url: data.url ?? null,
+      content: data.content ?? null,
+      subject_line: data.subject_line ?? null,
+      tags: data.tags ?? null,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.file_path != null || data.file_name != null) {
+      body.file_path = data.file_path ?? null;
+      body.file_name = data.file_name ?? null;
+    }
+    if (data.id) {
+      const { data: updated, error } = await supabase
+        .from("firm_resources")
+        .update(body)
+        .eq("id", data.id)
+        .eq("firm_id", profile.firm_id)
+        .select("*")
+        .single();
+      if (error) throw new Error(error.message);
+      return updated;
+    }
+    const { data: existing } = await supabase
+      .from("firm_resources")
+      .select("sort_order")
+      .eq("firm_id", profile.firm_id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const sort_order =
+      ((existing?.[0] as { sort_order?: number } | undefined)?.sort_order ?? -1) + 1;
+    let ins = await supabase
+      .from("firm_resources")
+      .insert({ ...body, sort_order })
+      .select("*")
+      .single();
+    if (ins.error && isMissingSortOrderColumn(ins.error.message)) {
+      ins = await supabase.from("firm_resources").insert(body).select("*").single();
+    }
+    if (ins.error) throw new Error(ins.error.message);
+    return ins.data;
+  });
+
+export const reorderFirmResources = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ ordered_ids: z.array(z.string().uuid()).min(1) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    for (let i = 0; i < data.ordered_ids.length; i++) {
+      const { error } = await supabase
+        .from("firm_resources")
+        .update({ sort_order: i, updated_at: new Date().toISOString() })
+        .eq("id", data.ordered_ids[i])
+        .eq("firm_id", profile.firm_id);
+      if (error) {
+        if (isMissingSortOrderColumn(error.message)) {
+          throw new Error("Resource reorder requires a database update — run npm run db:apply-sop-migration");
+        }
+        throw new Error(error.message);
+      }
+    }
+    return { ok: true };
+  });
+
+export const deleteFirmResource = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { data: row } = await supabase
+      .from("firm_resources")
+      .select("file_path")
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id)
+      .maybeSingle();
+    const filePath = (row as { file_path?: string | null } | null)?.file_path;
+    if (filePath?.startsWith(`${profile.firm_id}/`)) {
+      await supabaseAdmin.storage.from(FIRM_RESOURCE_BUCKET).remove([filePath]).catch(() => undefined);
+    }
+    const { error } = await supabase
+      .from("firm_resources")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const createFirmResourceUploadUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ fileName: z.string().min(1).max(255) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const safeName = data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_") || "document";
+    const path = `${profile.firm_id}/${crypto.randomUUID()}/${safeName}`;
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from(FIRM_RESOURCE_BUCKET)
+      .createSignedUploadUrl(path);
+    if (error || !signed) throw new Error(error?.message ?? "Storage is not configured — run npm run db:apply-firm-resource-files");
+    return { path, signedUrl: signed.signedUrl, token: signed.token, fileName: data.fileName };
+  });
+
+export const getFirmResourceDownloadUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ path: z.string().min(1).max(500) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    if (!data.path.startsWith(`${profile.firm_id}/`)) throw new Error("Invalid file path");
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from(FIRM_RESOURCE_BUCKET)
+      .createSignedUrl(data.path, 3600);
+    if (error || !signed?.signedUrl) throw new Error(error?.message ?? "Could not open file");
+    return { url: signed.signedUrl };
+  });
+
+export const deleteFirmResourceStorageObject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ path: z.string().min(1).max(500) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    if (!data.path.startsWith(`${profile.firm_id}/`)) throw new Error("Invalid file path");
+    const { error } = await supabaseAdmin.storage.from(FIRM_RESOURCE_BUCKET).remove([data.path]);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const workflowPeriodSchema = z.object({
+  period_label: z.string().trim().max(120).optional().nullable(),
+  period_start: z.string().trim().max(32).optional().nullable(),
+  period_end: z.string().trim().max(32).optional().nullable(),
+});
+
+export const attachWorkflowToProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        workflow_id: z.string().uuid(),
+        project_id: z.string().uuid(),
+        period: workflowPeriodSchema.optional().nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { attachWorkflowToProject: attach } = await import("@/lib/sop-library.server");
+    await attach(supabase, data.workflow_id, data.project_id, profile.firm_id, data.period ?? null);
+    return { ok: true };
+  });
+
+export const detachProjectWorkflowAttachmentFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ attachment_id: z.string().uuid(), project_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { detachProjectWorkflowAttachment } = await import("@/lib/sop-library.server");
+    await detachProjectWorkflowAttachment(
+      supabase,
+      data.attachment_id,
+      data.project_id,
+      profile.firm_id,
+    );
+    return { ok: true };
+  });
+
+export const detachWorkflowFromProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const profile = await requireFirmAdmin(supabase, userId);
+    const { detachWorkflowFromProject: detach } = await import("@/lib/sop-library.server");
+    await detach(supabase, data.project_id, profile.firm_id);
+    return { ok: true };
+  });
+
+export const getSopRoleInsights = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) {
+      return {
+        roles: [],
+        totalHrsPerProject: 0,
+        delegatableHrs: 0,
+        delegatablePct: 0,
+        tasksWithResources: 0,
+        totalTasks: 0,
+        principalHrsPerProject: 0,
+        projectsWithWorkflows: 0,
+        topHireRecommendation: null,
+      };
+    }
+    const { getRoleInsights } = await import("@/lib/sop-library.server");
+    return getRoleInsights(supabase, profile.firm_id);
+  });
+
+export const listProjectWorkflows = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) return { workflows: [] };
+
+    const { count: templateCount } = await supabaseAdmin
+      .from("sop_templates")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", profile.firm_id)
+      .eq("is_default", true)
+      .is("deleted_at", null);
+    if ((templateCount ?? 0) < DEFAULT_SOP_TEMPLATES.length) {
+      const { ensureDefaultSopsForFirm } = await import("@/lib/sop-seed.server");
+      await ensureDefaultSopsForFirm(profile.firm_id);
+    }
+
+    const { data: workflows } = await supabase
+      .from("sop_templates")
+      .select("id, name, icon, estimated_total_hrs, workflow_type")
+      .eq("firm_id", profile.firm_id)
+      .in("workflow_type", ["project", "firm_operation"])
+      .eq("is_active", true)
+      .is("deleted_at", null)
+      .order("name");
+    const ids = (workflows ?? []).map((w) => w.id);
+    if (!ids.length) return { workflows: [] };
+    const { data: phases } = await supabase.from("sop_phases").select("id, template_id").in("template_id", ids);
+    const phaseIds = (phases ?? []).map((p) => p.id);
+    const { data: steps } = phaseIds.length
+      ? await supabase.from("sop_steps").select("id, phase_id, estimated_hrs").in("phase_id", phaseIds)
+      : { data: [] };
+    return {
+      workflows: (workflows ?? []).map((w) => {
+        const wPhases = (phases ?? []).filter((p) => p.template_id === w.id);
+        const wPhaseIds = new Set(wPhases.map((p) => p.id));
+        const wSteps = (steps ?? []).filter((s) => wPhaseIds.has(s.phase_id));
+        const hrs =
+          Number(w.estimated_total_hrs) ||
+          wSteps.reduce((sum, s) => sum + (Number(s.estimated_hrs) || 0), 0);
+        return {
+          id: w.id,
+          name: w.name,
+          icon: w.icon,
+          workflowType: (w as { workflow_type?: string }).workflow_type ?? "project",
+          phaseCount: wPhases.length,
+          taskCount: wSteps.length,
+          totalHrs: hrs,
+        };
+      }),
+    };
   });

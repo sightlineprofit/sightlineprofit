@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { applyTeamCapacityFromResult } from "@/lib/team-capacity-notifications";
 import {
   getMyContext,
   upsertFirmConfig,
@@ -197,7 +198,7 @@ function Onboarding() {
     setTeam((arr) => [...arr, member]);
     // Save an internal firm_members record (no invite by default).
     try {
-      await saveMember({
+      const result = await saveMember({
         data: {
           name: member.name,
           email: member.email || null,
@@ -209,10 +210,12 @@ function Onboarding() {
           employer_payroll_tax_pct: BURDEN_EMPLOYER_TAX_PCT,
           annual_benefits: benefitsAnnual || null,
           expected_hrs_per_week: billableHrs || workingHrs,
+          productive_hrs_per_week: billableHrs || workingHrs || 40,
           weeks_per_year: 52,
           billed_rate: member.billable_rate || null,
         },
       });
+      applyTeamCapacityFromResult(result);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save member.");
     }

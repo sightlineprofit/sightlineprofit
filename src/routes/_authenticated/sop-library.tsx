@@ -1,103 +1,50 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Search, Trash2, GripVertical, ArrowLeft, AlertTriangle, MoreHorizontal, EyeOff, Eye, Copy as CopyIcon, Pencil } from "lucide-react";
+import { FolderOpen, LayoutList, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { useNavigate } from "@tanstack/react-router";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { TierLocked } from "@/components/shell/TierLocked";
-import { getMyContext, backfillStarterSops } from "@/lib/firm.functions";
+import { getMyContext } from "@/lib/firm.functions";
 import { effectiveTier } from "@/lib/role";
+import { formatHours } from "@/lib/finance";
 import {
   getSopLibrary,
-  saveSopTemplate,
+  createSopWorkflow,
+  renameSopWorkflow,
+  moveSopWorkflow,
+  reorderSopWorkflows,
   deleteSopTemplate,
-  setSopHidden,
-  unhideAllSops,
-  duplicateSopTemplate,
-  getTemplateUsage,
-  upsertSopStepAssignee,
-  deleteSopStepAssignee,
+  addSopPhase,
+  saveSopStep,
+  saveFirmResource,
+  deleteFirmResource,
+  reorderFirmResources,
+  reorderSopPhases,
+  bulkUpdateSopStepRoles,
+  getSopRoleInsights,
+  getFirmResourceDownloadUrl,
 } from "@/lib/sop.functions";
-import { fmtUsd, formatHours } from "@/lib/finance";
+import { NewWorkflowModal } from "@/components/sop/NewWorkflowModal";
+import { AddPhaseModal } from "@/components/sop/AddPhaseModal";
+import { TaskEditModal } from "@/components/sop/TaskEditModal";
+import { BulkReassignTasksModal } from "@/components/sop/BulkReassignTasksModal";
+import { ResourceDrawer, RoleInsightsPanel } from "@/components/sop/ResourceDrawer";
 import {
-  StepAssigneeSection,
-  type AssigneePickerMember,
-  type StepAssigneeRecord,
-} from "@/components/projects/StepAssigneeSection";
+  WorkflowCard,
+  SopStatTile,
+  SopEmptyState,
+  type WorkflowCardData,
+} from "@/components/sop/WorkflowCard";
+import { ResourcePreviewModal, type TaskRowData, type TaskRowResource } from "@/components/sop/TaskRow";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
-} from "@/components/ui/alert-dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
-import { ProjectSetupWizard, type WizardPhase } from "@/components/projects/ProjectSetupWizard";
+import type { SopAssignedRole } from "@/lib/sop";
 
-type Risk = "low" | "medium" | "high";
-type Step = { id?: string; description: string; estimated_hrs: number; sort_order: number };
-type Phase = {
-  id?: string;
-  name: string;
-  expected_hrs: number;
-  billable: boolean;
-  description?: string | null;
-  time_benchmark_notes?: string | null;
-  sort_order: number;
-  steps: Step[];
-};
-type TemplateDraft = {
-  id?: string;
-  name: string;
-  category: string;
-  department: string;
-  description: string;
-  tags: string[];
-  triggered_by: string;
-  done_when: string;
-  scope_risk_level: Risk;
-  common_failure_modes: string;
-  phases: Phase[];
-  is_default?: boolean;
-};
-
-const emptyDraft = (): TemplateDraft => ({
-  name: "",
-  category: "",
-  department: "",
-  description: "",
-  tags: [],
-  triggered_by: "",
-  done_when: "",
-  scope_risk_level: "low",
-  common_failure_modes: "",
-  phases: [],
-  is_default: false,
-});
-
-const RISK_STYLE: Record<Risk, string> = {
-  low: "bg-success/10 text-success border-success/30",
-  medium: "bg-goldl/15 text-gold border-gold/30",
-  high: "bg-terra/10 text-terra border-terra/30",
-};
-
-type StatusFilter = "all" | "default" | "custom" | "hidden";
-type SortKey = "recent" | "name" | "hours" | "created";
+type Tab = "project" | "firm" | "insights";
 
 export const Route = createFileRoute("/_authenticated/sop-library")({
   head: () => ({ meta: [{ title: "SOP Library — Sightline" }] }),
@@ -111,1154 +58,578 @@ function SopLibraryPage() {
 
   if (tier !== "practice") {
     return (
-      <ModulePage eyebrow="Practice" title="SOP Library" description="Scope templates and phase benchmarks that become the contracts you send.">
+      <ModulePage eyebrow="Practice" title="SOP Library" description="Workflows, tasks, and resources for your firm.">
         <TierLocked
           tier="practice"
           title="The library that codifies how your studio works"
-          blurb="Every project starts from a template. Phases, hours, scope language — all reusable. Stop pricing every project from scratch."
+          blurb="Every project starts from a template. Phases, hours, scope language — all reusable."
           unlocks={[
-            "Build reusable scope templates with phase-level hour benchmarks",
-            "See cost / revenue / margin per phase before you quote",
-            "Attach a template to a new project in one click",
-            "Track scope risk and common failure modes per workflow",
+            "Build reusable project workflows with role-based tasks",
+            "Link email templates and process docs to tasks",
+            "See delegation insights by role",
+            "Attach workflows to projects in Sightline",
           ]}
         />
       </ModulePage>
     );
   }
-  return <Library />;
+  return <SopLibraryContent />;
 }
 
-function Library() {
+function SopLibraryContent() {
   const qc = useQueryClient();
   const getLib = useServerFn(getSopLibrary);
-  const saveFn = useServerFn(saveSopTemplate);
-  const delFn = useServerFn(deleteSopTemplate);
-  const hideFn = useServerFn(setSopHidden);
-  const unhideAllFn = useServerFn(unhideAllSops);
-  const duplicateFn = useServerFn(duplicateSopTemplate);
-  const upsertSopAssigneeFn = useServerFn(upsertSopStepAssignee);
-  const deleteSopAssigneeFn = useServerFn(deleteSopStepAssignee);
-  const navigate = useNavigate();
+  const createWfFn = useServerFn(createSopWorkflow);
+  const renameWfFn = useServerFn(renameSopWorkflow);
+  const moveWfFn = useServerFn(moveSopWorkflow);
+  const reorderWfsFn = useServerFn(reorderSopWorkflows);
+  const deleteWfFn = useServerFn(deleteSopTemplate);
+  const addPhaseFn = useServerFn(addSopPhase);
+  const saveStepFn = useServerFn(saveSopStep);
+  const saveResourceFn = useServerFn(saveFirmResource);
+  const deleteResourceFn = useServerFn(deleteFirmResource);
+  const reorderResourcesFn = useServerFn(reorderFirmResources);
+  const reorderPhasesFn = useServerFn(reorderSopPhases);
+  const bulkRolesFn = useServerFn(bulkUpdateSopStepRoles);
+  const insightsFn = useServerFn(getSopRoleInsights);
+  const getDownloadUrlFn = useServerFn(getFirmResourceDownloadUrl);
 
-  const { data, isLoading } = useQuery({ queryKey: ["sop-library"], queryFn: () => getLib() });
-  useRealtimeInvalidate(
-    "sop-library-assignees",
-    [{ table: "sop_step_assignees" }, { table: "sop_steps" }],
-    [["sop-library"]],
+  const getResourceDownloadUrl = useCallback(
+    async (path: string) => {
+      const { url } = await getDownloadUrlFn({ data: { path } });
+      return url;
+    },
+    [getDownloadUrlFn],
   );
-  const [search, setSearch] = useState("");
-  const [riskFilter, setRiskFilter] = useState<"all" | Risk>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<SortKey>("recent");
-  const [editing, setEditing] = useState<TemplateDraft | null>(null);
-  const [setupFor, setSetupFor] = useState<{ id: string; name: string; phases: WizardPhase[] } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; uses: number; activeUses: number } | null>(null);
-  const [usageFor, setUsageFor] = useState<{ id: string; name: string } | null>(null);
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["sop-library"],
+    queryFn: () => getLib(),
+  });
+  const { data: insights } = useQuery({ queryKey: ["sop-role-insights"], queryFn: () => insightsFn() });
+
+  useRealtimeInvalidate(
+    "sop-library-rt",
+    [
+      { table: "sop_templates" },
+      { table: "sop_phases" },
+      { table: "sop_steps" },
+      { table: "firm_resources" },
+      { table: "sop_step_resources" },
+    ],
+    [["sop-library"], ["sop-role-insights"]],
+  );
+
+  const [tab, setTab] = useState<Tab>("project");
+  const [newWfOpen, setNewWfOpen] = useState(false);
+  const [resourceDrawerOpen, setResourceDrawerOpen] = useState(false);
+  const [openWorkflowId, setOpenWorkflowId] = useState<string | null>(null);
+  const [addPhaseTemplateId, setAddPhaseTemplateId] = useState<string | null>(null);
+  const [taskEdit, setTaskEdit] = useState<{ phaseId: string; task?: TaskRowData | null } | null>(null);
+  const [bulkReassignWorkflow, setBulkReassignWorkflow] = useState<WorkflowCardData | null>(null);
+  const [previewResource, setPreviewResource] = useState<TaskRowResource | null>(null);
 
   const role = (data?.role ?? "team") as string;
   const canManage = role === "principal" || role === "admin";
-  const hiddenSet = useMemo(() => new Set(data?.hiddenIds ?? []), [data?.hiddenIds]);
 
-  const saveMut = useMutation({
-    mutationFn: (d: TemplateDraft) =>
-      saveFn({
-        data: {
-          id: d.id,
-          name: d.name,
-          category: d.category || null,
-          department: d.department || null,
-          description: d.description || null,
-          tags: d.tags.length ? d.tags : null,
-          triggered_by: d.triggered_by || null,
-          done_when: d.done_when || null,
-          scope_risk_level: d.scope_risk_level,
-          common_failure_modes: d.common_failure_modes || null,
-          phases: d.phases.map((p, i) => ({
-            id: p.id, name: p.name, expected_hrs: Number(p.expected_hrs) || 0,
-            billable: p.billable, description: p.description, time_benchmark_notes: p.time_benchmark_notes,
-            sort_order: i,
-            steps: p.steps.map((s, j) => ({ id: s.id, description: s.description, estimated_hrs: Number(s.estimated_hrs) || 0, sort_order: j })),
-          })),
-        },
-      }),
-    onSuccess: () => {
+  const resourcesById = useMemo(() => {
+    const map = new Map<string, TaskRowResource>();
+    for (const r of data?.resources ?? []) {
+      map.set(r.id, r as TaskRowResource);
+    }
+    return map;
+  }, [data?.resources]);
+
+  const stepResourceMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const link of data?.stepResources ?? []) {
+      const cur = map.get(link.sop_step_id) ?? [];
+      cur.push(link.resource_id);
+      map.set(link.sop_step_id, cur);
+    }
+    return map;
+  }, [data?.stepResources]);
+
+  const workflows = useMemo((): WorkflowCardData[] => {
+    const templates = (data?.templates ?? [])
+      .filter((t) => {
+        const wt = (t as { workflow_type?: string | null }).workflow_type ?? "project";
+        const active = (t as { is_active?: boolean | null }).is_active;
+        const isActive = active == null ? true : active;
+        return isActive && (tab === "firm" ? wt === "firm_operation" : wt === "project");
+      })
+      .sort((a, b) => {
+        const aOrder = (a as { sort_order?: number }).sort_order;
+        const bOrder = (b as { sort_order?: number }).sort_order;
+        if (aOrder != null && bOrder != null && aOrder !== bOrder) return aOrder - bOrder;
+        return String(b.created_at).localeCompare(String(a.created_at));
+      });
+    return templates.map((tpl) => {
+      const phases = (data?.phases ?? [])
+        .filter((p) => p.template_id === tpl.id)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((ph) => {
+          const steps = (data?.steps ?? [])
+            .filter((s) => s.phase_id === ph.id)
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((s) => {
+              const resIds = stepResourceMap.get(s.id) ?? [];
+              return {
+                id: s.id,
+                name: (s as { name?: string }).name?.trim() || s.description,
+                estimated_hrs: Number(s.estimated_hrs) || 0,
+                assigned_role: (s as { assigned_role?: string }).assigned_role ?? "principal",
+                assigned_role_label: (s as { assigned_role_label?: string | null }).assigned_role_label ?? null,
+                trigger_description: (s as { trigger_description?: string }).trigger_description,
+                completion_criteria: (s as { completion_criteria?: string }).completion_criteria,
+                steps: (s as { steps?: TaskRowData["steps"] }).steps,
+                notes: (s as { notes?: string }).notes,
+                resources: resIds.map((id) => resourcesById.get(id)).filter(Boolean) as TaskRowResource[],
+              } satisfies TaskRowData;
+            });
+          return {
+            id: ph.id,
+            name: ph.name,
+            billable: ph.billable,
+            estimated_hrs: (ph as { estimated_hrs?: number }).estimated_hrs,
+            expected_hrs: Number(ph.expected_hrs) || 0,
+            sort_order: ph.sort_order,
+            steps,
+          };
+        });
+      return {
+        id: tpl.id,
+        name: tpl.name,
+        icon: (tpl as { icon?: string }).icon,
+        workflow_type: (tpl as { workflow_type?: string }).workflow_type,
+        estimated_total_hrs: (tpl as { estimated_total_hrs?: number }).estimated_total_hrs,
+        phases,
+      };
+    });
+  }, [data, tab, resourcesById, stepResourceMap]);
+
+  const projectStats = useMemo(() => {
+    const projectWfs = (data?.templates ?? []).filter(
+      (t) => ((t as { workflow_type?: string }).workflow_type ?? "project") === "project" && ((t as { is_active?: boolean }).is_active ?? true),
+    );
+    const phaseIds = new Set((data?.phases ?? []).filter((p) => projectWfs.some((w) => w.id === p.template_id)).map((p) => p.id));
+    const tasks = (data?.steps ?? []).filter((s) => phaseIds.has(s.phase_id));
+    const hrsList = projectWfs
+      .map((w) => Number((w as { estimated_total_hrs?: number }).estimated_total_hrs) || 0)
+      .filter((h) => h > 0);
+    const avgHrs = hrsList.length ? hrsList.reduce((a, b) => a + b, 0) / hrsList.length : 0;
+    return { workflowCount: projectWfs.length, taskCount: tasks.length, avgHrs };
+  }, [data]);
+
+  const firmStats = useMemo(() => {
+    const firmWfs = (data?.templates ?? []).filter(
+      (t) => (t as { workflow_type?: string }).workflow_type === "firm_operation" && ((t as { is_active?: boolean }).is_active ?? true),
+    );
+    const phaseIds = new Set((data?.phases ?? []).filter((p) => firmWfs.some((w) => w.id === p.template_id)).map((p) => p.id));
+    const stepIds = (data?.steps ?? []).filter((s) => phaseIds.has(s.phase_id)).map((s) => s.id);
+    const withRes = stepIds.filter((id) => (stepResourceMap.get(id)?.length ?? 0) > 0).length;
+    return { workflowCount: firmWfs.length, taskCount: stepIds.length, tasksWithResources: withRes };
+  }, [data, stepResourceMap]);
+
+  const createWfMut = useMutation({
+    mutationFn: (payload: Parameters<typeof createWfFn>[0]["data"]) => createWfFn({ data: payload }),
+    onSuccess: (wf) => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
-      setEditing(null);
-      toast.success("Template saved");
+      setNewWfOpen(false);
+      setOpenWorkflowId(wf.id);
+      toast.success("Workflow created");
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Create failed"),
   });
 
-  const delMut = useMutation({
-    mutationFn: (id: string) => delFn({ data: { id } }),
+  const renameWfMut = useMutation({
+    mutationFn: (payload: Parameters<typeof renameWfFn>[0]["data"]) => renameWfFn({ data: payload }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
-      toast.success("Template deleted");
-      setDeleteTarget(null);
+      toast.success("Workflow renamed");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Rename failed"),
+  });
+
+  const moveWfMut = useMutation({
+    mutationFn: (payload: Parameters<typeof moveWfFn>[0]["data"]) => moveWfFn({ data: payload }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      qc.invalidateQueries({ queryKey: ["sop-role-insights"] });
+      const label = variables.workflow_type === "firm_operation" ? "Firm operations" : "Project workflows";
+      toast.success(`Moved to ${label}`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Move failed"),
+  });
+
+  const reorderWfsMut = useMutation({
+    mutationFn: (payload: Parameters<typeof reorderWfsFn>[0]["data"]) => reorderWfsFn({ data: payload }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sop-library"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Reorder failed"),
+  });
+
+  const deleteWfMut = useMutation({
+    mutationFn: (payload: Parameters<typeof deleteWfFn>[0]["data"]) => deleteWfFn({ data: payload }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      qc.invalidateQueries({ queryKey: ["sop-role-insights"] });
+      toast.success("Workflow deleted");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
-  const hideMut = useMutation({
-    mutationFn: (v: { template_id: string; hidden: boolean }) => hideFn({ data: v }),
-    onSuccess: (_r, v) => {
+  const currentWorkflowType = tab === "firm" ? "firm_operation" : "project";
+
+  const reorderWorkflow = useCallback(
+    (workflowId: string, direction: "up" | "down") => {
+      const ids = workflows.map((w) => w.id);
+      const idx = ids.indexOf(workflowId);
+      if (idx < 0) return;
+      const newIdx = direction === "up" ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= ids.length) return;
+      reorderWfsMut.mutate({
+        workflow_type: currentWorkflowType,
+        ordered_ids: arrayMove(ids, idx, newIdx),
+      });
+    },
+    [workflows, currentWorkflowType, reorderWfsMut],
+  );
+
+  const addPhaseMut = useMutation({
+    mutationFn: (payload: { template_id: string; name: string; billable?: boolean }) =>
+      addPhaseFn({ data: payload }),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
-      toast.success(v.hidden ? "Hidden from your library" : "Restored to your library");
+      setAddPhaseTemplateId(null);
+      toast.success("Phase added");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  const unhideAllMut = useMutation({
-    mutationFn: () => unhideAllFn(),
+  const saveStepMut = useMutation({
+    mutationFn: async (payload: Parameters<typeof saveStepFn>[0]["data"] & {
+      new_resources?: import("@/components/sop/TaskEditModal").TaskInlineResource[];
+    }) => {
+      const { new_resources, ...stepPayload } = payload;
+      const createdIds: string[] = [];
+      for (const nr of new_resources ?? []) {
+        const saved = await saveResourceFn({
+          data: {
+            name: nr.name,
+            resource_type: nr.resource_type as
+              | "email_template"
+              | "document_template"
+              | "process_doc"
+              | "video"
+              | "external_link"
+              | "contract"
+              | "checklist"
+              | "other",
+            url: nr.url ?? null,
+            file_path: nr.file_path ?? null,
+            file_name: nr.file_name ?? null,
+          },
+        });
+        createdIds.push((saved as { id: string }).id);
+      }
+      return saveStepFn({
+        data: {
+          ...stepPayload,
+          resource_ids: [...(stepPayload.resource_ids ?? []), ...createdIds],
+        },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sop-library", "sop-role-insights"] });
+      setTaskEdit(null);
+      toast.success("Task saved");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Save failed"),
+  });
+
+  const saveResourceMut = useMutation({
+    mutationFn: (payload: Parameters<typeof saveResourceFn>[0]["data"]) => saveResourceFn({ data: payload }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
-      toast.success("All templates restored");
+      toast.success("Resource saved");
     },
   });
 
-  const duplicateMut = useMutation({
-    mutationFn: (id: string) => duplicateFn({ data: { id } }),
-    onSuccess: async (res: { id: string }) => {
-      await qc.invalidateQueries({ queryKey: ["sop-library"] });
-      const fresh = await getLib();
-      const tpl = fresh.templates.find((t: { id: string }) => t.id === res.id);
-      if (tpl) openEditFromTemplate(tpl, fresh);
-      toast.success("Template duplicated. Customize your copy below.");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Duplicate failed"),
-  });
-
-  const backfillFn = useServerFn(backfillStarterSops);
-  const backfillMut = useMutation({
-    mutationFn: () => backfillFn(),
-    onSuccess: (res: { inserted: number; skipped: number }) => {
+  const deleteResourceMut = useMutation({
+    mutationFn: (id: string) => deleteResourceFn({ data: { id } }),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sop-library"] });
-      toast.success(`Starter templates restored — ${res.inserted} added, ${res.skipped} already existed`);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Backfill failed"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
   });
 
-  function openEditFromTemplate(tpl: { id: string; name: string; category: string | null; department: string | null; description: string | null; tags: string[] | null; triggered_by: string | null; done_when: string | null; scope_risk_level: string | null; common_failure_modes: string | null; is_default?: boolean }, libData = data) {
-    if (!libData) return;
-    const phs = libData.phases
-      .filter((p) => p.template_id === tpl.id)
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((p): Phase => ({
-        id: p.id, name: p.name, expected_hrs: Number(p.expected_hrs),
-        billable: p.billable, description: p.description,
-        time_benchmark_notes: p.time_benchmark_notes, sort_order: p.sort_order,
-        steps: libData.steps
-          .filter((s) => s.phase_id === p.id)
-          .sort((a, b) => a.sort_order - b.sort_order)
-          .map((s) => ({
-            id: s.id,
-            description: s.description,
-            estimated_hrs: Number((s as { estimated_hrs?: number }).estimated_hrs) || 0,
-            sort_order: s.sort_order,
-          })),
-      }));
-    setEditing({
-      id: tpl.id, name: tpl.name, category: tpl.category ?? "",
-      department: tpl.department ?? "", description: tpl.description ?? "",
-      tags: tpl.tags ?? [], triggered_by: tpl.triggered_by ?? "",
-      done_when: tpl.done_when ?? "", scope_risk_level: (tpl.scope_risk_level ?? "low") as Risk,
-      common_failure_modes: tpl.common_failure_modes ?? "", phases: phs,
-      is_default: !!tpl.is_default,
-    });
-  }
+  const reorderResourcesMut = useMutation({
+    mutationFn: (ordered_ids: string[]) => reorderResourcesFn({ data: { ordered_ids } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sop-library"] }),
+  });
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of data?.templates ?? []) if (t.category) set.add(t.category);
-    return Array.from(set).sort();
-  }, [data?.templates]);
+  const reorderMut = useMutation({
+    mutationFn: (payload: { template_id: string; ordered_ids: string[] }) => reorderPhasesFn({ data: payload }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sop-library"] }),
+  });
 
-  const filtered = useMemo(() => {
-    if (!data) return [];
-    const q = search.trim().toLowerCase();
-    const usage = data.usageCounts ?? {};
-    const last = data.lastUsed ?? {};
-    const arr = data.templates.filter((t) => {
-      const isHidden = hiddenSet.has(t.id);
-      if (statusFilter === "hidden" && !isHidden) return false;
-      if (statusFilter !== "hidden" && isHidden) return false;
-      if (statusFilter === "default" && !(t as { is_default?: boolean }).is_default) return false;
-      if (statusFilter === "custom" && (t as { is_default?: boolean }).is_default) return false;
-      if (riskFilter !== "all" && t.scope_risk_level !== riskFilter) return false;
-      if (categoryFilter !== "all" && t.category !== categoryFilter) return false;
-      if (q && ![t.name, t.category, t.department].filter(Boolean).some((v) => v!.toLowerCase().includes(q))) return false;
-      return true;
-    });
-    arr.sort((a, b) => {
-      if (sortBy === "name") return a.name.localeCompare(b.name);
-      if (sortBy === "hours") {
-        const ah = (data.phases ?? []).filter((p) => p.template_id === a.id).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-        const bh = (data.phases ?? []).filter((p) => p.template_id === b.id).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-        return bh - ah;
-      }
-      if (sortBy === "created") return (b.created_at ?? "").localeCompare(a.created_at ?? "");
-      // recent
-      const al = last[a.id] ?? "";
-      const bl = last[b.id] ?? "";
-      if (al || bl) return bl.localeCompare(al);
-      void usage;
-      return 0;
-    });
-    return arr;
-  }, [data, search, riskFilter, statusFilter, categoryFilter, sortBy, hiddenSet, sortBy]);
+  const bulkRolesMut = useMutation({
+    mutationFn: (payload: Parameters<typeof bulkRolesFn>[0]["data"]) => bulkRolesFn({ data: payload }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["sop-library"] });
+      qc.invalidateQueries({ queryKey: ["sop-role-insights"] });
+      const n = (result as { updated?: number })?.updated ?? 0;
+      toast.success(`Updated ${n} task${n === 1 ? "" : "s"}`);
+      setBulkReassignWorkflow(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk update failed"),
+  });
 
-  const hiddenCount = hiddenSet.size;
-
-  if (editing) {
-    const sopStepAssignees = (data?.stepAssignees ?? []) as Array<
-      StepAssigneeRecord & { sop_step_id: string }
-    >;
-    const assigneeMembers = (data?.assigneePickerMembers ?? []) as AssigneePickerMember[];
-    const assigneePrincipalName = data?.assigneePickerPrincipal?.name ?? "Principal";
-    return (
-      <TemplateEditor
-        draft={editing}
-        onChange={setEditing}
-        onSave={() => saveMut.mutate(editing)}
-        onCancel={() => setEditing(null)}
-        onDuplicateInstead={editing.id ? () => duplicateMut.mutate(editing.id!) : undefined}
-        saving={saveMut.isPending}
-        config={data?.config ?? null}
-        usageCount={editing.id ? (data?.usageCounts?.[editing.id] ?? 0) : 0}
-        activeUsageCount={editing.id ? (data?.activeUsageCounts?.[editing.id] ?? 0) : 0}
-        onShowUsage={editing.id ? () => setUsageFor({ id: editing.id!, name: editing.name }) : undefined}
-        canManage={canManage}
-        stepAssignees={sopStepAssignees}
-        assigneeMembers={assigneeMembers}
-        assigneePrincipalName={assigneePrincipalName}
-        onUpsertStepAssignee={
-          canManage
-            ? async (stepId, payload) => {
-                await upsertSopAssigneeFn({ data: { sop_step_id: stepId, ...payload } });
-                qc.invalidateQueries({ queryKey: ["sop-library"] });
-              }
-            : undefined
-        }
-        onDeleteStepAssignee={
-          canManage
-            ? async (assigneeId) => {
-                await deleteSopAssigneeFn({ data: { id: assigneeId } });
-                qc.invalidateQueries({ queryKey: ["sop-library"] });
-              }
-            : undefined
-        }
-      />
-    );
-  }
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "project", label: "Project workflows" },
+    { id: "firm", label: "Firm operations" },
+    { id: "insights", label: "Role insights" },
+  ];
 
   return (
     <ModulePage
-      eyebrow="Practice"
-      title="SOP Library"
-      description="The way your studio works — codified, priced, and reusable."
+      eyebrow="SOP Library"
+      title="Your firm's operating system"
+      description="Workflows, tasks, and resources"
       actions={
         canManage ? (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => backfillMut.mutate()}
-              disabled={backfillMut.isPending}
-            >
-              {backfillMut.isPending ? "Restoring…" : "Restore starter templates"}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setResourceDrawerOpen(true)}>
+              <FolderOpen className="h-3.5 w-3.5" />
+              Resources
             </Button>
-            <Button onClick={() => setEditing(emptyDraft())} className="bg-gold hover:bg-goldl">
-              <Plus className="mr-2 h-4 w-4" /> New template
+            <Button size="sm" className="gap-1.5 bg-charcoal hover:bg-charcoal/90" onClick={() => setNewWfOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              New workflow
             </Button>
           </div>
-        ) : null
+        ) : undefined
       }
     >
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ch/40" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search templates…"
-            className="pl-9 bg-white"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-          <SelectTrigger className="w-36 bg-white"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="default">Starter</SelectItem>
-            <SelectItem value="custom">Custom</SelectItem>
-            <SelectItem value="hidden">Hidden{hiddenCount > 0 ? ` (${hiddenCount})` : ""}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-44 bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={riskFilter} onValueChange={(v) => setRiskFilter(v as typeof riskFilter)}>
-          <SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All risk</SelectItem>
-            <SelectItem value="low">Low risk</SelectItem>
-            <SelectItem value="medium">Medium risk</SelectItem>
-            <SelectItem value="high">High risk</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-          <SelectTrigger className="w-44 bg-white"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="recent">Recently used</SelectItem>
-            <SelectItem value="name">Name</SelectItem>
-            <SelectItem value="hours">Hours</SelectItem>
-            <SelectItem value="created">Date created</SelectItem>
-          </SelectContent>
-        </Select>
-        {hiddenCount > 0 && statusFilter !== "hidden" && (
+      <div className="mb-5 flex gap-0 border-b border-[rgba(44,44,44,0.10)]">
+        {tabs.map((t) => (
           <button
+            key={t.id}
             type="button"
-            className="text-xs text-ch/60 underline-offset-2 hover:text-ch hover:underline"
-            onClick={() => unhideAllMut.mutate()}
-            disabled={unhideAllMut.isPending}
+            className={cn(
+              "border-b-2 px-4 py-2.5 text-[13px] font-medium transition-colors",
+              tab === t.id
+                ? "-mb-px border-charcoal text-charcoal"
+                : "border-transparent text-muted-lt hover:text-muted",
+            )}
+            onClick={() => setTab(t.id)}
           >
-            {hiddenCount} hidden · Show all
+            {t.label}
           </button>
-        )}
+        ))}
       </div>
 
       {isLoading ? (
-        <p className="text-ch/50">Loading library…</p>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-white/60 p-12 text-center">
-          <p className="font-display text-2xl italic text-ch/60">
-            {statusFilter === "hidden" ? "No hidden templates" : "No templates match"}
+        <p className="text-[13px] text-muted-lt">Loading…</p>
+      ) : isError ? (
+        <div className="rounded-[10px] border border-terra/20 bg-terra/5 px-5 py-4 text-[13px] text-charcoal">
+          <p className="font-medium">Could not load workflows</p>
+          <p className="mt-1 text-muted-lt">
+            {error instanceof Error ? error.message : "Unknown error"}
           </p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
-            {statusFilter === "hidden"
-              ? "Templates you hide from your personal view will show up here."
-              : "Adjust filters, or create a new template to capture how a workflow runs."}
+          <p className="mt-2 text-[12px] text-muted-lt">
+            If this mentions missing tables or columns, run{" "}
+            <code className="rounded bg-white px-1 py-0.5">npm run db:apply-sop-migration</code>.
           </p>
-          {canManage && statusFilter !== "hidden" && (
-            <Button onClick={() => setEditing(emptyDraft())} className="mt-4 bg-gold hover:bg-goldl">
-              Create a template
-            </Button>
-          )}
+        </div>
+      ) : tab === "insights" ? (
+        <div>
+          {insights ? <RoleInsightsPanel insights={insights} /> : null}
+          <div className="mt-5 grid grid-cols-1 gap-2.5 md:grid-cols-3">
+            <SopStatTile
+              label="Principal hrs / project"
+              value={formatHours(insights?.principalHrsPerProject ?? 0)}
+              sub="currently handled by you"
+            />
+            <SopStatTile
+              label="Delegatable hrs"
+              value={
+                (insights?.delegatablePct ?? 0) > 0 ? formatHours(insights?.delegatableHrs ?? 0) : "—"
+              }
+              sub={
+                (insights?.delegatablePct ?? 0) > 0
+                  ? `per project · ${Math.round(insights?.delegatablePct ?? 0)}% of total`
+                  : "Add task role assignments to see"
+              }
+            />
+            <SopStatTile
+              label="Tasks with resources"
+              value={`${insights?.tasksWithResources ?? 0} of ${insights?.totalTasks ?? 0}`}
+              sub="team-ready tasks"
+            />
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((tpl) => {
-            const phases = data!.phases.filter((p) => p.template_id === tpl.id);
-            const scoped = phases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-            const scopedLabel = formatHours(scoped).replace(" hrs", "");
-            const lastUsed = data!.lastUsed[tpl.id];
-            const isDefault = !!(tpl as { is_default?: boolean }).is_default;
-            const isHidden = hiddenSet.has(tpl.id);
-            const uses = data!.usageCounts?.[tpl.id] ?? 0;
-            const activeUses = data!.activeUsageCounts?.[tpl.id] ?? 0;
-            return (
-              <div
-                key={tpl.id}
-                className={cn(
-                  "group flex flex-col rounded-lg border border-border bg-white p-5 transition-shadow hover:shadow-md",
-                  isHidden && "opacity-70",
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-display text-xl tracking-tight text-ch">{tpl.name}</h3>
-                      {isDefault && (
-                        <span className="shrink-0 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-gold">
-                          Starter
-                        </span>
-                      )}
-                      {isHidden && (
-                        <span className="shrink-0 rounded-full border border-border bg-creamd/60 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-ch/60">
-                          Hidden
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 text-xs uppercase tracking-[0.16em] text-ch/50">
-                      {tpl.category || "Uncategorized"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] uppercase tracking-[0.15em]",
-                        RISK_STYLE[(tpl.scope_risk_level ?? "low") as Risk],
-                      )}
-                    >
-                      {tpl.scope_risk_level ?? "low"}
-                    </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-ch/50 hover:text-ch">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-44">
-                        {canManage && (
-                          <DropdownMenuItem onClick={() => openEditFromTemplate(tpl)}>
-                            <Pencil className="h-3.5 w-3.5" /> Edit
-                          </DropdownMenuItem>
-                        )}
-                        {canManage && (
-                          <DropdownMenuItem onClick={() => duplicateMut.mutate(tpl.id)}>
-                            <CopyIcon className="h-3.5 w-3.5" /> Duplicate
-                          </DropdownMenuItem>
-                        )}
-                        {isHidden ? (
-                          <DropdownMenuItem onClick={() => hideMut.mutate({ template_id: tpl.id, hidden: false })}>
-                            <Eye className="h-3.5 w-3.5" /> Unhide
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem onClick={() => hideMut.mutate({ template_id: tpl.id, hidden: true })}>
-                            <EyeOff className="h-3.5 w-3.5" /> Hide from view
-                          </DropdownMenuItem>
-                        )}
-                        {canManage && !isDefault && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => setDeleteTarget({ id: tpl.id, name: tpl.name, uses, activeUses })}
-                              className="text-terra focus:text-terra"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" /> Delete
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-                {tpl.description && (
-                  <p className="mt-3 line-clamp-2 text-sm text-ch/70">{tpl.description}</p>
-                )}
-                <div className="mt-4 flex items-baseline gap-6 border-t border-border pt-4">
-                  <div>
-                    <div className="font-display text-2xl text-ch">{phases.length}</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Phases</div>
-                  </div>
-                  <div>
-                    <div className="font-display text-2xl text-ch">{scopedLabel}</div>
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">Scoped hrs</div>
-                  </div>
-                  <div className="ml-auto text-right">
-                    <button
-                      type="button"
-                      className={cn(
-                        "text-[11px] text-ch/60 hover:text-ch",
-                        uses > 0 && "underline-offset-2 hover:underline",
-                      )}
-                      onClick={() => uses > 0 && setUsageFor({ id: tpl.id, name: tpl.name })}
-                      disabled={uses === 0}
-                    >
-                      {uses === 0
-                        ? "Never used"
-                        : activeUses === uses && uses === 1
-                          ? "Used on 1 active project"
-                          : `Used on ${uses} project${uses === 1 ? "" : "s"}`}
-                    </button>
-                    {lastUsed && (
-                      <div className="text-[11px] text-ch/40">
-                        Last {new Date(lastUsed).toLocaleDateString()}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-4 flex gap-2">
-                  {canManage && (
-                    <Button
-                      variant="outline"
-                      className="flex-1 border-border"
-                      onClick={() => openEditFromTemplate(tpl)}
-                    >
-                      Edit
-                    </Button>
-                  )}
-                  <Button
-                    className="flex-1 bg-ch text-white hover:bg-ch/85"
-                    onClick={() => {
-                      const phs: WizardPhase[] = data!.phases
-                        .filter((p) => p.template_id === tpl.id)
-                        .sort((a, b) => a.sort_order - b.sort_order)
-                        .map((p) => ({
-                          name: p.name,
-                          expected_hrs: Number(p.expected_hrs) || 0,
-                          billable: !!p.billable,
-                        }));
-                      setSetupFor({ id: tpl.id, name: tpl.name, phases: phs });
-                    }}
-                  >
-                    Attach to project
-                  </Button>
-                </div>
+        <>
+          <div className="mb-5 grid grid-cols-1 gap-2.5 md:grid-cols-3">
+            {tab === "project" ? (
+              <>
+                <SopStatTile label="Workflows" value={String(projectStats.workflowCount)} sub="project templates" />
+                <SopStatTile label="Tasks defined" value={String(projectStats.taskCount)} sub="across all workflows" />
+                <SopStatTile
+                  label="Avg project hours"
+                  value={projectStats.avgHrs > 0 ? formatHours(projectStats.avgHrs) : "—"}
+                  sub="per project template"
+                />
+              </>
+            ) : (
+              <>
+                <SopStatTile label="Operations" value={String(firmStats.workflowCount)} sub="firm procedures" />
+                <SopStatTile label="Tasks defined" value={String(firmStats.taskCount)} sub="across all operations" />
+                <SopStatTile
+                  label="Tasks with resources"
+                  value={String(firmStats.tasksWithResources)}
+                  sub="linked to resources"
+                />
+              </>
+            )}
+          </div>
+
+          <p className="mb-2.5 text-[10px] uppercase tracking-[0.10em] text-muted-lt">
+            {tab === "project" ? "Project workflows" : "Firm operations"}
+          </p>
+
+          {workflows.length === 0 ? (
+            canManage ? (
+              <SopEmptyState onCreate={() => setNewWfOpen(true)} />
+            ) : (
+              <div className="rounded-[10px] bg-[rgba(44,44,44,0.02)] px-8 py-8 text-center text-[13px] text-muted-lt">
+                <LayoutList className="mx-auto mb-2 h-7 w-7" />
+                No workflows yet.
               </div>
-            );
-          })}
-        </div>
+            )
+          ) : (
+            workflows.map((wf, index) => (
+              <WorkflowCard
+                key={wf.id}
+                workflow={wf}
+                defaultOpen={openWorkflowId === wf.id}
+                canManage={canManage}
+                onAddPhase={
+                  canManage
+                    ? (templateId) => {
+                        setAddPhaseTemplateId(templateId);
+                        setOpenWorkflowId(templateId);
+                      }
+                    : undefined
+                }
+                onEditTask={(phaseId, task) => setTaskEdit({ phaseId, task })}
+                onAddTask={(phaseId) => setTaskEdit({ phaseId, task: null })}
+                onReorderPhases={
+                  canManage
+                    ? (templateId, orderedIds) => reorderMut.mutate({ template_id: templateId, ordered_ids: orderedIds })
+                    : undefined
+                }
+                onRename={
+                  canManage
+                    ? async (workflowId, name) => renameWfMut.mutateAsync({ id: workflowId, name })
+                    : undefined
+                }
+                onMove={
+                  canManage
+                    ? async (workflowId, workflowType) => moveWfMut.mutateAsync({ id: workflowId, workflow_type: workflowType })
+                    : undefined
+                }
+                onDelete={
+                  canManage
+                    ? async (workflowId) => deleteWfMut.mutateAsync({ id: workflowId })
+                    : undefined
+                }
+                canMoveUp={index > 0}
+                canMoveDown={index < workflows.length - 1}
+                onMoveUp={
+                  canManage ? () => reorderWorkflow(wf.id, "up") : undefined
+                }
+                onMoveDown={
+                  canManage ? () => reorderWorkflow(wf.id, "down") : undefined
+                }
+                onBulkReassign={canManage ? (workflow) => setBulkReassignWorkflow(workflow) : undefined}
+                onOpenResource={setPreviewResource}
+                getResourceDownloadUrl={getResourceDownloadUrl}
+              />
+            ))
+          )}
+        </>
       )}
 
-      <ProjectSetupWizard
-        open={!!setupFor}
-        onClose={() => setSetupFor(null)}
-        onCreated={(projectId) => {
-          qc.invalidateQueries({ queryKey: ["sightline-list"] });
-          navigate({ to: "/sightline", search: { openProject: projectId, onboarded: 1 } });
-        }}
-        templateId={setupFor?.id ?? null}
-        templateName={setupFor?.name ?? null}
-        initialPhases={setupFor?.phases ?? []}
+      <NewWorkflowModal
+        open={newWfOpen}
+        onOpenChange={setNewWfOpen}
+        saving={createWfMut.isPending}
+        onCreate={(payload) => createWfMut.mutate(payload)}
       />
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{deleteTarget?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget && deleteTarget.uses === 0 && (
-                <>This template has not been used on any projects. Deleting it is permanent and cannot be undone.</>
-              )}
-              {deleteTarget && deleteTarget.uses > 0 && deleteTarget.activeUses === 0 && (
-                <>
-                  This template has been used on {deleteTarget.uses} project{deleteTarget.uses === 1 ? "" : "s"}. Deleting the template does not affect those projects — their phases are snapshots and will remain intact. Deleting the template is permanent and cannot be undone.
-                </>
-              )}
-              {deleteTarget && deleteTarget.activeUses > 0 && (
-                <>
-                  This template is attached to {deleteTarget.activeUses} active project{deleteTarget.activeUses === 1 ? "" : "s"}. You can still delete it — the active projects will keep their phases. However you will no longer be able to attach this template to new projects.
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteTarget && delMut.mutate(deleteTarget.id)}
-              className="bg-terra text-white hover:bg-terra/85"
-            >
-              Confirm delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AddPhaseModal
+        open={!!addPhaseTemplateId}
+        onOpenChange={(v) => !v && setAddPhaseTemplateId(null)}
+        saving={addPhaseMut.isPending}
+        onAdd={({ name, billable }) => {
+          if (!addPhaseTemplateId) return;
+          addPhaseMut.mutate({ template_id: addPhaseTemplateId, name, billable });
+        }}
+      />
 
-      <UsageSheet target={usageFor} onClose={() => setUsageFor(null)} />
+      <BulkReassignTasksModal
+        open={!!bulkReassignWorkflow}
+        onOpenChange={(v) => !v && setBulkReassignWorkflow(null)}
+        workflow={bulkReassignWorkflow}
+        saving={bulkRolesMut.isPending}
+        onApply={async (payload) => {
+          await bulkRolesMut.mutateAsync(payload);
+        }}
+      />
 
-      {delMut.isPending && <div className="sr-only">Deleting…</div>}
+      <TaskEditModal
+        open={!!taskEdit}
+        onOpenChange={(v) => !v && setTaskEdit(null)}
+        phaseId={taskEdit?.phaseId ?? null}
+        task={taskEdit?.task}
+        resources={(data?.resources ?? []) as import("@/components/sop/TaskEditModal").ResourceOption[]}
+        linkedResourceIds={taskEdit?.task ? stepResourceMap.get(taskEdit.task.id) : []}
+        saving={saveStepMut.isPending}
+        onPreviewResource={setPreviewResource}
+        onSaveResource={canManage ? async (payload) => saveResourceMut.mutateAsync(payload) : undefined}
+        onSave={async (payload) => {
+          await saveStepMut.mutateAsync({
+            ...payload,
+            assigned_role: payload.assigned_role as SopAssignedRole,
+            assigned_role_label: payload.assigned_role_label ?? null,
+          });
+        }}
+      />
+
+      <ResourceDrawer
+        open={resourceDrawerOpen}
+        onClose={() => setResourceDrawerOpen(false)}
+        resources={(data?.resources ?? []) as import("@/components/sop/ResourceDrawer").FirmResourceRow[]}
+        canManage={canManage}
+        saving={saveResourceMut.isPending}
+        deleting={deleteResourceMut.isPending}
+        onSaveResource={async (payload) => {
+          await saveResourceMut.mutateAsync(payload);
+        }}
+        onDeleteResource={
+          canManage ? async (id) => deleteResourceMut.mutateAsync(id) : undefined
+        }
+        onReorderResources={
+          canManage ? async (ordered_ids) => reorderResourcesMut.mutateAsync(ordered_ids) : undefined
+        }
+        reordering={reorderResourcesMut.isPending}
+        onOpenResource={setPreviewResource}
+        getResourceDownloadUrl={getResourceDownloadUrl}
+      />
+
+      <ResourcePreviewModal resource={previewResource} onClose={() => setPreviewResource(null)} />
     </ModulePage>
-  );
-}
-
-function UsageSheet({ target, onClose }: { target: { id: string; name: string } | null; onClose: () => void }) {
-  const fn = useServerFn(getTemplateUsage);
-  const { data, isLoading } = useQuery({
-    queryKey: ["sop-usage", target?.id],
-    queryFn: () => fn({ data: { template_id: target!.id } }),
-    enabled: !!target,
-  });
-  return (
-    <Sheet open={!!target} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle className="font-display text-2xl">{target?.name}</SheetTitle>
-          <SheetDescription>Projects using this template</SheetDescription>
-        </SheetHeader>
-        <div className="mt-6 space-y-2">
-          {isLoading && <p className="text-sm text-ch/50">Loading…</p>}
-          {data && data.projects.length === 0 && <p className="text-sm text-ch/50">Not attached to any projects.</p>}
-          {data?.projects.map((p) => (
-            <div key={p.id} className="rounded-md border border-border bg-white p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate font-medium text-ch">{p.name}</div>
-                  {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
-                </div>
-                <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] uppercase tracking-[0.15em] text-ch/70">
-                  {p.status}
-                </span>
-              </div>
-              <div className="mt-1 text-[11px] text-ch/40">
-                Attached {new Date(p.created_at).toLocaleDateString()}
-              </div>
-            </div>
-          ))}
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-type ProjectOption = { id: string; name: string; client_name: string | null; status: string };
-
-function AttachProjectPicker({
-  templateName, projects, onSubmit, saving, onCancel,
-}: {
-  templateName: string;
-  projects: ProjectOption[];
-  onSubmit: (project_id: string) => void;
-  saving: boolean;
-  onCancel: () => void;
-}) {
-  const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string>("");
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((p) =>
-      [p.name, p.client_name].filter(Boolean).some((v) => v!.toLowerCase().includes(q)),
-    );
-  }, [projects, search]);
-
-  const selectedProject = projects.find((p) => p.id === selected);
-
-  if (projects.length === 0) {
-    return (
-      <div className="space-y-4 py-2">
-        <p className="text-sm text-ch/70">You have no projects to attach this to yet.</p>
-        <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button className="bg-gold hover:bg-goldl" onClick={() => { onCancel(); navigate({ to: "/sightline" }); }}>
-            Create a project first →
-          </Button>
-        </DialogFooter>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ch/40" />
-        <Input
-          autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search projects…" className="pl-9"
-        />
-      </div>
-      <div className="max-h-72 overflow-y-auto rounded-md border border-border">
-        {filtered.length === 0 ? (
-          <p className="p-4 text-sm text-ch/50">No projects match.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {filtered.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelected(p.id)}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-creamd/50",
-                    selected === p.id && "bg-goldp/40",
-                  )}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-ch">{p.name}</div>
-                    {p.client_name && <div className="truncate text-xs text-ch/60">{p.client_name}</div>}
-                  </div>
-                  <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] uppercase tracking-[0.15em] text-ch/70">
-                    {p.status}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button
-          disabled={!selected || saving}
-          onClick={() => selected && onSubmit(selected)}
-          className="bg-gold hover:bg-goldl"
-        >
-          {saving ? "Attaching…" : selectedProject ? `Attach to ${selectedProject.name}` : "Attach"}
-        </Button>
-      </DialogFooter>
-      <p className="text-[11px] text-ch/50">
-        Attaching “{templateName}” copies its phases as a snapshot. Editing the template later won't change this project.
-      </p>
-    </div>
-  );
-}
-
-function TemplateEditor({
-  draft, onChange, onSave, onCancel, onDuplicateInstead, saving, config, usageCount, activeUsageCount, onShowUsage,
-  canManage, stepAssignees = [], assigneeMembers = [], assigneePrincipalName = "Principal",
-  onUpsertStepAssignee, onDeleteStepAssignee,
-}: {
-  draft: TemplateDraft;
-  onChange: (d: TemplateDraft) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  onDuplicateInstead?: () => void;
-  saving: boolean;
-  config: { rate_billed: number | null; comp_draw_annual: number | null; target_billable_hrs_per_week?: number | null } | null;
-  usageCount: number;
-  activeUsageCount: number;
-  onShowUsage?: () => void;
-  canManage?: boolean;
-  stepAssignees?: Array<StepAssigneeRecord & { sop_step_id: string }>;
-  assigneeMembers?: AssigneePickerMember[];
-  assigneePrincipalName?: string;
-  onUpsertStepAssignee?: (stepId: string, payload: {
-    assignee_kind: "member" | "principal";
-    firm_member_id?: string | null;
-    estimated_hrs?: number;
-    is_billable?: boolean;
-  }) => Promise<void>;
-  onDeleteStepAssignee?: (assigneeId: string) => Promise<void>;
-}) {
-  const billedRate = Number(config?.rate_billed) || 0;
-  const costPerHour = billedRate > 0 ? billedRate * 0.6 : 0;
-  const principalBurdenedRate = useMemo(() => {
-    const draw = Number(config?.comp_draw_annual) || 0;
-    const hpw = Number(config?.target_billable_hrs_per_week) || 40;
-    const hrs = 48 * hpw;
-    return hrs > 0 ? draw / hrs : costPerHour * 0.55;
-  }, [config, costPerHour]);
-
-  const assigneesByStep = useMemo(() => {
-    const m = new Map<string, StepAssigneeRecord[]>();
-    for (const a of stepAssignees) {
-      const arr = m.get(a.sop_step_id) ?? [];
-      arr.push(a);
-      m.set(a.sop_step_id, arr);
-    }
-    return m;
-  }, [stepAssignees]);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [phaseDeleteIdx, setPhaseDeleteIdx] = useState<number | null>(null);
-
-  function setPhases(updater: (phs: Phase[]) => Phase[]) {
-    onChange({ ...draft, phases: updater(draft.phases) });
-  }
-
-  function addPhase() {
-    setPhases((phs) => [
-      ...phs,
-      { name: "New phase", expected_hrs: 0, billable: true, description: "", time_benchmark_notes: "", sort_order: phs.length, steps: [] },
-    ]);
-  }
-
-  function movePhase(idx: number, dir: -1 | 1) {
-    setPhases((phs) => {
-      const next = [...phs];
-      const target = idx + dir;
-      if (target < 0 || target >= next.length) return next;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
-    });
-  }
-
-  const phaseHours = (p: Phase) => {
-    const stepSum = p.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
-    return stepSum > 0 ? stepSum : Number(p.expected_hrs) || 0;
-  };
-  const totalScoped = draft.phases.reduce((s, p) => s + phaseHours(p), 0);
-
-  return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
-      <button onClick={onCancel} className="mb-4 inline-flex items-center gap-1.5 text-sm text-ch/60 hover:text-ch">
-        <ArrowLeft className="h-4 w-4" /> Back to library
-      </button>
-
-      {draft.is_default && draft.id && !bannerDismissed && (
-        <div className="mb-6 rounded-lg border border-gold/40 bg-goldp/40 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
-            <div className="flex-1 text-sm text-ch/85">
-              <p className="font-medium text-ch">You're editing a default Sightline template.</p>
-              <p className="mt-1">
-                Changes apply to this template for your firm. This does not affect other firms. Projects already using this template are not affected — they use a snapshot.
-              </p>
-              <p className="mt-1 text-ch/70">Want to keep the original? Duplicate first.</p>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => setBannerDismissed(true)}>
-                  Continue editing
-                </Button>
-                {onDuplicateInstead && (
-                  <Button size="sm" className="bg-gold hover:bg-goldl" onClick={onDuplicateInstead}>
-                    Duplicate instead
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.25em] text-gold">
-            {draft.id ? "Edit template" : "New template"}
-          </p>
-          <h1 className="mt-2 font-display text-4xl tracking-tight text-ch">
-            {draft.name || "Untitled template"}
-          </h1>
-          {draft.id && (
-            <button
-              type="button"
-              onClick={() => usageCount > 0 && onShowUsage?.()}
-              disabled={usageCount === 0}
-              className={cn("mt-1 text-xs text-ch/60", usageCount > 0 && "hover:text-ch hover:underline underline-offset-2")}
-            >
-              {usageCount === 0
-                ? "Never used"
-                : activeUsageCount === usageCount && usageCount === 1
-                  ? "Used on 1 active project"
-                  : `Used on ${usageCount} project${usageCount === 1 ? "" : "s"}`}
-            </button>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onCancel} className="border-border">Cancel</Button>
-          <Button onClick={onSave} disabled={saving || !draft.name.trim()} className="bg-gold hover:bg-goldl">
-            {saving ? "Saving…" : "Save template"}
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-8 pt-8 md:grid-cols-2">
-        <Field label="Template name">
-          <Input value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} maxLength={160} />
-        </Field>
-        <Field label="Category">
-          <Input
-            value={draft.category}
-            onChange={(e) => onChange({ ...draft, category: e.target.value })}
-            placeholder="e.g. Full Renovation, Kitchen, FF&E"
-            maxLength={120}
-          />
-        </Field>
-        <Field label="Department">
-          <Input value={draft.department} onChange={(e) => onChange({ ...draft, department: e.target.value })} maxLength={120} />
-        </Field>
-        <Field label="Scope risk level">
-          <Select value={draft.scope_risk_level} onValueChange={(v) => onChange({ ...draft, scope_risk_level: v as Risk })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="low">Low — well-understood, stable scope</SelectItem>
-              <SelectItem value="medium">Medium — some scope variability</SelectItem>
-              <SelectItem value="high">High — known scope creep risk</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Description" className="md:col-span-2">
-          <Textarea value={draft.description} onChange={(e) => onChange({ ...draft, description: e.target.value })} rows={3} maxLength={4000} />
-        </Field>
-        <Field label="Tags (comma separated)" className="md:col-span-2">
-          <Input
-            value={draft.tags.join(", ")}
-            onChange={(e) => onChange({ ...draft, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 20) })}
-            placeholder="residential, premium, multi-room"
-          />
-        </Field>
-        <Field label="Triggered by">
-          <Input value={draft.triggered_by} onChange={(e) => onChange({ ...draft, triggered_by: e.target.value })} maxLength={500}
-            placeholder="Signed contract & 50% deposit" />
-        </Field>
-        <Field label="Done when">
-          <Input value={draft.done_when} onChange={(e) => onChange({ ...draft, done_when: e.target.value })} maxLength={500}
-            placeholder="Punch list closed & final invoice paid" />
-        </Field>
-        <Field label="Common failure modes" className="md:col-span-2">
-          <Textarea value={draft.common_failure_modes} onChange={(e) => onChange({ ...draft, common_failure_modes: e.target.value })} rows={3} maxLength={4000}
-            placeholder="Scope additions during procurement; vendor lead-time slippage…" />
-        </Field>
-      </div>
-
-      <div className="mt-10 flex items-center justify-between border-b border-border pb-4">
-        <div>
-          <h2 className="font-display text-2xl tracking-tight text-ch">Phases</h2>
-          <p className="text-sm text-ch/60">
-            {draft.phases.length} {draft.phases.length === 1 ? "phase" : "phases"} · {formatHours(totalScoped)} scoped
-            {billedRate > 0 && ` · ${fmtUsd(totalScoped * billedRate)} potential revenue`}
-          </p>
-        </div>
-        <Button onClick={addPhase} variant="outline" className="border-border">
-          <Plus className="mr-2 h-4 w-4" /> Add phase
-        </Button>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        {draft.phases.map((phase, i) => (
-          <PhaseRow
-            key={i}
-            phase={phase}
-            billedRate={billedRate}
-            costPerHour={costPerHour}
-            assigneesByStep={assigneesByStep}
-            assigneeMembers={assigneeMembers}
-            assigneePrincipalName={assigneePrincipalName}
-            principalBurdenedRate={principalBurdenedRate}
-            canManage={canManage}
-            onUpsertStepAssignee={onUpsertStepAssignee}
-            onDeleteStepAssignee={onDeleteStepAssignee}
-            onChange={(next) => setPhases((phs) => phs.map((p, idx) => (idx === i ? next : p)))}
-            onRemove={() => setPhaseDeleteIdx(i)}
-            onUp={() => movePhase(i, -1)}
-            onDown={() => movePhase(i, 1)}
-          />
-        ))}
-        {draft.phases.length === 0 && (
-          <div className="rounded-lg border border-dashed border-border bg-white/60 p-8 text-center text-sm text-ch/60">
-            No phases yet. Add the first one above.
-          </div>
-        )}
-      </div>
-
-      {billedRate === 0 && (
-        <div className="mt-6 flex items-start gap-2 rounded-md border border-gold/30 bg-goldp/40 p-3 text-sm text-ch/80">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
-          Set your billed rate in Rate & Cost Architecture to see live cost / revenue / margin per phase.
-        </div>
-      )}
-
-      <AlertDialog open={phaseDeleteIdx !== null} onOpenChange={(o) => !o && setPhaseDeleteIdx(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {phaseDeleteIdx !== null ? draft.phases[phaseDeleteIdx]?.name || "this phase" : "this phase"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the phase and all its steps from this template. Projects already using this template are not affected.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-terra text-white hover:bg-terra/85"
-              onClick={() => {
-                if (phaseDeleteIdx !== null) {
-                  const idx = phaseDeleteIdx;
-                  setPhases((phs) => phs.filter((_, i) => i !== idx));
-                }
-                setPhaseDeleteIdx(null);
-              }}
-            >
-              Delete phase
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={className}>
-      <Label className="text-xs uppercase tracking-[0.16em] text-ch/50">{label}</Label>
-      <div className="mt-1.5">{children}</div>
-    </div>
-  );
-}
-
-function PhaseRow({
-  phase, onChange, onRemove, onUp, onDown, billedRate, costPerHour,
-  assigneesByStep, assigneeMembers = [], assigneePrincipalName = "Principal",
-  principalBurdenedRate = 0, canManage, onUpsertStepAssignee, onDeleteStepAssignee,
-}: {
-  phase: Phase;
-  onChange: (p: Phase) => void;
-  onRemove: () => void;
-  onUp: () => void;
-  onDown: () => void;
-  billedRate: number;
-  costPerHour: number;
-  assigneesByStep?: Map<string, StepAssigneeRecord[]>;
-  assigneeMembers?: AssigneePickerMember[];
-  assigneePrincipalName?: string;
-  principalBurdenedRate?: number;
-  canManage?: boolean;
-  onUpsertStepAssignee?: (stepId: string, payload: {
-    assignee_kind: "member" | "principal";
-    firm_member_id?: string | null;
-    estimated_hrs?: number;
-    is_billable?: boolean;
-  }) => Promise<void>;
-  onDeleteStepAssignee?: (assigneeId: string) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const stepSum = phase.steps.reduce((s, st) => s + (Number(st.estimated_hrs) || 0), 0);
-  const computed = stepSum > 0;
-  const hrs = computed ? stepSum : Number(phase.expected_hrs) || 0;
-  const revenue = phase.billable ? hrs * billedRate : 0;
-  const cost = hrs * costPerHour;
-  const margin = revenue - cost;
-  const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
-
-  return (
-    <div className="rounded-lg border border-border bg-white">
-      <div className="flex items-center gap-3 p-3">
-        <div className="flex flex-col text-ch/30">
-          <button type="button" onClick={onUp} className="hover:text-ch" title="Move up">▲</button>
-          <button type="button" onClick={onDown} className="hover:text-ch" title="Move down">▼</button>
-        </div>
-        <GripVertical className="h-4 w-4 text-ch/30" />
-        <Input
-          value={phase.name}
-          onChange={(e) => onChange({ ...phase, name: e.target.value })}
-          placeholder="Phase name"
-          className="flex-1 border-0 bg-transparent px-1 font-display text-lg shadow-none focus-visible:ring-0"
-          maxLength={120}
-        />
-        <div className="flex items-center gap-1.5">
-          <Input
-            type="number" min={0} step={0.5}
-            value={computed ? hrs : phase.expected_hrs}
-            onChange={(e) => onChange({ ...phase, expected_hrs: parseFloat(e.target.value) || 0 })}
-            readOnly={computed}
-            title={computed ? "Total from steps" : "Manual phase hours"}
-            className={cn("w-20 text-right", computed && "bg-creamd/40 text-ch/70")}
-          />
-          <span className="text-xs text-ch/50">{computed ? "from steps" : "hrs"}</span>
-        </div>
-        <div className="flex items-center gap-2 px-2">
-          <Switch checked={phase.billable} onCheckedChange={(v) => onChange({ ...phase, billable: v })} />
-          <span className="text-xs text-ch/60">{phase.billable ? "Billable" : "Non-bill"}</span>
-        </div>
-        <Button variant="ghost" size="sm" onClick={() => setOpen((o) => !o)} className="text-ch/60">
-          {open ? "Hide" : "Detail"}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onRemove} className="text-terra hover:text-terra">
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {billedRate > 0 && phase.billable && (
-        <div className="border-t border-border bg-creamd/40">
-          <div className="grid grid-cols-3 gap-px text-center">
-            <Stat label="Cost" value={fmtUsd(cost)} />
-            <Stat label="Revenue" value={fmtUsd(revenue)} />
-            <Stat label="Margin" value={`${fmtUsd(margin)} (${marginPct.toFixed(0)}%)`} accent={margin < 0 ? "danger" : "success"} />
-          </div>
-          <div className="bg-white px-3 pb-2 text-center text-[11px] uppercase tracking-[0.16em] text-ch/40">
-            Est. at {fmtUsd(billedRate)}/hr
-          </div>
-        </div>
-      )}
-      {billedRate > 0 && !phase.billable && (
-        <div className="grid grid-cols-2 gap-px border-t border-border bg-creamd/40 text-center">
-          <Stat label="Cost" value={fmtUsd(cost)} />
-          <Stat label="Type" value="Non-billable · cost only" />
-        </div>
-      )}
-
-      {open && (
-        <div className="space-y-4 border-t border-border bg-cream/30 p-4">
-          <Field label="Description">
-            <Textarea
-              value={phase.description ?? ""}
-              onChange={(e) => onChange({ ...phase, description: e.target.value })}
-              rows={2} maxLength={2000}
-            />
-          </Field>
-          <Field label="Time benchmark notes">
-            <Textarea
-              value={phase.time_benchmark_notes ?? ""}
-              onChange={(e) => onChange({ ...phase, time_benchmark_notes: e.target.value })}
-              rows={2} maxLength={2000}
-              placeholder="What drives the hours? Typical drift causes?"
-            />
-          </Field>
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <Label className="text-xs uppercase tracking-[0.16em] text-ch/50">Process steps</Label>
-              <Button
-                variant="outline" size="sm" className="border-border"
-                onClick={() => onChange({
-                  ...phase,
-                  steps: [...phase.steps, { description: "", estimated_hrs: 0, sort_order: phase.steps.length }],
-                })}
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add step
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {phase.steps.map((step, j) => {
-                const stepAssigneeList = step.id ? assigneesByStep?.get(step.id) ?? [] : [];
-                const stepTotalHrs =
-                  stepAssigneeList.length > 0
-                    ? stepAssigneeList.reduce((s, a) => s + Number(a.estimated_hrs || 0), 0)
-                    : Number(step.estimated_hrs) || 0;
-                return (
-                <div key={j} className="rounded-md border border-border/60 bg-white/80 p-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-6 text-right text-xs text-ch/40">{j + 1}.</span>
-                  <Input
-                    value={step.description}
-                    onChange={(e) => onChange({
-                      ...phase,
-                      steps: phase.steps.map((s, idx) => idx === j ? { ...s, description: e.target.value } : s),
-                    })}
-                    placeholder="Describe a step in this phase"
-                    maxLength={500}
-                    className="flex-1"
-                  />
-                  <Input
-                    type="number" min={0} step={0.25}
-                    value={stepAssigneeList.length > 0 ? stepTotalHrs : step.estimated_hrs}
-                    readOnly={stepAssigneeList.length > 0}
-                    onChange={(e) => onChange({
-                      ...phase,
-                      steps: phase.steps.map((s, idx) => idx === j ? { ...s, estimated_hrs: parseFloat(e.target.value) || 0 } : s),
-                    })}
-                    className={cn("w-20 text-right", stepAssigneeList.length > 0 && "bg-creamd/40")}
-                    placeholder="hrs"
-                  />
-                  <span className="text-xs text-ch/50">hrs</span>
-                  <Button
-                    variant="ghost" size="sm"
-                    onClick={() => onChange({ ...phase, steps: phase.steps.filter((_, idx) => idx !== j) })}
-                    className="text-terra"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                {step.id && onUpsertStepAssignee && (
-                  <StepAssigneeSection
-                    stepId={step.id}
-                    assignees={stepAssigneeList}
-                    members={assigneeMembers}
-                    principalName={assigneePrincipalName}
-                    principalBurdenedRate={principalBurdenedRate}
-                    isAdmin={canManage}
-                    onUpsert={(payload) => onUpsertStepAssignee(step.id!, payload)}
-                    onDelete={(aid) => onDeleteStepAssignee?.(aid) ?? Promise.resolve()}
-                  />
-                )}
-                {!step.id && canManage && (
-                  <p className="mt-1 pl-8 text-[11px] italic text-ch/45">Save the template to assign team members to new steps.</p>
-                )}
-                </div>
-              );
-              })}
-              {phase.steps.length === 0 && (
-                <p className="text-xs text-ch/40">No steps yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "success" | "danger" }) {
-  return (
-    <div className="bg-white px-3 py-2">
-      <div className="text-[11px] uppercase tracking-[0.16em] text-ch/50">{label}</div>
-      <div className={cn("font-display text-base", accent === "danger" && "text-terra", accent === "success" && "text-success")}>
-        {value}
-      </div>
-    </div>
   );
 }

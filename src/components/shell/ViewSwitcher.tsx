@@ -56,7 +56,7 @@ export function ViewSwitcherBanner({ realIsSuper, realImpersonating }: Props) {
     queryFn: () => listFirms(),
     enabled: realIsSuper && !realImpersonating && !!va.firmId,
   });
-  if (!realIsSuper || realImpersonating || !va.isActive) return null;
+  if (!realIsSuper || realImpersonating || !va.role) return null;
 
   const roleLabel = va.role
     ? ROLES.find((r) => r.value === va.role)?.label.toUpperCase()

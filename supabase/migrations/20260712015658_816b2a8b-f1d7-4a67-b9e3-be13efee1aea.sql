@@ -50,12 +50,31 @@ REVOKE EXECUTE ON FUNCTION public.founding_slots_remaining() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.ensure_firm_internal_project(uuid) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.seed_firm_activity_types(uuid) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.update_firm_billing_from_backend(uuid, jsonb) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.read_email_batch(text, integer, integer) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.enqueue_email(text, jsonb) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.delete_email(text, bigint) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.move_to_dlq(text, text, bigint, jsonb) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.email_queue_dispatch() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.email_queue_wake() FROM PUBLIC;
+-- Optional Lovable email queue (may not exist on self-hosted Supabase)
+DO $$ BEGIN
+  REVOKE EXECUTE ON FUNCTION public.read_email_batch(text, integer, integer) FROM PUBLIC;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  REVOKE EXECUTE ON FUNCTION public.enqueue_email(text, jsonb) FROM PUBLIC;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  REVOKE EXECUTE ON FUNCTION public.delete_email(text, bigint) FROM PUBLIC;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  REVOKE EXECUTE ON FUNCTION public.move_to_dlq(text, text, bigint, jsonb) FROM PUBLIC;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  REVOKE EXECUTE ON FUNCTION public.email_queue_dispatch() FROM PUBLIC;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  REVOKE EXECUTE ON FUNCTION public.email_queue_wake() FROM PUBLIC;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
 REVOKE EXECUTE ON FUNCTION public.seed_activity_types_on_firm_insert() FROM PUBLIC;
 
 -- Grant EXECUTE to authenticated for functions used by app / RLS policy evaluation
@@ -74,7 +93,19 @@ GRANT EXECUTE ON FUNCTION public.founding_slots_remaining() TO anon, authenticat
 GRANT EXECUTE ON FUNCTION public.ensure_firm_internal_project(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.seed_firm_activity_types(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.update_firm_billing_from_backend(uuid, jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.read_email_batch(text, integer, integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.enqueue_email(text, jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.delete_email(text, bigint) TO service_role;
-GRANT EXECUTE ON FUNCTION public.move_to_dlq(text, text, bigint, jsonb) TO service_role;
+DO $$ BEGIN
+  GRANT EXECUTE ON FUNCTION public.read_email_batch(text, integer, integer) TO service_role;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  GRANT EXECUTE ON FUNCTION public.enqueue_email(text, jsonb) TO service_role;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  GRANT EXECUTE ON FUNCTION public.delete_email(text, bigint) TO service_role;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;
+DO $$ BEGIN
+  GRANT EXECUTE ON FUNCTION public.move_to_dlq(text, text, bigint, jsonb) TO service_role;
+EXCEPTION WHEN undefined_function THEN NULL;
+END $$;

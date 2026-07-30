@@ -1,24 +1,24 @@
 import { useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Trash2, ArrowLeft, ArrowRight, Library } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Popover, PopoverTrigger, PopoverContent,
-} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { createProject } from "@/lib/sightline.functions";
-import { listSopTemplatesLite } from "@/lib/sightline.functions";
-import { getSopTemplatePhases } from "@/lib/sop.functions";
-import { getMyContext } from "@/lib/firm.functions";
+import { listProjectWorkflows, getSopTemplatePhases } from "@/lib/sop.functions";
+import { getMyContext, listFirmMembers } from "@/lib/firm.functions";
+import { avatarColor, memberInitials } from "@/components/my-work/MyWorkPageContent";
 import { getDashboardData } from "@/lib/dashboard.functions";
 import { calc, fmtUsd } from "@/lib/finance";
 import { normalizePricingStructure } from "@/lib/pricing-structure";
+import { ProjectWorkflowPicker, type WorkflowPhasePreview, type WorkflowPickerOption } from "@/components/sop/ProjectWorkflowPicker";
+import { orderWorkflowIdsForAttach } from "@/lib/sop-workflow-order";
+import { CLIENT_COMMUNICATION_OPTIONS } from "@/lib/client-contact";
 
 export type WizardPhase = {
   name: string;
@@ -26,7 +26,7 @@ export type WizardPhase = {
   billable: boolean;
 };
 
-export type PricingMethod = "flat" | "hourly" | "hybrid";
+export type PricingMethod = "flat" | "hourly" | "hybrid" | "retainer";
 
 export type ProjectSetupWizardProps = {
   open: boolean;
@@ -41,7 +41,7 @@ export function ProjectSetupWizard({
   open, onClose, onCreated, templateId, templateName, initialPhases,
 }: ProjectSetupWizardProps) {
   const createFn = useServerFn(createProject);
-  const listTemplatesFn = useServerFn(listSopTemplatesLite);
+  const listWorkflowsFn = useServerFn(listProjectWorkflows);
   const getTemplatePhasesFn = useServerFn(getSopTemplatePhases);
   const ctxFn = useServerFn(getMyContext);
   const dashFn = useServerFn(getDashboardData);
@@ -67,45 +67,84 @@ export function ProjectSetupWizard({
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [clientCommPref, setClientCommPref] = useState("");
   const [pricing, setPricing] = useState<PricingMethod>(isFlatFeeFirm ? "flat" : "flat");
   const [fee, setFee] = useState("");
   const [hourlyHours, setHourlyHours] = useState("");
+  const [retainerMonthly, setRetainerMonthly] = useState("");
+  const [retainerStartDate, setRetainerStartDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [phases, setPhases] = useState<WizardPhase[]>(initialPhases ?? []);
-  const [libraryOpen, setLibraryOpen] = useState(false);
-  const [appendingId, setAppendingId] = useState<string | null>(null);
+  const [selectedWorkflowIds, setSelectedWorkflowIds] = useState<string[]>(templateId ? [templateId] : []);
+  const [workflowPeriodLabel, setWorkflowPeriodLabel] = useState("");
+  const [workflowPeriodStart, setWorkflowPeriodStart] = useState("");
+  const [workflowPeriodEnd, setWorkflowPeriodEnd] = useState("");
+  const [previewTaskCount, setPreviewTaskCount] = useState(0);
+  const [teamPick, setTeamPick] = useState<Record<string, { checked: boolean; role: string }>>({});
 
-  const templatesQ = useQuery({
-    queryKey: ["wizard-sop-templates"],
-    queryFn: () => listTemplatesFn(),
+  const membersFn = useServerFn(listFirmMembers);
+  const membersQ = useQuery({
+    queryKey: ["wizard-firm-members"],
+    queryFn: () => membersFn(),
+    enabled: open && step === 2,
+    staleTime: 60_000,
+  });
+  const rosterMembers = ((membersQ.data?.members ?? []) as Array<{ id: string; name: string; role_type: string }>).filter(
+    (m) => m.role_type !== "principal",
+  );
+
+  const workflowsQ = useQuery({
+    queryKey: ["wizard-project-workflows"],
+    queryFn: () => listWorkflowsFn(),
     enabled: open && step === 2,
     staleTime: 60_000,
   });
 
-  async function appendTemplate(id: string, name: string) {
-    setAppendingId(id);
-    try {
-      const res = await getTemplatePhasesFn({ data: { template_id: id } });
-      const incoming = (res?.phases ?? []) as WizardPhase[];
-      if (!incoming.length) {
-        toast.info(`"${name}" has no phases to append.`);
+  const workflowOptions = (workflowsQ.data?.workflows ?? []) as WorkflowPickerOption[];
+
+  async function rebuildPhasesFromWorkflows(ids: string[]) {
+    const ordered = orderWorkflowIdsForAttach(ids, workflowOptions);
+    if (!ordered.length) {
+      if (!templateId) setPhases([]);
+      setPreviewTaskCount(0);
+      return;
+    }
+    let taskTotal = 0;
+    const merged: WizardPhase[] = [];
+    for (const id of ordered) {
+      const meta = workflowOptions.find((w) => w.id === id);
+      taskTotal += meta?.taskCount ?? 0;
+      try {
+        const res = await getTemplatePhasesFn({ data: { template_id: id } });
+        for (const p of (res?.phases ?? []) as WizardPhase[]) {
+          merged.push(p);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Could not load workflow");
         return;
       }
-      setPhases((phs) => [...phs, ...incoming]);
-      toast.success(`Appended ${incoming.length} phase${incoming.length === 1 ? "" : "s"} from ${name}.`);
-      setLibraryOpen(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not load template");
-    } finally {
-      setAppendingId(null);
     }
+    setPreviewTaskCount(taskTotal);
+    setPhases(merged);
   }
 
   useEffect(() => {
     if (!open) return;
     if (isFlatFeeFirm) setPricing("flat");
   }, [open, isFlatFeeFirm]);
+
+  useEffect(() => {
+    if (!open || step !== 2 || !templateId) return;
+    if (selectedWorkflowIds.includes(templateId) && workflowOptions.length) {
+      void rebuildPhasesFromWorkflows(selectedWorkflowIds);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed phases when workflows load on step 2
+  }, [open, step, templateId, workflowsQ.dataUpdatedAt]);
 
   // Re-seed phases when the wizard is reopened with a different template.
   const seededKey = useMemo(
@@ -121,10 +160,19 @@ export function ProjectSetupWizard({
   function reset() {
     setStep(1);
     setName(""); setClientName("");
+    setClientEmail(""); setClientPhone(""); setClientCommPref("");
     setPricing(isFlatFeeFirm ? "flat" : "flat"); setFee(""); setHourlyHours("");
+    setRetainerMonthly("");
+    setRetainerStartDate(new Date().toISOString().slice(0, 10));
     setStartDate(""); setEndDate("");
     setPhases(initialPhases ?? []);
+    setSelectedWorkflowIds(templateId ? [templateId] : []);
+    setWorkflowPeriodLabel("");
+    setWorkflowPeriodStart("");
+    setWorkflowPeriodEnd("");
+    setPreviewTaskCount(0);
     setLastSeed(null);
+    setTeamPick({});
   }
 
   function handleClose() {
@@ -135,13 +183,16 @@ export function ProjectSetupWizard({
 
   const feeNum = Number(fee) || 0;
   const hourlyHrsNum = Number(hourlyHours) || 0;
+  const retainerMonthlyNum = Number(retainerMonthly) || 0;
   const canAdvance =
     name.trim().length > 0 &&
     (pricing === "hourly"
       ? true
       : pricing === "flat"
         ? feeNum > 0
-        : feeNum > 0 && hourlyHrsNum > 0);
+        : pricing === "retainer"
+          ? retainerMonthlyNum > 0 && !!retainerStartDate
+          : feeNum > 0 && hourlyHrsNum > 0);
 
   // Live revenue preview for hybrid (flat + hourly_hrs × firm rate). Hourly
   // revenue for hourly-only projects is scoped_hrs × rate, computed after
@@ -150,6 +201,7 @@ export function ProjectSetupWizard({
 
   const createMut = useMutation({
     mutationFn: async () => {
+      const orderedWorkflowIds = orderWorkflowIdsForAttach(selectedWorkflowIds, workflowOptions);
       const trimmedPhases = phases
         .map((p) => ({
           name: p.name.trim(),
@@ -161,24 +213,70 @@ export function ProjectSetupWizard({
         data: {
           name: name.trim(),
           client_name: clientName.trim() || null,
+          client_email: clientEmail.trim() || null,
+          client_phone: clientPhone.trim() || null,
+          client_preferred_communication:
+            clientCommPref && ["email", "phone", "text", "in_person"].includes(clientCommPref)
+              ? (clientCommPref as "email" | "phone" | "text" | "in_person")
+              : null,
           status: "active",
-          // Rate for hourly + hybrid comes from the firm's billed rate — a
-          // single source of truth so a rate change updates unfinished work.
           scoped_rate:
             pricing === "hourly" || pricing === "hybrid" ? firmRate || null : null,
-          // Legacy column kept in sync for older readers.
           fixed_fee:
-            pricing === "flat" || pricing === "hybrid" ? (feeNum > 0 ? feeNum : null) : null,
+            pricing === "flat" || pricing === "hybrid"
+              ? feeNum > 0
+                ? feeNum
+                : null
+              : null,
           pricing_method:
-            pricing === "flat" ? "flat_fee" : pricing === "hourly" ? "hourly" : "hybrid",
+            pricing === "flat"
+              ? "flat_fee"
+              : pricing === "hourly"
+                ? "hourly"
+                : pricing === "retainer"
+                  ? "retainer"
+                  : "hybrid",
           flat_fee_amount:
-            pricing === "flat" || pricing === "hybrid" ? (feeNum > 0 ? feeNum : null) : null,
+            pricing === "flat" || pricing === "hybrid"
+              ? feeNum > 0
+                ? feeNum
+                : null
+              : null,
           hourly_scoped_hours:
             pricing === "hybrid" ? (hourlyHrsNum > 0 ? hourlyHrsNum : null) : null,
-          start_date: startDate || null,
+          retainer_monthly_amount:
+            pricing === "retainer" ? (retainerMonthlyNum > 0 ? retainerMonthlyNum : null) : null,
+          monthly_retainer_fee:
+            pricing === "retainer" ? (retainerMonthlyNum > 0 ? retainerMonthlyNum : null) : null,
+          retainer_start_date:
+            pricing === "retainer" ? retainerStartDate || null : null,
+          start_date:
+            pricing === "retainer"
+              ? retainerStartDate || null
+              : startDate || null,
           end_date: endDate || null,
-          sop_template_id: templateId ?? null,
-          phases: trimmedPhases.length ? trimmedPhases : null,
+          workflow_ids: orderedWorkflowIds.length ? orderedWorkflowIds : null,
+          workflow_period:
+            orderedWorkflowIds.length &&
+            (workflowPeriodLabel.trim() || workflowPeriodStart.trim() || workflowPeriodEnd.trim())
+              ? {
+                  period_label: workflowPeriodLabel.trim() || null,
+                  period_start: workflowPeriodStart.trim() || null,
+                  period_end: workflowPeriodEnd.trim() || null,
+                }
+              : null,
+          phases:
+            orderedWorkflowIds.length || templateId
+              ? null
+              : trimmedPhases.length
+                ? trimmedPhases
+                : null,
+          assignments: Object.entries(teamPick)
+            .filter(([, v]) => v.checked)
+            .map(([firm_member_id, v]) => ({
+              firm_member_id,
+              role_on_project: v.role.trim() || null,
+            })),
         },
       });
     },
@@ -191,7 +289,7 @@ export function ProjectSetupWizard({
           new CustomEvent("sightline:project-created", { detail: { id: res.id } }),
         );
         const trimmedPhaseCount = phases.filter((p) => p.name.trim().length > 0).length;
-        if (trimmedPhaseCount > 0 || templateId) {
+        if (trimmedPhaseCount > 0 || selectedWorkflowIds.length > 0 || templateId) {
           window.dispatchEvent(
             new CustomEvent("sightline:sop-attached", { detail: { id: res.id } }),
           );
@@ -208,8 +306,8 @@ export function ProjectSetupWizard({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[min(720px,92vh)] max-w-2xl flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="font-display text-2xl">
             {step === 1 ? "Set up your project" : "Review and adjust your scope of work"}
           </DialogTitle>
@@ -222,21 +320,64 @@ export function ProjectSetupWizard({
           </p>
         </DialogHeader>
 
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {step === 1 && (
           <div className="grid grid-cols-12 gap-3 py-2">
             <Field className="col-span-12" label="Project name *">
               <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Smith Residence — Full Renovation" />
             </Field>
-            <Field className="col-span-12" label="Client name">
-              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Optional" />
-            </Field>
+            <div className="col-span-12 rounded-md border border-border bg-cream/40 px-3 py-3">
+              <p className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-ch/50">
+                Client contact
+              </p>
+              <div className="grid grid-cols-12 gap-3">
+                <Field className="col-span-12 sm:col-span-6" label="Contact name">
+                  <Input
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Jane Smith"
+                  />
+                </Field>
+                <Field className="col-span-12 sm:col-span-6" label="Email">
+                  <Input
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="jane@example.com"
+                  />
+                </Field>
+                <Field className="col-span-12 sm:col-span-6" label="Phone">
+                  <Input
+                    type="tel"
+                    value={clientPhone}
+                    onChange={(e) => setClientPhone(e.target.value)}
+                    placeholder="(555) 555-0100"
+                  />
+                </Field>
+                <Field className="col-span-12 sm:col-span-6" label="Preferred communication">
+                  <select
+                    value={clientCommPref}
+                    onChange={(e) => setClientCommPref(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm text-ch"
+                  >
+                    <option value="">— Select —</option>
+                    {CLIENT_COMMUNICATION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
             <Field className="col-span-12" label="Pricing method *">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {(
                   [
                     { k: "flat", title: "Flat fee", blurb: "A fixed total fee for defined scope" },
                     { k: "hourly", title: "Hourly", blurb: "All time billed at your hourly rate" },
                     { k: "hybrid", title: "Hybrid", blurb: "Flat fee for design phase, hourly for coordination" },
+                    { k: "retainer", title: "Retainer", blurb: "A fixed monthly fee for ongoing client work" },
                   ] as const
                 ).map((opt) => (
                   <button
@@ -335,17 +476,101 @@ export function ProjectSetupWizard({
                 )}
               </>
             )}
+            {pricing === "retainer" && (
+              <>
+                <Field className="col-span-6" label="Monthly retainer fee *">
+                  <Input
+                    type="number"
+                    min={0}
+                    value={retainerMonthly}
+                    onChange={(e) => setRetainerMonthly(e.target.value)}
+                    placeholder="$0/month"
+                  />
+                </Field>
+                <Field className="col-span-6" label="Retainer start date *">
+                  <Input
+                    type="date"
+                    value={retainerStartDate}
+                    onChange={(e) => setRetainerStartDate(e.target.value)}
+                  />
+                </Field>
+                <div className="col-span-12">
+                  <p
+                    style={{
+                      fontFamily: "'Jost', sans-serif",
+                      fontSize: 12,
+                      fontStyle: "italic",
+                      color: "#8A7F75",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Retainer projects track your monthly fee against the hours your team spends each month. This shows
+                    you whether each client relationship is worth what you&apos;re charging.
+                  </p>
+                </div>
+              </>
+            )}
+            {pricing !== "retainer" && (
+            <>
             <Field className="col-span-6" label="Estimated start date">
               <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </Field>
             <Field className="col-span-6" label="Estimated end date">
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </Field>
+            </>
+            )}
           </div>
         )}
 
         {step === 2 && (
           <div className="space-y-3 py-2">
+            <ProjectWorkflowPicker
+              workflows={workflowOptions}
+              loading={workflowsQ.isLoading}
+              selectedIds={selectedWorkflowIds}
+              onSelectionChange={(ids) => {
+                setSelectedWorkflowIds(ids);
+                void rebuildPhasesFromWorkflows(ids);
+              }}
+              previewPhases={phases as WorkflowPhasePreview[]}
+              previewTaskCount={previewTaskCount}
+            />
+
+            {selectedWorkflowIds.length > 0 ? (
+              <div className="space-y-2 rounded-lg border border-border bg-cream/40 p-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-ch/50">
+                  Period for this scope (optional)
+                </p>
+                <Input
+                  placeholder="e.g. March 2026 or Month 1"
+                  value={workflowPeriodLabel}
+                  onChange={(e) => setWorkflowPeriodLabel(e.target.value)}
+                  className="text-[13px]"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="date"
+                    value={workflowPeriodStart}
+                    onChange={(e) => setWorkflowPeriodStart(e.target.value)}
+                    className="text-[13px]"
+                  />
+                  <Input
+                    type="date"
+                    value={workflowPeriodEnd}
+                    onChange={(e) => setWorkflowPeriodEnd(e.target.value)}
+                    className="text-[13px]"
+                  />
+                </div>
+                <p className="text-[11px] text-ch/50">
+                  For retainer or repeating work, label the first cycle now. You can add more periods later on the
+                  project.
+                </p>
+              </div>
+            ) : null}
+
+            {selectedWorkflowIds.length === 0 && !templateId ? (
+              <>
             {isFlatFeeFirm && pricing === "flat" && alignedRate > 0 && totalHrs > 0 ? (
               <div
                 className="rounded-md border border-border bg-cream/40 px-3 py-2"
@@ -355,9 +580,11 @@ export function ProjectSetupWizard({
                 suggests a minimum fee of {fmtUsd(suggestedMinFee, { decimals: 0 })}.
               </div>
             ) : null}
+            {pricing !== "retainer" ? (
             <div className="rounded-md border border-border bg-cream/50 px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-ch/60">
               Total scoped: <span className="text-ch">{totalHrs.toFixed(1)} hrs</span> · {phases.length} phase{phases.length === 1 ? "" : "s"}
             </div>
+            ) : null}
             {phases.length === 0 && (
               <p className="rounded-md border border-dashed border-border bg-white p-4 text-sm text-ch/60">
                 No phases yet. Add your first phase below.
@@ -401,61 +628,79 @@ export function ProjectSetupWizard({
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                className="border-dashed border-border"
-                onClick={() => setPhases((phs) => [...phs, { name: "", expected_hrs: 0, billable: true }])}
-              >
+            <Button
+                  variant="outline"
+                  className="border-dashed border-border"
+                  onClick={() => setPhases((phs) => [...phs, { name: "", expected_hrs: 0, billable: true }])}
+                >
                 <Plus className="mr-1.5 h-4 w-4" /> Add phase
               </Button>
-              <Popover open={libraryOpen} onOpenChange={setLibraryOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="border-dashed border-border">
-                    <Library className="mr-1.5 h-4 w-4" /> Append from SOP library
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 p-0">
-                  <div className="border-b border-border px-3 py-2 text-[11px] uppercase tracking-[0.15em] text-ch/60">
-                    SOP templates
-                  </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {templatesQ.isLoading ? (
-                      <p className="px-3 py-4 text-sm text-ch/60">Loading templates…</p>
-                    ) : (templatesQ.data?.templates?.length ?? 0) === 0 ? (
-                      <p className="px-3 py-4 text-sm text-ch/60">
-                        No SOP templates yet. Create one in the SOP Library, then come back here.
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-border">
-                        {templatesQ.data!.templates.map((t) => (
-                          <li key={t.id}>
-                            <button
-                              type="button"
-                              disabled={appendingId === t.id}
-                              onClick={() => appendTemplate(t.id, t.name)}
-                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-cream/60 disabled:opacity-60"
-                            >
-                              <span>
-                                <span className="block text-ch">{t.name}</span>
-                                {t.category ? (
-                                  <span className="block text-[11px] text-ch/50">{t.category}</span>
-                                ) : null}
-                              </span>
-                              <Plus className="h-4 w-4 text-ch/50" />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              </>
+            ) : (
+              <div className="rounded-md border border-border bg-cream/40 px-3 py-2 text-[12px] text-muted">
+                Tasks and resources from this workflow will be copied when the project is created. Adjust phase hours in
+                Sightline after setup if needed.
+              </div>
+            )}
+
+            <div className="mt-6 border-t border-[rgba(44,44,44,0.08)] pt-4">
+              <p className="text-[13px] font-medium text-[#2C2C2C]" style={{ fontFamily: "Jost, sans-serif" }}>
+                Who&apos;s working on this project?
+              </p>
+              <div className="mt-2">
+                {rosterMembers.map((m) => {
+                  const st = teamPick[m.id] ?? { checked: false, role: "" };
+                  return (
+                    <div
+                      key={m.id}
+                      className="flex items-center gap-2.5 border-b border-[rgba(44,44,44,0.08)] py-2"
+                    >
+                      <div
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white"
+                        style={{ background: avatarColor(m.id) }}
+                      >
+                        {memberInitials(m.name)}
+                      </div>
+                      <span className="min-w-0 flex-1 text-[13px] font-medium text-[#2C2C2C]" style={{ fontFamily: "Jost, sans-serif" }}>
+                        {m.name}
+                      </span>
+                      {st.checked && (
+                        <Input
+                          value={st.role}
+                          onChange={(e) =>
+                            setTeamPick((p) => ({
+                              ...p,
+                              [m.id]: { ...st, role: e.target.value },
+                            }))
+                          }
+                          placeholder="Role on this project"
+                          className="h-8 max-w-[160px] text-[12px]"
+                        />
+                      )}
+                      <input
+                        type="checkbox"
+                        checked={st.checked}
+                        onChange={(e) =>
+                          setTeamPick((p) => ({
+                            ...p,
+                            [m.id]: { checked: e.target.checked, role: p[m.id]?.role ?? "" },
+                          }))
+                        }
+                        className="ml-auto"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[12px] text-[#8A7F75]" style={{ fontFamily: "Jost, sans-serif" }}>
+                Skip for now — you can assign team members later from project details.
+              </p>
             </div>
           </div>
         )}
+        </div>
 
-        <div className="mt-4 flex items-center justify-between gap-2">
+        <div className="mt-4 flex shrink-0 items-center justify-between gap-2 border-t border-border pt-4">
           {step === 2 ? (
             <Button variant="ghost" onClick={() => setStep(1)}>
               <ArrowLeft className="mr-1.5 h-4 w-4" /> Back

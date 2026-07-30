@@ -4,20 +4,29 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  showCostReviewNotifications,
+  registerCostReviewNavigate,
+} from "@/lib/cost-review-notifications";
+import type { CostReviewNotifications } from "@/lib/cost-review.utils";
+import {
   DollarSign, Receipt, Calculator, User, Users,
   CreditCard, Bell, SlidersHorizontal, Lock, X, Plus, Trash2, History, ChevronDown, ChevronRight,
   Database,
 } from "lucide-react";
 import {
-  getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation,
+  getMyContext, updateFirm, listTeam, inviteTeamMember, resendInvitation, cancelPendingInvitation,
+  sendTeamInviteDeliveryTest,
+  getInviteEmailConfig,
   upsertFirmConfig, listExpenses, addExpense, deleteExpense,
   updateTeamMember, setPreferredHome, setDefaultLandingPage,
   listOwnerCompensations, upsertOwnerCompensation,
   listFirmMembers, saveFirmMember, deleteFirmMember,
+  listActivityTypes, addActivityType, updateActivityType, deleteActivityType,
+  getActivityTypeEntryCount,
 } from "@/lib/firm.functions";
 import { useMe, effectiveRole } from "@/lib/role";
 import { ModulePage } from "@/components/shell/ModulePage";
-import { calc, type Expense, type OwnerCompensationRow, effectivePrincipalBillableHrsWeek } from "@/lib/finance";
+import { calc, fmtUsd, computeDistributionTaxReserve, type Expense, type FirmConfig, type OwnerCompensationRow, effectivePrincipalBillableHrsWeek } from "@/lib/finance";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { getDefaultEmployerTaxRate, FEDERAL_FICA_PCT } from "@/lib/sui-rates";
@@ -31,6 +40,7 @@ import { PricingStructureSelector } from "@/components/pricing/PricingStructureS
 import {
   normalizePricingStructure,
   requiresBilledRate,
+  isRetainerFirm,
   type PricingStructure,
 } from "@/lib/pricing-structure";
 import {
@@ -40,6 +50,13 @@ import {
 import { estimateBurdenedCost, BURDEN_EMPLOYER_TAX_PCT } from "@/lib/team-cost";
 import { useTour } from "@/components/tour/TourProvider";
 import { TimeImportWizard, formatSourceLabel } from "@/components/settings/TimeImportWizard";
+import { TeamProductiveHoursSection } from "@/components/settings/TeamProductiveHoursSection";
+import { DistributionTaxExpansion } from "@/components/compensation/DistributionTaxExpansion";
+import { applyTeamCapacityFromResult } from "@/lib/team-capacity-notifications";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { listTimeImportLogs } from "@/lib/time-import.functions";
 import type { ImportSource } from "@/lib/time-import/types";
 
@@ -48,10 +65,24 @@ type PanelId =
   | "profile" | "data" | "team" | "billing"
   | "notifications" | "preferences" | "security" | "history";
 
+const FINANCIAL_PANELS = new Set<PanelId>(["comp", "opex", "rate", "team_cost"]);
+
+function isFinancialPanel(id: PanelId): boolean {
+  return FINANCIAL_PANELS.has(id);
+}
+
 const LEGACY_PANEL_MAP: Record<string, PanelId> = {
   firm: "profile",
   time_import: "data",
+  activities: "profile",
 };
+
+function applyCostReviewFromResult(result: unknown) {
+  if (!result || typeof result !== "object" || !("costReview" in result)) return;
+  showCostReviewNotifications(
+    (result as { costReview?: CostReviewNotifications | null }).costReview,
+  );
+}
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — Sightline" }] }),
@@ -201,6 +232,10 @@ function AdminSettings() {
   const navigate = useNavigate();
   const [active, setActive] = useState<PanelId | null>(panel ?? null);
 
+  useEffect(() => {
+    registerCostReviewNavigate(navigate);
+  }, [navigate]);
+
   // Sync from URL if it changes externally
   useEffect(() => { setActive(panel ?? null); }, [panel]);
 
@@ -227,19 +262,22 @@ function AdminSettings() {
         <FinancialTiles active={active} onOpen={open} />
       </div>
 
+      {active && isFinancialPanel(active) && (
+        <SettingsPanelContainer>
+          {active === "comp" && <CompPanel onClose={close} />}
+          {active === "opex" && <OpexPanel onClose={close} />}
+          {active === "rate" && <RatePanel onClose={close} />}
+          {active === "team_cost" && <TeamCostPanel onClose={close} onOpenPanel={open} />}
+        </SettingsPanelContainer>
+      )}
+
       <GroupLabel className="mt-5">Account</GroupLabel>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
         <AccountTiles active={active} onOpen={open} />
       </div>
 
-      <GettingStartedSection />
-
-      {active && (
-        <div className="mt-3 rounded-[8px] border border-border bg-white px-7 pt-6 pb-6">
-          {active === "comp" && <CompPanel onClose={close} />}
-          {active === "opex" && <OpexPanel onClose={close} />}
-          {active === "rate" && <RatePanel onClose={close} />}
-          {active === "team_cost" && <TeamCostPanel onClose={close} onOpenPanel={open} />}
+      {active && !isFinancialPanel(active) && (
+        <SettingsPanelContainer>
           {active === "profile" && <ProfileFirmPanel onClose={close} />}
           {active === "data" && <DataPanel onClose={close} />}
           {active === "team" && <TeamPanel onClose={close} />}
@@ -248,8 +286,16 @@ function AdminSettings() {
           {active === "preferences" && <PreferencesPanel onClose={close} />}
           {active === "security" && <SecurityPanel onClose={close} />}
           {active === "history" && <HistoryPanel onClose={close} />}
-        </div>
+        </SettingsPanelContainer>
       )}
+    </div>
+  );
+}
+
+function SettingsPanelContainer({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-3 rounded-[8px] border border-border bg-white px-7 pt-6 pb-6">
+      {children}
     </div>
   );
 }
@@ -262,57 +308,56 @@ function GroupLabel({ children, className }: { children: React.ReactNode; classN
   );
 }
 
-function GettingStartedSection() {
+function SetupTourSection() {
   const { resetTour, startTour } = useTour();
   const [confirming, setConfirming] = useState(false);
   const navigate = useNavigate();
   return (
-    <>
-      <GroupLabel className="mt-6">Getting started</GroupLabel>
-      <div className="rounded-[8px] border border-border bg-white px-5 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-[14px] font-normal text-ch">Setup tour</div>
-            <div className="text-[12px] text-ch/60">Walk through setting up your aligned rate, first project, and time tracking.</div>
+    <div className="mb-5 rounded-[6px] border border-border bg-cream/40 px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[13px] font-medium text-ch">Setup tour</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ch/60">
+            Walk through setting up your aligned rate, first project, and time tracking.
           </div>
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            className="rounded-[5px] border border-ch/20 px-4 py-1.5 text-[12px] font-medium text-ch hover:bg-ch/5"
-          >
-            Redo tour
-          </button>
         </div>
-        {confirming && (
-          <div className="mt-3 rounded-md border border-ch/10 bg-cream/60 p-3">
-            <p className="text-[12px] text-ch/70">
-              This will restart the setup tour from the beginning. Your existing data won't be affected.
-            </p>
-            <div className="mt-2 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                className="rounded-[5px] border border-ch/20 px-3 py-1 text-[12px] text-ch"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  await resetTour();
-                  setConfirming(false);
-                  navigate({ to: "/dashboard" });
-                  startTour({ fromBeginning: true });
-                }}
-                className="rounded-[5px] bg-ch px-3 py-1 text-[12px] font-medium text-cream"
-              >
-                Restart tour
-              </button>
-            </div>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="rounded-[5px] border border-ch/20 px-4 py-1.5 text-[12px] font-medium text-ch hover:bg-ch/5"
+        >
+          Redo tour
+        </button>
       </div>
-    </>
+      {confirming && (
+        <div className="mt-3 rounded-md border border-ch/10 bg-white p-3">
+          <p className="text-[12px] text-ch/70">
+            This will restart the setup tour from the beginning. Your existing data won&apos;t be affected.
+          </p>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-[5px] border border-ch/20 px-3 py-1 text-[12px] text-ch"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await resetTour();
+                setConfirming(false);
+                navigate({ to: "/dashboard" });
+                startTour({ fromBeginning: true });
+              }}
+              className="rounded-[5px] bg-ch px-3 py-1 text-[12px] font-medium text-cream"
+            >
+              Restart tour
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -423,7 +468,16 @@ function FinancialTiles({ active, onOpen }: { active: PanelId | null; onOpen: (i
 
   let rateStatus: Status;
   const pricingStructure = normalizePricingStructure((cfg as { pricing_structure?: string } | null)?.pricing_structure);
-  if (cfg?.target_billable_hrs_per_week) {
+  const firmWeeklyCapacity = Math.round((c.annualBillableHrs || 0) / 48);
+  if (isRetainerFirm(pricingStructure)) {
+    rateStatus =
+      firmWeeklyCapacity > 0
+        ? {
+            tone: "ok",
+            text: `${firmWeeklyCapacity} hrs/wk firm capacity · ${fmtUsd(c.alignedRate, { decimals: 0 })}/hr aligned`,
+          }
+        : { tone: "muted", text: "Set team productive hours" };
+  } else if (cfg?.target_billable_hrs_per_week) {
     if (requiresBilledRate(pricingStructure) && cfg?.rate_billed) {
       const label = `${cfg.target_billable_hrs_per_week} hrs/wk · $${Math.round(cfg.rate_billed)}/hr`;
       rateStatus =
@@ -496,12 +550,12 @@ function AccountTiles({ active, onOpen }: { active: PanelId | null; onOpen: (id:
     : { tone: "muted", text: "No imports yet" };
 
   const tiles: TileDef[] = [
-    { id: "profile", name: "Profile & firm", desc: "Your info and firm configuration.", icon: User, status: profileStatus },
+    { id: "profile", name: "Profile & firm", desc: "Your info, firm configuration, and time activities.", icon: User, status: profileStatus },
     { id: "data", name: "Data", desc: "Import time history from Clockify, Harvest, Toggl, and more.", icon: Database, status: dataStatus },
     { id: "team", name: "Team", desc: "Roster, Sightline invitations, and roles.", icon: Users, status: teamStatus },
     { id: "billing", name: "Billing", desc: "Your current plan and payment method.", icon: CreditCard, status: billingStatus },
     { id: "notifications", name: "Notifications", desc: "Alerts and email preferences.", icon: Bell, status: { tone: "muted", text: "Default settings" } },
-    { id: "preferences", name: "Preferences", desc: "Display and regional settings.", icon: SlidersHorizontal, status: { tone: "muted", text: "Default settings" } },
+    { id: "preferences", name: "Preferences", desc: "Display settings and setup tour.", icon: SlidersHorizontal, status: { tone: "muted", text: "Default settings" } },
     { id: "security", name: "Security", desc: "Password and account access.", icon: Lock, status: { tone: "ok", text: "Secure" } },
     { id: "history", name: "Historical reference", desc: "Change log across your financial settings.", icon: History, status: { tone: "muted", text: "View change history" } },
   ];
@@ -551,6 +605,340 @@ function DataPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+type ActivityTypeRow = {
+  id: string;
+  name: string;
+  is_billable: boolean;
+  is_default: boolean;
+  is_system: boolean;
+  color: string | null;
+  sort_order: number;
+};
+
+type PendingActivityUpdate = {
+  row: ActivityTypeRow;
+  name?: string;
+  is_billable?: boolean;
+  entryCount: number;
+};
+
+function ActivitiesSection() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listActivityTypes);
+  const addFn = useServerFn(addActivityType);
+  const updateFn = useServerFn(updateActivityType);
+  const deleteFn = useServerFn(deleteActivityType);
+  const countFn = useServerFn(getActivityTypeEntryCount);
+  const { data: activities = [], isLoading } = useQuery({
+    queryKey: ["activity-types"],
+    queryFn: () => listFn(),
+  });
+
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", is_billable: false });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<PendingActivityUpdate | null>(null);
+
+  const rows = activities as ActivityTypeRow[];
+  const customCount = rows.filter((a) => !a.is_default && !a.is_system).length;
+
+  async function invalidate() {
+    await qc.invalidateQueries({ queryKey: ["activity-types"] });
+    await qc.invalidateQueries({ queryKey: ["calendar"] });
+  }
+
+  async function saveNew() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      await addFn({ data: { name: form.name.trim(), is_billable: form.is_billable } });
+      setForm({ name: "", is_billable: false });
+      setAdding(false);
+      await invalidate();
+      toast.success("Activity added.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add activity.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyUpdate(
+    id: string,
+    patch: { name?: string; is_billable?: boolean; applyToExistingEntries?: boolean },
+  ) {
+    setSaving(true);
+    try {
+      const result = await updateFn({ data: { id, ...patch } });
+      setEditingId(null);
+      setEditName("");
+      setPendingUpdate(null);
+      await invalidate();
+      if (result.entriesUpdated > 0) {
+        toast.success(`Activity updated · ${result.entriesUpdated} time ${result.entriesUpdated === 1 ? "entry" : "entries"} updated`);
+      } else if (result.entriesLinked > 0 && result.nameChanged) {
+        toast.success(`Activity renamed · ${result.entriesLinked} linked ${result.entriesLinked === 1 ? "entry" : "entries"} will show the new name`);
+      } else {
+        toast.success("Activity updated.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestUpdate(args: {
+    row: ActivityTypeRow;
+    name?: string;
+    is_billable?: boolean;
+  }) {
+    const nameChange = args.name !== undefined && args.name !== args.row.name;
+    const billableChange =
+      args.is_billable !== undefined && args.is_billable !== args.row.is_billable;
+    if (!nameChange && !billableChange) {
+      setEditingId(null);
+      setEditName("");
+      return;
+    }
+
+    try {
+      const { count } = await countFn({ data: { id: args.row.id } });
+      if (count > 0) {
+        setPendingUpdate({
+          row: args.row,
+          name: nameChange ? args.name : undefined,
+          is_billable: billableChange ? args.is_billable : undefined,
+          entryCount: count,
+        });
+        return;
+      }
+      await applyUpdate(args.row.id, {
+        name: nameChange ? args.name : undefined,
+        is_billable: billableChange ? args.is_billable : undefined,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not check linked entries.");
+    }
+  }
+
+  function toggleBillable(row: ActivityTypeRow) {
+    if (row.is_system) return;
+    requestUpdate({ row, is_billable: !row.is_billable });
+  }
+
+  function saveEdit(row: ActivityTypeRow) {
+    if (!editName.trim()) return;
+    requestUpdate({ row, name: editName.trim() });
+  }
+
+  async function confirmPendingUpdate() {
+    if (!pendingUpdate) return;
+    await applyUpdate(pendingUpdate.row.id, {
+      name: pendingUpdate.name,
+      is_billable: pendingUpdate.is_billable,
+      applyToExistingEntries: true,
+    });
+  }
+
+  async function remove(id: string) {
+    try {
+      await deleteFn({ data: { id } });
+      await invalidate();
+      toast.success("Activity removed.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete.");
+    }
+  }
+
+  const pendingName = pendingUpdate?.name ?? pendingUpdate?.row.name ?? "";
+  const pendingBillable = pendingUpdate?.is_billable ?? pendingUpdate?.row.is_billable ?? false;
+  const pendingRenaming =
+    pendingUpdate?.name !== undefined && pendingUpdate.name !== pendingUpdate.row.name;
+  const pendingBillableChange =
+    pendingUpdate?.is_billable !== undefined &&
+    pendingUpdate.is_billable !== pendingUpdate.row.is_billable;
+
+  if (isLoading) {
+    return <p className="text-[12px] text-ch/50">Loading activities…</p>;
+  }
+
+  return (
+    <>
+      <div className="mb-2.5 overflow-hidden rounded-[6px] border border-border bg-white">
+        <div className="grid grid-cols-[1fr_90px_80px_28px] bg-creamd/60 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-ch/60">
+          <span>Activity</span>
+          <span>Billable</span>
+          <span>Type</span>
+          <span />
+        </div>
+        {rows.map((row, i) => {
+          const isCustom = !row.is_default && !row.is_system;
+          const isEditable = !row.is_system;
+          const typeLabel = row.is_system ? "System" : row.is_default ? "Default" : "Custom";
+          return (
+            <div
+              key={row.id}
+              className={cn(
+                "grid grid-cols-[1fr_90px_80px_28px] items-center px-3 py-[7px] text-[11px]",
+                i < rows.length - 1 && "border-b border-border",
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: row.color || "#8A7F75" }}
+                />
+                {editingId === row.id ? (
+                  <input
+                    className={cn(inputCls, "flex-1 py-1")}
+                    value={editName}
+                    autoFocus
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEdit(row);
+                      if (e.key === "Escape") { setEditingId(null); setEditName(""); }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!isEditable}
+                    onClick={() => { if (isEditable) { setEditingId(row.id); setEditName(row.name); } }}
+                    className={cn(
+                      "truncate text-left text-ch",
+                      isEditable && "hover:text-gold hover:underline",
+                    )}
+                    title={isEditable ? "Click to rename" : undefined}
+                  >
+                    {row.name}
+                  </button>
+                )}
+              </div>
+              <label className="flex items-center gap-1.5 text-ch/70">
+                <input
+                  type="checkbox"
+                  checked={row.is_billable}
+                  disabled={row.is_system}
+                  readOnly
+                  onClick={() => toggleBillable(row)}
+                  className="h-3.5 w-3.5 rounded border-border accent-gold"
+                />
+                {row.is_billable ? "Yes" : "No"}
+              </label>
+              <span className="text-ch/55">{typeLabel}</span>
+              <div className="flex justify-end gap-1">
+                {editingId === row.id ? (
+                  <>
+                    <button type="button" onClick={() => saveEdit(row)} className="text-gold hover:opacity-80" disabled={saving}>
+                      Save
+                    </button>
+                    <button type="button" onClick={() => { setEditingId(null); setEditName(""); }} className="text-ch/40 hover:text-ch">
+                      <X size={13} />
+                    </button>
+                  </>
+                ) : isCustom ? (
+                  <button type="button" onClick={() => remove(row.id)} className="text-ch/40 hover:text-danger" aria-label="Delete">
+                    <Trash2 size={13} />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {adding ? (
+        <div className="rounded-[6px] border border-border bg-cream p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <input
+              className={cn(inputCls, "min-w-[200px] flex-1")}
+              placeholder="Activity name"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") saveNew(); }}
+            />
+            <label className="flex items-center gap-1.5 text-[11px] text-ch/70">
+              <input
+                type="checkbox"
+                checked={form.is_billable}
+                onChange={(e) => setForm({ ...form, is_billable: e.target.checked })}
+                className="h-3.5 w-3.5 rounded border-border accent-gold"
+              />
+              Billable by default
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className={ghostBtn} onClick={() => { setAdding(false); setForm({ name: "", is_billable: false }); }}>
+              Cancel
+            </button>
+            <button type="button" className={goldBtn} onClick={saveNew} disabled={saving || !form.name.trim()}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 text-[11px] text-gold hover:underline">
+          <Plus size={13} /> Add custom activity
+        </button>
+      )}
+
+      <p className="mt-3 text-[11px] leading-relaxed text-ch/55">
+        Default and custom activities can be renamed. If time entries already use an activity, you&apos;ll be asked to confirm before changes apply.
+        Billable changes update all linked entries; renames apply automatically because entries are linked by ID.
+        Only custom activities can be deleted. &quot;Uncategorized&quot; is locked.
+        {customCount > 0 ? ` You have ${customCount} custom activit${customCount === 1 ? "y" : "ies"}.` : ""}
+      </p>
+
+      <AlertDialog open={!!pendingUpdate} onOpenChange={(open) => !open && setPendingUpdate(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update linked time entries?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-[13px] leading-relaxed text-ch/70">
+                <p>
+                  <span className="font-medium text-ch">{pendingUpdate?.entryCount ?? 0}</span>
+                  {" "}
+                  time {(pendingUpdate?.entryCount ?? 0) === 1 ? "entry is" : "entries are"} tagged with
+                  {" "}
+                  <span className="font-medium text-ch">&ldquo;{pendingUpdate?.row.name}&rdquo;</span>.
+                </p>
+                {pendingRenaming && (
+                  <p>
+                    The activity will be renamed to{" "}
+                    <span className="font-medium text-ch">&ldquo;{pendingName}&rdquo;</span>.
+                    All linked entries will show the new name automatically.
+                  </p>
+                )}
+                {pendingBillableChange && (
+                  <p>
+                    All linked entries will be updated to{" "}
+                    <span className="font-medium text-ch">{pendingBillable ? "billable" : "non-billable"}</span>.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmPendingUpdate();
+              }}
+              disabled={saving}
+            >
+              {saving ? "Updating…" : "Update activity & entries"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 /* ────────────────────────────── panel shell ────────────────────────────── */
 
 function PanelShell({ title, subtitle, onClose, children }: {
@@ -585,12 +973,14 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
   const ownerComp = (cfg?.__ownerCompOverride as OwnerCompensationRow[] | undefined)
     ?? ((ownerData?.comp ?? []) as OwnerCompensationRow[]);
   const teamProfiles = (firmMembers ?? [])
-    .filter((m: any) => m.role_type !== "principal")
+    .filter((m: any) => m.role_type !== "principal" && m.is_active !== false)
     .map((m: any) => ({
       burdened_weekly_cost: m.burdened_weekly_cost,
       weeks_per_year: m.weeks_per_year,
       expected_hrs_per_week: m.expected_hrs_per_week,
+      productive_hrs_per_week: m.productive_hrs_per_week,
       billed_rate: m.billed_rate ?? null,
+      is_active: m.is_active,
     }));
   const c = useMemo(
     () => calc(cfg, expenses, { ownerComp, teamProfiles }),
@@ -603,16 +993,24 @@ function FinancialLayout({ title, subtitle, onClose, left, cfg, expenses }: {
   // Full firm budget revenue: principal + each billable team member.
   // calc() already sums principal (rate × target hrs × weeks) + Σ (member.billed_rate ?? firm rate) × expected_hrs_per_week × weeks
   // for every member whose expected_hrs_per_week > 0.
-  const budgetRevenue = c.annualRevenue;
+  const capacityPlanning = c.revenueCapacityAtUtilization ?? c.annualRevenue;
   const marginVal = c.marginAboveFloor;
   const marginStr = `${marginVal >= 0 ? "+" : "-"}$${Math.round(Math.abs(marginVal))}/hr`;
+  const capacityLabel =
+    c.targetUtilizationPct != null && c.targetUtilizationPct > 0
+      ? `Revenue capacity (${Math.round(c.targetUtilizationPct)}% util.)`
+      : "Revenue capacity (100% hrs)";
   const rows: Array<{ label: string; value: string; gold?: boolean; metric: MetricKind }> = [
     { label: "Billed rate", value: `$${Math.round(c.billedRate)}/hr`, gold: true, metric: "billed" },
     { label: "Rate health", value: rateStatus, metric: "health" },
     { label: "Margin", value: marginStr, gold: marginVal >= 0, metric: "margin" },
     { label: "Break-even", value: `$${Math.round(c.breakEvenRate)}/hr`, metric: "breakeven" },
     { label: "Cost floor", value: `$${Math.round(c.totalCost).toLocaleString()}`, metric: "cost_floor" },
-    { label: "Budget revenue", value: `$${Math.round(budgetRevenue).toLocaleString()}`, metric: "budget_revenue" },
+    {
+      label: capacityLabel,
+      value: `$${Math.round(capacityPlanning).toLocaleString()}`,
+      metric: "budget_revenue",
+    },
   ];
   return (
     <PanelShell title={title} subtitle={subtitle} onClose={onClose}>
@@ -679,6 +1077,7 @@ function useFinancialDraft() {
       available_hrs_per_week: cfg.available_hrs_per_week?.toString() ?? "",
       target_billable_hrs_per_week: cfg.target_billable_hrs_per_week?.toString() ?? "",
       target_gross_margin_pct: cfg.target_gross_margin_pct?.toString() ?? "",
+      target_utilization_pct: (cfg as { target_utilization_pct?: number | null }).target_utilization_pct?.toString() ?? "",
       rate_billed: cfg.rate_billed?.toString() ?? "",
       pricing_structure: normalizePricingStructure((cfg as { pricing_structure?: string }).pricing_structure),
     });
@@ -701,7 +1100,7 @@ function useFinancialDraft() {
           "comp_draw_annual","comp_ptax_pct","comp_health_annual","comp_retire_annual",
           "comp_distribution_annual","comp_reserve_target_annual",
           "available_hrs_per_week","target_billable_hrs_per_week",
-          "target_gross_margin_pct","rate_billed",
+          "target_gross_margin_pct","target_utilization_pct","rate_billed",
         ];
         for (const k of keys) {
           const v = next[k] ?? "";
@@ -713,7 +1112,8 @@ function useFinancialDraft() {
           payload.rate_billed = null;
         }
         try {
-          await saveCfg({ data: payload as any });
+          const result = await saveCfg({ data: payload as any });
+          applyCostReviewFromResult(result);
           qc.invalidateQueries({ queryKey: ["me"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
         } catch (err) {
@@ -738,6 +1138,7 @@ function useFinancialDraft() {
     available_hrs_per_week: num("available_hrs_per_week"),
     target_billable_hrs_per_week: num("target_billable_hrs_per_week"),
     target_gross_margin_pct: num("target_gross_margin_pct"),
+    target_utilization_pct: num("target_utilization_pct"),
     rate_billed: num("rate_billed"),
     pricing_structure: normalizePricingStructure(draft.pricing_structure),
     actual_billed_rate: null,
@@ -798,7 +1199,8 @@ function CompPanel({ onClose }: { onClose: () => void }) {
   async function onStructureChange(next: string) {
     setStructure(next);
     try {
-      await updCfg({ data: { business_structure: next as any } });
+      const result = await updCfg({ data: { business_structure: next as any } });
+      applyCostReviewFromResult(result);
       qc.invalidateQueries({ queryKey: ["dash"] });
       qc.invalidateQueries({ queryKey: ["financialDraft"] });
     } catch (e) {
@@ -813,14 +1215,14 @@ function CompPanel({ onClose }: { onClose: () => void }) {
     }
     setInvitingCoOwner(true);
     try {
-      await invitePrincipal({
+      const result = await invitePrincipal({
         data: {
           email: coOwnerEmail.trim().toLowerCase(),
           role: "principal",
           name: coOwnerName.trim() || null,
         } as any,
       });
-      toast.success("Co-owner invitation sent.");
+      toastTeamInviteOutcome(result, "Co-owner invitation sent.");
       setCoOwnerEmail("");
       setCoOwnerName("");
       qc.invalidateQueries({ queryKey: ["team"] });
@@ -865,6 +1267,7 @@ function CompPanel({ onClose }: { onClose: () => void }) {
         health_insurance_annual: null,
         retirement_annual: null,
         distribution_annual: null,
+        distribution_tax_rate: null,
         reserve_target: null,
         reserve_months: null,
       };
@@ -875,8 +1278,8 @@ function CompPanel({ onClose }: { onClose: () => void }) {
 
   // Merge drafts back for live-calc: use my draft (live), others use saved rows.
   const liveRows: OwnerCompensationRow[] = principals.map((p: any) => {
-    if (p.id === myId) return drafts[p.id] ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, reserve_target: null };
-    return compByProfile.get(p.id) ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, reserve_target: null };
+    if (p.id === myId) return drafts[p.id] ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, distribution_tax_rate: null, reserve_target: null };
+    return compByProfile.get(p.id) ?? { profile_id: p.id, comp_draw_annual: null, payroll_tax_pct: 15.3, health_insurance_annual: null, retirement_annual: null, distribution_annual: null, distribution_tax_rate: null, reserve_target: null };
   });
 
   // Always calc() against the firm's saved business_structure so the modal's
@@ -1061,7 +1464,7 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
   const v = value ?? {
     comp_draw_annual: null, payroll_tax_pct: 15.3,
     health_insurance_annual: null, retirement_annual: null,
-    distribution_annual: null, reserve_target: null,
+    distribution_annual: null, distribution_tax_rate: null, reserve_target: null,
   };
   const display = savedValue ?? (v as OwnerCompensationRow);
   const configured = Number(display.comp_draw_annual) > 0;
@@ -1086,8 +1489,11 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
   // Simple mode always surfaces distributions in the total; Advanced only
   // exposes them for S-Corp.
   const includeDist = !isAdv || isSCorp;
+  const distTaxReserve = includeDist
+    ? computeDistributionTaxReserve(dist, v.distribution_tax_rate).distributionTaxReserve
+    : 0;
   const total =
-    draw + ptax + health + retire + (includeDist ? dist : 0) + (isAdv && isSCorp ? reserve : 0);
+    draw + ptax + health + retire + (includeDist ? dist : 0) + distTaxReserve + (isAdv && isSCorp ? reserve : 0);
 
   function setSimpleSalary(x: string) {
     const s = x === "" ? 0 : Number(x);
@@ -1105,17 +1511,19 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
     if (!isMe) return;
     setSaving(true);
     try {
-      await save({
+      const result = await save({
         data: {
           comp_draw_annual: v.comp_draw_annual,
           payroll_tax_pct: v.payroll_tax_pct,
           health_insurance_annual: v.health_insurance_annual,
           retirement_annual: v.retirement_annual,
           distribution_annual: v.distribution_annual,
+          distribution_tax_rate: v.distribution_tax_rate,
           reserve_target: v.reserve_target,
           employee_payroll_tax_pct: v.employee_payroll_tax_pct,
         } as any,
       });
+      applyCostReviewFromResult(result);
       toast.success("Compensation saved.");
       onSaved();
       setOpen(false);
@@ -1168,6 +1576,11 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
                   <NumInput value={dist ? dist.toString() : ""} onChange={setSimpleDist} prefix="$" placeholder="0" />
                 </Field>
               </Row2>
+              <DistributionTaxExpansion
+                distributions={dist}
+                distributionTaxRate={v.distribution_tax_rate}
+                onRateChange={(rate) => onChange({ ...v, distribution_tax_rate: rate })}
+              />
               <Row2>
                 <Field label="Health insurance (annual)">
                   <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
@@ -1203,6 +1616,11 @@ function PrincipalCard({ principal, isMe, mode, structure, firmState, value, sav
                   <NumInput value={v.reserve_target?.toString() ?? ""} onChange={(x) => onChange({ ...v, reserve_target: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
                 </Field>
               </Row2>
+              <DistributionTaxExpansion
+                distributions={dist}
+                distributionTaxRate={v.distribution_tax_rate}
+                onRateChange={(rate) => onChange({ ...v, distribution_tax_rate: rate })}
+              />
               <Row2>
                 <Field label="Health insurance">
                   <NumInput value={v.health_insurance_annual?.toString() ?? ""} onChange={(x) => onChange({ ...v, health_insurance_annual: x === "" ? null : Number(x) })} prefix="$" placeholder="0" />
@@ -1290,8 +1708,9 @@ function computeCardTotal(r: OwnerCompensationRow, isSCorp: boolean): number {
   const health = Number(r.health_insurance_annual) || 0;
   const retire = Number(r.retirement_annual) || 0;
   const dist = Number(r.distribution_annual) || 0;
+  const distTaxReserve = computeDistributionTaxReserve(dist, r.distribution_tax_rate).distributionTaxReserve;
   const reserve = Number(r.reserve_target) || 0;
-  return salary + ptax + health + retire + (isSCorp ? dist + reserve : 0);
+  return salary + ptax + health + retire + (isSCorp ? dist + distTaxReserve + reserve : dist + distTaxReserve);
 }
 
 /* ────────────────────────── Team cost panel ────────────────────────── */
@@ -1321,6 +1740,7 @@ function TeamCostPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPa
   async function saveMember(id: string | undefined, d: any) {
     try {
       const res = await save({ data: { id, ...d } });
+      applyCostReviewFromResult(res);
       toast.success(id ? "Team member saved." : "Team member added.");
       qc.invalidateQueries({ queryKey: ["firmMembers"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -1382,7 +1802,8 @@ function TeamCostPanel({ onClose, onOpenPanel }: { onClose: () => void; onOpenPa
                     onSave={(d) => saveMember(m.id, d)}
                     onDelete={async () => {
                       if (!window.confirm(`Remove ${m.name}?`)) return;
-                      await del({ data: { id: m.id } });
+                      const result = await del({ data: { id: m.id } });
+                      applyCostReviewFromResult(result);
                       qc.invalidateQueries({ queryKey: ["firmMembers"] });
                       qc.invalidateQueries({ queryKey: ["dashboard"] });
                     }}
@@ -1557,6 +1978,15 @@ function MemberCard({
       </button>
       {open && (
         <div className="border-t border-border px-3.5 py-3">
+          {m.is_platform_user && m.role_type === "team" ? (
+            <Link
+              to="/my-work"
+              search={{ preview_member: m.id }}
+              className="mb-3 inline-block text-[11px] text-gold underline underline-offset-2"
+            >
+              View their workspace →
+            </Link>
+          ) : null}
           <Row2>
             <Field label="Name">
               <input className={inputCls} value={d.name ?? ""} onChange={(e) => setD({ ...d, name: e.target.value })} />
@@ -1799,7 +2229,8 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
   async function save() {
     if (!form.name || !form.amount) return;
     try {
-      await addExp({ data: { name: form.name, amount: Number(form.amount), frequency: form.frequency, recurring: form.frequency !== "onetime" } as any });
+      const result = await addExp({ data: { name: form.name, amount: Number(form.amount), frequency: form.frequency, recurring: form.frequency !== "onetime" } as any });
+      applyCostReviewFromResult(result);
       setForm({ name: "", amount: "", frequency: "monthly" });
       setAdding(false);
       qc.invalidateQueries({ queryKey: ["expenses"] });
@@ -1808,7 +2239,8 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
     } catch (e) { toast.error(e instanceof Error ? e.message : "Could not save."); }
   }
   async function remove(id: string) {
-    await delExp({ data: { id } });
+    const result = await delExp({ data: { id } });
+    applyCostReviewFromResult(result);
     qc.invalidateQueries({ queryKey: ["expenses"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
   }
@@ -1878,10 +2310,15 @@ function RatePanel({ onClose }: { onClose: () => void }) {
   const utilization = avail > 0 ? (target / avail) * 100 : 0;
   const firmRate = Number(liveConfig?.rate_billed) || 0;
   const pricingStructure = normalizePricingStructure(draft.pricing_structure);
+  const isRetainer = isRetainerFirm(pricingStructure);
   return (
     <FinancialLayout
       title="Capacity and rate"
-      subtitle="How many hours you sell and what you charge."
+      subtitle={
+        isRetainer
+          ? "Your aligned rate is based on productive hours across your firm — you plus your team."
+          : "How many hours you sell and what you charge."
+      }
       onClose={onClose} cfg={liveConfig} expenses={expenses}
       left={
         <>
@@ -1889,12 +2326,17 @@ function RatePanel({ onClose }: { onClose: () => void }) {
             <Field label="Available hours / week">
               <NumInput value={draft.available_hrs_per_week ?? ""} onChange={(v) => patch({ available_hrs_per_week: v })} />
             </Field>
-            <Field label="Target billable hrs / week">
+            <Field label="Your client-work hrs / week (0 if none)">
               <NumInput
                 value={draft.target_billable_hrs_per_week ?? ""}
                 onChange={(v) => patch({ target_billable_hrs_per_week: v })}
               />
-              {avail > 0 ? (
+              <p className="mt-1 text-[10px] text-ch/45">
+                {isRetainer
+                  ? "Leave blank or enter 0 if you don't do client work — team hours below still count."
+                  : "Enter 0 if you don't do client work yourself. Team hours are added separately."}
+              </p>
+              {!isRetainer && avail > 0 ? (
                 <p className="mt-1 text-[10px] text-ch/45">Capped at available hours ({avail}/wk).</p>
               ) : null}
             </Field>
@@ -1923,10 +2365,25 @@ function RatePanel({ onClose }: { onClose: () => void }) {
             </Row2>
           ) : null}
           <div className="rounded-[4px] border border-border bg-creamd/50 px-3 py-2.5 text-[11px] text-ch">
-            <span className="text-ch/60">Utilization target: </span>
+            <span className="text-ch/60">Principal hours vs available: </span>
             <span className="font-medium">{utilization.toFixed(0)}%</span>
             <span className="text-ch/50"> ({target} of {avail} hrs/week)</span>
           </div>
+          <Row2>
+            <Field label="Target utilization % (firm planning)">
+              <NumInput
+                value={draft.target_utilization_pct ?? ""}
+                onChange={(v) => patch({ target_utilization_pct: v })}
+                suffix="%"
+              />
+              <p className="mt-1 text-[10px] text-ch/45 leading-relaxed">
+                Intentional billable % applied to revenue capacity (not your aligned-rate math). Leave blank for 100%.
+                Track logged utilization on the dashboard; this is the plan you commit to.
+              </p>
+            </Field>
+            <div />
+          </Row2>
+          <TeamProductiveHoursSection liveConfig={liveConfig as FirmConfig} />
           <TeamBillableCapacitySection firmRate={firmRate} />
         </>
       }
@@ -1968,7 +2425,7 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
       const hrsNum = cur.hrs === "" ? null : Number(cur.hrs);
       const rateNum = cur.rate === "" ? null : Number(cur.rate);
       try {
-        await save({
+        const result = await save({
           data: {
             id: m.id,
             name: m.name,
@@ -1988,6 +2445,7 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
             billed_rate: rateNum,
           },
         });
+        applyCostReviewFromResult(result);
         setSavedFlash((s) => ({ ...s, [m.id]: Date.now() }));
         qc.invalidateQueries({ queryKey: ["firmMembers"] });
         qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -2013,7 +2471,7 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
         className="mt-1 mb-3"
         style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, fontWeight: 400, color: "rgba(44,44,44,0.6)" }}
       >
-        Set each team member's expected billable hours and rate. These feed your budget revenue and aligned rate calculation.
+        Set each team member&apos;s expected billable hours and rate. These feed revenue capacity (planning) and your aligned rate denominator.
       </p>
 
       {team.length === 0 ? (
@@ -2077,14 +2535,21 @@ function TeamBillableCapacitySection({ firmRate }: { firmRate: number }) {
 
 function ProfileFirmPanel({ onClose }: { onClose: () => void }) {
   return (
-    <PanelShell title="Profile & firm" subtitle="Your personal info and firm configuration." onClose={onClose}>
+    <PanelShell title="Profile & firm" subtitle="Your personal info, firm configuration, and time activities." onClose={onClose}>
       <div className="mb-6 border-b border-border pb-6">
         <p className="mb-3 text-[12px] font-medium text-ch">Your profile</p>
         <ProfilePanelBody />
       </div>
-      <div>
+      <div className="mb-6 border-b border-border pb-6">
         <p className="mb-3 text-[12px] font-medium text-ch">Firm</p>
         <FirmPanelBody onClose={onClose} />
+      </div>
+      <div>
+        <p className="mb-1 text-[12px] font-medium text-ch">Time activities</p>
+        <p className="mb-3 text-[11px] text-ch/55">
+          Activity types appear when logging time on the calendar. Add custom activities for work specific to your firm.
+        </p>
+        <ActivitiesSection />
       </div>
     </PanelShell>
   );
@@ -2161,7 +2626,8 @@ function FirmPanelBody({ onClose }: { onClose: () => void }) {
     setSaving(true);
     try {
       await upd({ data: { name } });
-      await updCfg({ data: { business_structure: structure as any, accounting_basis: basis as any } });
+      const cfgResult = await updCfg({ data: { business_structure: structure as any, accounting_basis: basis as any } });
+      applyCostReviewFromResult(cfgResult);
       await saveHome({ data: { preferred_home: home as any } });
       qc.invalidateQueries({ queryKey: ["me"] });
       toast.success("Firm saved.");
@@ -2229,15 +2695,41 @@ function FirmPanelBody({ onClose }: { onClose: () => void }) {
 
 const US_STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming"];
 
+function toastTeamInviteOutcome(
+  result:
+    | { emailSent?: boolean; emailError?: string | null; email?: string }
+    | undefined,
+  successWhenSent: string,
+) {
+  const dest = result?.email?.trim();
+  const sentMsg = dest ? `${successWhenSent} (${dest})` : successWhenSent;
+  if (result?.emailSent) toast.success(sentMsg);
+  else if (result?.emailError)
+    toast.warning(
+      dest
+        ? `Invite saved for ${dest}, but email was not sent: ${result.emailError}`
+        : `Invite saved, but email was not sent: ${result.emailError}`,
+    );
+  else toast.success(sentMsg);
+}
+
 function TeamPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { data: me } = useMe();
+  const profileEmail = (me?.profile as { email?: string } | undefined)?.email?.trim() ?? "";
   const firmState = ((me?.firm as any)?.state ?? null) as string | null;
   const stateDefault = getDefaultEmployerTaxRate(firmState).total;
   const list = useServerFn(listTeam);
   const invite = useServerFn(inviteTeamMember);
   const update = useServerFn(updateTeamMember);
   const resend = useServerFn(resendInvitation);
+  const cancelInvite = useServerFn(cancelPendingInvitation);
+  const sendDeliveryTest = useServerFn(sendTeamInviteDeliveryTest);
+  const loadEmailConfig = useServerFn(getInviteEmailConfig);
+  const emailConfigQ = useQuery({
+    queryKey: ["inviteEmailConfig"],
+    queryFn: () => loadEmailConfig(),
+  });
   const saveMember = useServerFn(saveFirmMember);
   const listFM = useServerFn(listFirmMembers);
   const { data } = useQuery({ queryKey: ["team"], queryFn: () => list() });
@@ -2254,6 +2746,8 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
     employment_type: "employee",
   });
   const [adding, setAdding] = useState(false);
+  const [inviteForMemberId, setInviteForMemberId] = useState<string | null>(null);
+  const [testingDelivery, setTestingDelivery] = useState(false);
 
   function refresh() {
     qc.invalidateQueries({ queryKey: ["team"] });
@@ -2268,16 +2762,22 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
     }
     setSending(true);
     try {
-      await invite({
+      const result = await invite({
         data: {
           email: email.trim().toLowerCase(),
           role,
           name: inviteName.trim() || null,
+          firm_member_id: inviteForMemberId ?? undefined,
         } as any,
       });
-      toast.success("Invitation sent. They'll appear in Team cost for compensation setup.");
+      applyTeamCapacityFromResult(result);
+      toastTeamInviteOutcome(
+        result as { emailSent?: boolean; emailError?: string | null },
+        "Invitation sent. They'll appear in Team cost for compensation setup.",
+      );
       setEmail("");
       setInviteName("");
+      setInviteForMemberId(null);
       refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send.");
@@ -2293,7 +2793,7 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
     }
     setAdding(true);
     try {
-      await saveMember({
+      const result = await saveMember({
         data: {
           name: addForm.name.trim(),
           email: addForm.email.trim() || null,
@@ -2305,6 +2805,7 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
           weeks_per_year: 48,
         },
       });
+      applyTeamCapacityFromResult(result);
       toast.success("Team member added. Set up their compensation in Team cost.");
       setAddForm({ name: "", email: "", role_type: "team", employment_type: "employee" });
       setAddOpen(false);
@@ -2317,12 +2818,14 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
   }
 
   function inviteExisting(m: any) {
+    setInviteForMemberId(m.id);
     setEmail(m.email ?? "");
     setInviteName(m.name ?? "");
     setRole(
       m.role_type === "admin" || m.role_type === "view_only" ? m.role_type : "team",
     );
     setTimeout(() => {
+      document.getElementById("team-invite-section")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       const el = document.getElementById("invite-email-input");
       if (el) (el as HTMLInputElement).focus();
     }, 60);
@@ -2335,6 +2838,32 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
       refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update.");
+    }
+  }
+
+  async function removePendingInvite(args: {
+    invitationId?: string;
+    firmMemberId?: string;
+    label: string;
+  }) {
+    if (
+      !window.confirm(
+        `Remove the invitation for ${args.label}? They won't be able to join with the current link.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await cancelInvite({
+        data: {
+          invitationId: args.invitationId,
+          firmMemberId: args.firmMemberId,
+        },
+      });
+      toast.success("Invitation removed.");
+      refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove invitation.");
     }
   }
 
@@ -2412,21 +2941,36 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
                   <option value="view_only">View only</option>
                 </select>
               ) : pendingInvite ? (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await resend({ data: { id: pendingInvite.id } });
-                      toast.success("Resent.");
-                      refresh();
-                    } catch {
-                      toast.error("Could not resend.");
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const result = await resend({ data: { id: pendingInvite.id } });
+                        toastTeamInviteOutcome(result, "Resent.");
+                        refresh();
+                      } catch {
+                        toast.error("Could not resend.");
+                      }
+                    }}
+                    className="text-[11px] text-ch/60 hover:text-gold"
+                  >
+                    Resend
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void removePendingInvite({
+                        invitationId: pendingInvite.id,
+                        firmMemberId: m.id,
+                        label: m.name || m.email || "this person",
+                      })
                     }
-                  }}
-                  className="text-[11px] text-ch/60 hover:text-gold"
-                >
-                  Resend
-                </button>
+                    className="text-[11px] text-ch/60 hover:text-terra"
+                  >
+                    Remove
+                  </button>
+                </div>
               ) : m.email ? (
                 <button
                   type="button"
@@ -2436,7 +2980,13 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
                   Invite to Sightline
                 </button>
               ) : (
-                <span className="text-[11px] italic text-ch/40">Add email to invite</span>
+                <button
+                  type="button"
+                  onClick={() => inviteExisting(m)}
+                  className="text-[11px] text-gold underline hover:text-gold/80"
+                >
+                  Add email to invite
+                </button>
               )}
             </div>
           );
@@ -2451,21 +3001,35 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
               <div className="truncate text-[11px] text-ch/50">{i.role}</div>
             </div>
             <span className="rounded-[3px] bg-[#FAEEDA] px-1.5 py-[2px] text-[11px] font-medium text-[#633806]">Pending</span>
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await resend({ data: { id: i.id } });
-                  toast.success("Resent.");
-                  refresh();
-                } catch {
-                  toast.error("Could not resend.");
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const result = await resend({ data: { id: i.id } });
+                    toastTeamInviteOutcome(result, "Resent.");
+                    refresh();
+                  } catch {
+                    toast.error("Could not resend.");
+                  }
+                }}
+                className="text-[11px] text-ch/60 hover:text-gold"
+              >
+                Resend
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void removePendingInvite({
+                    invitationId: i.id,
+                    label: i.name || i.email || "this person",
+                  })
                 }
-              }}
-              className="text-[11px] text-ch/60 hover:text-gold"
-            >
-              Resend
-            </button>
+                className="text-[11px] text-ch/60 hover:text-terra"
+              >
+                Remove
+              </button>
+            </div>
           </div>
         ))}
         {!rows.length && !orphanInvites.length ? (
@@ -2542,8 +3106,39 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
-      <div className="rounded-[6px] border border-border bg-cream/70 p-3">
+      <div id="team-invite-section" className="rounded-[6px] border border-border bg-cream/70 p-3">
         <div className="mb-2 text-[11px] font-medium text-ch">Invite to Sightline</div>
+        {emailConfigQ.data && !emailConfigQ.data.hasResendKey ? (
+          <p className="mb-3 rounded-[4px] border border-terra/30 bg-terra/5 px-2.5 py-2 text-[11px] leading-[1.5] text-ch">
+            <strong className="text-terra">Invite email is not wired on the server.</strong>{" "}
+            {emailConfigQ.data.hasSupabaseServiceKey
+              ? "Resend secrets are missing on the Cloudflare Worker. From the Sightline repo folder run npm run setup:resend-secrets (with your re_… key), then hard-refresh this page."
+              : "Worker environment bindings are not loading in this request. Try again after deploy, or contact support."}
+            {emailConfigQ.data.probe ? (
+              <span className="mt-1 block text-[10px] text-ch/50">
+                Server check: resend key length {emailConfigQ.data.probe.resendKeyLength ?? 0}; CF bindings{" "}
+                {emailConfigQ.data.probe.hasCfBindings ? "yes" : "no"}; ALS env{" "}
+                {emailConfigQ.data.probe.hasAlsEnv ? "yes" : "no"}; request env{" "}
+                {emailConfigQ.data.probe.hasRequestEnv ? "yes" : "no"}; keys on worker env{" "}
+                {(() => {
+                  const p = emailConfigQ.data.probe;
+                  const cfKeys = p.bindingKeysOnCf ?? [];
+                  const alsKeys = p.bindingKeysOnAls ?? [];
+                  const reqKeys = p.bindingKeysOnRequest ?? [];
+                  if (cfKeys.length > 0) return `CF: ${cfKeys.join(", ")}`;
+                  if (alsKeys.length > 0) return alsKeys.join(", ");
+                  if (reqKeys.length > 0) return reqKeys.join(", ");
+                  return "none";
+                })()}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
+        {inviteForMemberId ? (
+          <p className="mb-2 text-[11px] text-ch/60">
+            Enter an email for {inviteName || "this team member"}, then send the invitation.
+          </p>
+        ) : null}
         <Row2>
           <Field label="Name">
             <input
@@ -2580,6 +3175,35 @@ function TeamPanel({ onClose }: { onClose: () => void }) {
         <button type="button" onClick={send} disabled={sending} className={darkBtn}>
           {sending ? "Sending…" : "Send invitation"}
         </button>
+        {profileEmail ? (
+          <div className="mt-3 border-t border-border pt-3">
+            <p className="mb-2 text-[11px] leading-[1.5] text-ch/60">
+              Test Resend delivery and the accept link using your login email ({profileEmail}) — not for
+              real team members.
+            </p>
+            <button
+              type="button"
+              disabled={testingDelivery}
+              className={ghostBtn}
+              onClick={async () => {
+                setTestingDelivery(true);
+                try {
+                  const result = await sendDeliveryTest();
+                  toastTeamInviteOutcome(
+                    result,
+                    "Test invitation sent to your email.",
+                  );
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Test send failed.");
+                } finally {
+                  setTestingDelivery(false);
+                }
+              }}
+            >
+              {testingDelivery ? "Sending test…" : "Send test invite to my email"}
+            </button>
+          </div>
+        ) : null}
       </div>
     </PanelShell>
   );
@@ -2741,7 +3365,10 @@ function PreferencesPanel({ onClose }: { onClose: () => void }) {
   const [showBreakEven, setShowBreakEven] = useState(true);
   const [showFloor, setShowFloor] = useState(true);
   return (
-    <PanelShell title="Preferences" subtitle="Display and regional settings." onClose={onClose}>
+    <PanelShell title="Preferences" subtitle="Display settings and setup tour." onClose={onClose}>
+      <SetupTourSection />
+      <div className="my-3.5 border-t border-border" />
+      <div className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.09em] text-ch/50">Regional</div>
       <Row2>
         <Field label="Fiscal year start">
           <select className={selectCls} value={fy} onChange={(e) => setFy(e.target.value)}>

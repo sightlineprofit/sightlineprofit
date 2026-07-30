@@ -6,6 +6,8 @@ Checklist for moving the live site from Lovable hosting to **Cloudflare Workers*
 **Supabase project:** `nizjqvbxrmxkkmnnqzpy`  
 **Deploy target:** Cloudflare Workers (Nitro `cloudflare-module` preset)
 
+**Launch checklist (ordered):** see [`deploy/launch-runbook.md`](./launch-runbook.md).
+
 ---
 
 ## Pre-flight (do before DNS switch)
@@ -32,6 +34,20 @@ In [Supabase → Authentication → URL Configuration](https://supabase.com/dash
 2. In [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → your OAuth client:
    - **Authorized JavaScript origins:** `https://sightlineprofit.com`
    - **Authorized redirect URIs:** `https://nizjqvbxrmxkkmnnqzpy.supabase.co/auth/v1/callback`
+
+### 3b. Google Calendar overlay (Time Calendar — separate OAuth client)
+
+See **`deploy/google-calendar-setup.md`** for full steps. Summary:
+
+1. Enable **Google Calendar API** in Google Cloud.
+2. Create OAuth **Web application** client with redirect:
+   - `https://sightlineprofit.com/api/calendar/google/callback`
+3. Apply migration `supabase/migrations/20260720150000_calendar_connections.sql` (or `npm run db:apply-calendar-migration`).
+4. Set Worker secrets:
+   ```bash
+   GOOGLE_CALENDAR_CLIENT_ID=... GOOGLE_CALENDAR_CLIENT_SECRET=... npm run setup:google-calendar-secrets
+   ```
+5. `npm run deploy` (includes calendar overlay UI + callback route).
 
 ### 4. Stripe (live)
 
@@ -89,12 +105,17 @@ Server functions read these at runtime:
 wrangler secret put SUPABASE_SERVICE_ROLE_KEY --config .output/server/wrangler.json
 wrangler secret put STRIPE_LIVE_API_KEY --config .output/server/wrangler.json
 wrangler secret put PAYMENTS_LIVE_WEBHOOK_SECRET --config .output/server/wrangler.json
+wrangler secret put GOOGLE_CALENDAR_CLIENT_ID --config .output/server/wrangler.json
+wrangler secret put GOOGLE_CALENDAR_CLIENT_SECRET --config .output/server/wrangler.json
 ```
 
-Optional (email queue still uses Lovable send API until migrated):
+Or for calendar only: `npm run setup:google-calendar-secrets`
+
+Optional (email queue worker uses Resend when `RESEND_API_KEY` is set):
 
 ```bash
-wrangler secret put LOVABLE_API_KEY --config .output/server/wrangler.json
+wrangler secret put RESEND_API_KEY --config .output/server/wrangler.json
+wrangler secret put TRANSACTIONAL_EMAIL_FROM --config .output/server/wrangler.json
 ```
 
 Set plain variables in Cloudflare dashboard → Workers → your worker → Settings → Variables:
@@ -147,8 +168,9 @@ After 24–48 hours stable:
 
 ```bash
 npm run dev       # local — http://localhost:8080
-npm run build     # production build (.env.production for VITE_*)
-npm run deploy    # wrangler deploy
+npm run release:prod   # migrate + verify schema + build + deploy (production)
+npm run build     # production build only (.env.production for VITE_*)
+npm run deploy    # wrangler deploy only (use after migrations applied)
 ```
 
 ---

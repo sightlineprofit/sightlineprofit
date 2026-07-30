@@ -20,21 +20,27 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedWelcomeRouteImport } from './routes/_authenticated/welcome'
 import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
 import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
+import { Route as AuthenticatedSopRouteImport } from './routes/_authenticated/sop'
 import { Route as AuthenticatedSightlineRouteImport } from './routes/_authenticated/sightline'
 import { Route as AuthenticatedSetupRouteImport } from './routes/_authenticated/setup'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRateArchitectureRouteImport } from './routes/_authenticated/rate-architecture'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as AuthenticatedMyWorkRouteImport } from './routes/_authenticated/my-work'
 import { Route as AuthenticatedKnowledgeBaseRouteImport } from './routes/_authenticated/knowledge-base'
 import { Route as AuthenticatedGrowthRoadmapRouteImport } from './routes/_authenticated/growth-roadmap'
+import { Route as AuthenticatedFutureRouteImport } from './routes/_authenticated/future'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCapacityRouteImport } from './routes/_authenticated/capacity'
 import { Route as AuthenticatedCalendarRouteImport } from './routes/_authenticated/calendar'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthPinterestCallbackRouteImport } from './routes/auth/pinterest/callback'
 import { Route as AuthenticatedSopLibraryNewRouteImport } from './routes/_authenticated/sop-library.new'
 import { Route as AuthenticatedSopLibraryIdRouteImport } from './routes/_authenticated/sop-library.$id'
 import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects.$id'
+import { Route as AuthenticatedMyWorkProjectIdRouteImport } from './routes/_authenticated/my-work.$projectId'
 import { Route as AuthenticatedKnowledgeBaseRateArchitectureRouteImport } from './routes/_authenticated/knowledge-base.rate-architecture'
 import { Route as AuthenticatedDashboardScenariosRouteImport } from './routes/_authenticated/dashboard.scenarios'
 import { Route as AuthenticatedDashboardRateRouteImport } from './routes/_authenticated/dashboard.rate'
@@ -45,6 +51,7 @@ import { Route as AuthenticatedDashboardBvaRouteImport } from './routes/_authent
 import { Route as AuthenticatedDashboardAnnualSummaryRouteImport } from './routes/_authenticated/dashboard.annual-summary'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicPaymentsWebhookRouteImport } from './routes/api/public/payments/webhook'
+import { Route as ApiCalendarGoogleCallbackRouteImport } from './routes/api/calendar/google/callback'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -101,6 +108,11 @@ const AuthenticatedSopLibraryRoute = AuthenticatedSopLibraryRouteImport.update({
   path: '/sop-library',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSopRoute = AuthenticatedSopRouteImport.update({
+  id: '/sop',
+  path: '/sop',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedSightlineRoute = AuthenticatedSightlineRouteImport.update({
   id: '/sightline',
   path: '/sightline',
@@ -132,6 +144,11 @@ const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedMyWorkRoute = AuthenticatedMyWorkRouteImport.update({
+  id: '/my-work',
+  path: '/my-work',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedKnowledgeBaseRoute =
   AuthenticatedKnowledgeBaseRouteImport.update({
     id: '/knowledge-base',
@@ -144,9 +161,19 @@ const AuthenticatedGrowthRoadmapRoute =
     path: '/growth-roadmap',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedFutureRoute = AuthenticatedFutureRouteImport.update({
+  id: '/future',
+  path: '/future',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedCapacityRoute = AuthenticatedCapacityRouteImport.update({
+  id: '/capacity',
+  path: '/capacity',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedCalendarRoute = AuthenticatedCalendarRouteImport.update({
@@ -163,6 +190,11 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthPinterestCallbackRoute = AuthPinterestCallbackRouteImport.update({
+  id: '/auth/pinterest/callback',
+  path: '/auth/pinterest/callback',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedSopLibraryNewRoute =
   AuthenticatedSopLibraryNewRouteImport.update({
@@ -181,6 +213,12 @@ const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedProjectsRoute,
 } as any)
+const AuthenticatedMyWorkProjectIdRoute =
+  AuthenticatedMyWorkProjectIdRouteImport.update({
+    id: '/$projectId',
+    path: '/$projectId',
+    getParentRoute: () => AuthenticatedMyWorkRoute,
+  } as any)
 const AuthenticatedKnowledgeBaseRateArchitectureRoute =
   AuthenticatedKnowledgeBaseRateArchitectureRouteImport.update({
     id: '/rate-architecture',
@@ -241,6 +279,12 @@ const ApiPublicPaymentsWebhookRoute =
     path: '/api/public/payments/webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCalendarGoogleCallbackRoute =
+  ApiCalendarGoogleCallbackRouteImport.update({
+    id: '/api/calendar/google/callback',
+    path: '/api/calendar/google/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -253,15 +297,19 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/calendar': typeof AuthenticatedCalendarRoute
+  '/capacity': typeof AuthenticatedCapacityRoute
   '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
+  '/future': typeof AuthenticatedFutureRoute
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRouteWithChildren
+  '/my-work': typeof AuthenticatedMyWorkRouteWithChildren
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
+  '/sop': typeof AuthenticatedSopRoute
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/welcome': typeof AuthenticatedWelcomeRoute
@@ -273,9 +321,12 @@ export interface FileRoutesByFullPath {
   '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
   '/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
   '/knowledge-base/rate-architecture': typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
+  '/my-work/$projectId': typeof AuthenticatedMyWorkProjectIdRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/auth/pinterest/callback': typeof AuthPinterestCallbackRoute
+  '/api/calendar/google/callback': typeof ApiCalendarGoogleCallbackRoute
   '/api/public/payments/webhook': typeof ApiPublicPaymentsWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
@@ -290,15 +341,19 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/billing': typeof AuthenticatedBillingRoute
   '/calendar': typeof AuthenticatedCalendarRoute
+  '/capacity': typeof AuthenticatedCapacityRoute
   '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
+  '/future': typeof AuthenticatedFutureRoute
   '/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/knowledge-base': typeof AuthenticatedKnowledgeBaseRouteWithChildren
+  '/my-work': typeof AuthenticatedMyWorkRouteWithChildren
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/setup': typeof AuthenticatedSetupRoute
   '/sightline': typeof AuthenticatedSightlineRoute
+  '/sop': typeof AuthenticatedSopRoute
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/welcome': typeof AuthenticatedWelcomeRoute
@@ -310,9 +365,12 @@ export interface FileRoutesByTo {
   '/dashboard/rate': typeof AuthenticatedDashboardRateRoute
   '/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
   '/knowledge-base/rate-architecture': typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
+  '/my-work/$projectId': typeof AuthenticatedMyWorkProjectIdRoute
   '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/auth/pinterest/callback': typeof AuthPinterestCallbackRoute
+  '/api/calendar/google/callback': typeof ApiCalendarGoogleCallbackRoute
   '/api/public/payments/webhook': typeof ApiPublicPaymentsWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
@@ -329,15 +387,19 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/billing': typeof AuthenticatedBillingRoute
   '/_authenticated/calendar': typeof AuthenticatedCalendarRoute
+  '/_authenticated/capacity': typeof AuthenticatedCapacityRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
+  '/_authenticated/future': typeof AuthenticatedFutureRoute
   '/_authenticated/growth-roadmap': typeof AuthenticatedGrowthRoadmapRoute
   '/_authenticated/knowledge-base': typeof AuthenticatedKnowledgeBaseRouteWithChildren
+  '/_authenticated/my-work': typeof AuthenticatedMyWorkRouteWithChildren
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRouteWithChildren
   '/_authenticated/rate-architecture': typeof AuthenticatedRateArchitectureRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/setup': typeof AuthenticatedSetupRoute
   '/_authenticated/sightline': typeof AuthenticatedSightlineRoute
+  '/_authenticated/sop': typeof AuthenticatedSopRoute
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/_authenticated/welcome': typeof AuthenticatedWelcomeRoute
@@ -349,9 +411,12 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/rate': typeof AuthenticatedDashboardRateRoute
   '/_authenticated/dashboard/scenarios': typeof AuthenticatedDashboardScenariosRoute
   '/_authenticated/knowledge-base/rate-architecture': typeof AuthenticatedKnowledgeBaseRateArchitectureRoute
+  '/_authenticated/my-work/$projectId': typeof AuthenticatedMyWorkProjectIdRoute
   '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/_authenticated/sop-library/$id': typeof AuthenticatedSopLibraryIdRoute
   '/_authenticated/sop-library/new': typeof AuthenticatedSopLibraryNewRoute
+  '/auth/pinterest/callback': typeof AuthPinterestCallbackRoute
+  '/api/calendar/google/callback': typeof ApiCalendarGoogleCallbackRoute
   '/api/public/payments/webhook': typeof ApiPublicPaymentsWebhookRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
 }
@@ -368,15 +433,19 @@ export interface FileRouteTypes {
     | '/admin'
     | '/billing'
     | '/calendar'
+    | '/capacity'
     | '/dashboard'
+    | '/future'
     | '/growth-roadmap'
     | '/knowledge-base'
+    | '/my-work'
     | '/onboarding'
     | '/projects'
     | '/rate-architecture'
     | '/settings'
     | '/setup'
     | '/sightline'
+    | '/sop'
     | '/sop-library'
     | '/time-calendar'
     | '/welcome'
@@ -388,9 +457,12 @@ export interface FileRouteTypes {
     | '/dashboard/rate'
     | '/dashboard/scenarios'
     | '/knowledge-base/rate-architecture'
+    | '/my-work/$projectId'
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
+    | '/auth/pinterest/callback'
+    | '/api/calendar/google/callback'
     | '/api/public/payments/webhook'
     | '/lovable/email/queue/process'
   fileRoutesByTo: FileRoutesByTo
@@ -405,15 +477,19 @@ export interface FileRouteTypes {
     | '/admin'
     | '/billing'
     | '/calendar'
+    | '/capacity'
     | '/dashboard'
+    | '/future'
     | '/growth-roadmap'
     | '/knowledge-base'
+    | '/my-work'
     | '/onboarding'
     | '/projects'
     | '/rate-architecture'
     | '/settings'
     | '/setup'
     | '/sightline'
+    | '/sop'
     | '/sop-library'
     | '/time-calendar'
     | '/welcome'
@@ -425,9 +501,12 @@ export interface FileRouteTypes {
     | '/dashboard/rate'
     | '/dashboard/scenarios'
     | '/knowledge-base/rate-architecture'
+    | '/my-work/$projectId'
     | '/projects/$id'
     | '/sop-library/$id'
     | '/sop-library/new'
+    | '/auth/pinterest/callback'
+    | '/api/calendar/google/callback'
     | '/api/public/payments/webhook'
     | '/lovable/email/queue/process'
   id:
@@ -443,15 +522,19 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/billing'
     | '/_authenticated/calendar'
+    | '/_authenticated/capacity'
     | '/_authenticated/dashboard'
+    | '/_authenticated/future'
     | '/_authenticated/growth-roadmap'
     | '/_authenticated/knowledge-base'
+    | '/_authenticated/my-work'
     | '/_authenticated/onboarding'
     | '/_authenticated/projects'
     | '/_authenticated/rate-architecture'
     | '/_authenticated/settings'
     | '/_authenticated/setup'
     | '/_authenticated/sightline'
+    | '/_authenticated/sop'
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
     | '/_authenticated/welcome'
@@ -463,9 +546,12 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/rate'
     | '/_authenticated/dashboard/scenarios'
     | '/_authenticated/knowledge-base/rate-architecture'
+    | '/_authenticated/my-work/$projectId'
     | '/_authenticated/projects/$id'
     | '/_authenticated/sop-library/$id'
     | '/_authenticated/sop-library/new'
+    | '/auth/pinterest/callback'
+    | '/api/calendar/google/callback'
     | '/api/public/payments/webhook'
     | '/lovable/email/queue/process'
   fileRoutesById: FileRoutesById
@@ -479,6 +565,8 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   RegisterRoute: typeof RegisterRoute
   TermsRoute: typeof TermsRoute
+  AuthPinterestCallbackRoute: typeof AuthPinterestCallbackRoute
+  ApiCalendarGoogleCallbackRoute: typeof ApiCalendarGoogleCallbackRoute
   ApiPublicPaymentsWebhookRoute: typeof ApiPublicPaymentsWebhookRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
 }
@@ -562,6 +650,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSopLibraryRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sop': {
+      id: '/_authenticated/sop'
+      path: '/sop'
+      fullPath: '/sop'
+      preLoaderRoute: typeof AuthenticatedSopRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/sightline': {
       id: '/_authenticated/sightline'
       path: '/sightline'
@@ -604,6 +699,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/my-work': {
+      id: '/_authenticated/my-work'
+      path: '/my-work'
+      fullPath: '/my-work'
+      preLoaderRoute: typeof AuthenticatedMyWorkRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/knowledge-base': {
       id: '/_authenticated/knowledge-base'
       path: '/knowledge-base'
@@ -618,11 +720,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedGrowthRoadmapRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/future': {
+      id: '/_authenticated/future'
+      path: '/future'
+      fullPath: '/future'
+      preLoaderRoute: typeof AuthenticatedFutureRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/capacity': {
+      id: '/_authenticated/capacity'
+      path: '/capacity'
+      fullPath: '/capacity'
+      preLoaderRoute: typeof AuthenticatedCapacityRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/calendar': {
@@ -646,6 +762,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/auth/pinterest/callback': {
+      id: '/auth/pinterest/callback'
+      path: '/auth/pinterest/callback'
+      fullPath: '/auth/pinterest/callback'
+      preLoaderRoute: typeof AuthPinterestCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/sop-library/new': {
       id: '/_authenticated/sop-library/new'
       path: '/new'
@@ -666,6 +789,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/projects/$id'
       preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
       parentRoute: typeof AuthenticatedProjectsRoute
+    }
+    '/_authenticated/my-work/$projectId': {
+      id: '/_authenticated/my-work/$projectId'
+      path: '/$projectId'
+      fullPath: '/my-work/$projectId'
+      preLoaderRoute: typeof AuthenticatedMyWorkProjectIdRouteImport
+      parentRoute: typeof AuthenticatedMyWorkRoute
     }
     '/_authenticated/knowledge-base/rate-architecture': {
       id: '/_authenticated/knowledge-base/rate-architecture'
@@ -737,6 +867,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPaymentsWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/calendar/google/callback': {
+      id: '/api/calendar/google/callback'
+      path: '/api/calendar/google/callback'
+      fullPath: '/api/calendar/google/callback'
+      preLoaderRoute: typeof ApiCalendarGoogleCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -782,6 +919,17 @@ const AuthenticatedKnowledgeBaseRouteWithChildren =
     AuthenticatedKnowledgeBaseRouteChildren,
   )
 
+interface AuthenticatedMyWorkRouteChildren {
+  AuthenticatedMyWorkProjectIdRoute: typeof AuthenticatedMyWorkProjectIdRoute
+}
+
+const AuthenticatedMyWorkRouteChildren: AuthenticatedMyWorkRouteChildren = {
+  AuthenticatedMyWorkProjectIdRoute: AuthenticatedMyWorkProjectIdRoute,
+}
+
+const AuthenticatedMyWorkRouteWithChildren =
+  AuthenticatedMyWorkRoute._addFileChildren(AuthenticatedMyWorkRouteChildren)
+
 interface AuthenticatedProjectsRouteChildren {
   AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRoute
 }
@@ -815,15 +963,19 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedBillingRoute: typeof AuthenticatedBillingRoute
   AuthenticatedCalendarRoute: typeof AuthenticatedCalendarRoute
+  AuthenticatedCapacityRoute: typeof AuthenticatedCapacityRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRouteWithChildren
+  AuthenticatedFutureRoute: typeof AuthenticatedFutureRoute
   AuthenticatedGrowthRoadmapRoute: typeof AuthenticatedGrowthRoadmapRoute
   AuthenticatedKnowledgeBaseRoute: typeof AuthenticatedKnowledgeBaseRouteWithChildren
+  AuthenticatedMyWorkRoute: typeof AuthenticatedMyWorkRouteWithChildren
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRouteWithChildren
   AuthenticatedRateArchitectureRoute: typeof AuthenticatedRateArchitectureRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSetupRoute: typeof AuthenticatedSetupRoute
   AuthenticatedSightlineRoute: typeof AuthenticatedSightlineRoute
+  AuthenticatedSopRoute: typeof AuthenticatedSopRoute
   AuthenticatedSopLibraryRoute: typeof AuthenticatedSopLibraryRouteWithChildren
   AuthenticatedTimeCalendarRoute: typeof AuthenticatedTimeCalendarRoute
   AuthenticatedWelcomeRoute: typeof AuthenticatedWelcomeRoute
@@ -833,15 +985,19 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedBillingRoute: AuthenticatedBillingRoute,
   AuthenticatedCalendarRoute: AuthenticatedCalendarRoute,
+  AuthenticatedCapacityRoute: AuthenticatedCapacityRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRouteWithChildren,
+  AuthenticatedFutureRoute: AuthenticatedFutureRoute,
   AuthenticatedGrowthRoadmapRoute: AuthenticatedGrowthRoadmapRoute,
   AuthenticatedKnowledgeBaseRoute: AuthenticatedKnowledgeBaseRouteWithChildren,
+  AuthenticatedMyWorkRoute: AuthenticatedMyWorkRouteWithChildren,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRouteWithChildren,
   AuthenticatedRateArchitectureRoute: AuthenticatedRateArchitectureRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSetupRoute: AuthenticatedSetupRoute,
   AuthenticatedSightlineRoute: AuthenticatedSightlineRoute,
+  AuthenticatedSopRoute: AuthenticatedSopRoute,
   AuthenticatedSopLibraryRoute: AuthenticatedSopLibraryRouteWithChildren,
   AuthenticatedTimeCalendarRoute: AuthenticatedTimeCalendarRoute,
   AuthenticatedWelcomeRoute: AuthenticatedWelcomeRoute,
@@ -860,6 +1016,8 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   RegisterRoute: RegisterRoute,
   TermsRoute: TermsRoute,
+  AuthPinterestCallbackRoute: AuthPinterestCallbackRoute,
+  ApiCalendarGoogleCallbackRoute: ApiCalendarGoogleCallbackRoute,
   ApiPublicPaymentsWebhookRoute: ApiPublicPaymentsWebhookRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
 }

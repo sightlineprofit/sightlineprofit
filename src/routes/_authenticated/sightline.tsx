@@ -15,15 +15,18 @@ import { getMyContext } from "@/lib/firm.functions";
 import { effectiveTier } from "@/lib/role";
 import {
   getProjectList, getProjectDetail, updateProjectStatus,
+  archiveProject, unarchiveProject, deleteProject, restoreProject,
   createProject, upsertProjectPhase, deleteProjectPhase,
   updateProjectMeta, updateProjectFinancial, updateProjectPhaseFinancial,
+  recordProjectPayment,
   listSopTemplatesLite,
-  updateProjectStepHrs, createProjectStep, deleteProjectStep,
+  updateProjectStepHrs, createProjectStep, deleteProjectStep, toggleProjectStepComplete, toggleProjectStepItemComplete,
   confirmProjectReviewed, logNothingToReport, NOTHING_TO_REPORT_PHRASE,
   saveProjectMilestone, deleteProjectMilestone,
   upsertProjectStepAssignee, deleteProjectStepAssignee, refreshProjectCostSnapshotFn,
 } from "@/lib/sightline.functions";
-import { attachTemplateToProject } from "@/lib/sop.functions";
+import { attachWorkflowToProject, detachWorkflowFromProject, detachProjectWorkflowAttachmentFn } from "@/lib/sop.functions";
+import { orderWorkflowIdsForAttach } from "@/lib/sop-workflow-order";
 import { toast } from "sonner";
 import {
   fmtUsd, fmtPct, formatHours, calc as calcFinance, getProjectMarginCalc,
@@ -44,6 +47,11 @@ import { ProjectCloseSummary } from "@/components/projects/ProjectCloseSummary";
 import { ProjectSetupWizard } from "@/components/projects/ProjectSetupWizard";
 import { ProjectCard as RedesignedProjectCard } from "@/components/projects/ProjectCard";
 import { ProjectDetailView, type ProjectDetailsPatch } from "@/components/projects/ProjectDetailView";
+import {
+  WorkflowAttachDialog,
+  WorkflowChangeDialog,
+  WorkflowRemoveDialog,
+} from "@/components/sop/WorkflowConfirmDialogs";
 import { getProjectFinancials } from "@/lib/finance";
 
 type Status = "active" | "pipeline" | "pursuit" | "invoiced" | "collected" | "completed" | "on_hold";
@@ -53,6 +61,7 @@ export const Route = createFileRoute("/_authenticated/sightline")({
   validateSearch: (s: Record<string, unknown>) =>
     z.object({
       openProject: z.string().uuid().optional(),
+      subView: z.enum(["details", "scope", "timelog", "audit"]).optional(),
       onboarded: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
       new: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
       attachSop: z.union([z.literal(1), z.literal(0), z.string()]).optional(),
@@ -115,17 +124,52 @@ function SightlinePage() {
         }}
         showOnboardHint={showOnboardHint}
         autoAttachSop={autoAttachSop}
+        initialSubView={search.subView ?? null}
       />
     );
   }
   return <ProjectList onOpen={setOpenProject} autoOpenNew={autoOpenNew} />;
 }
 
+type ListFilter = "all" | Status | "archived" | "deleted";
+
+function DeletedProjectCard({
+  project,
+  onRestore,
+  restoring,
+}: {
+  project: { id: string; name: string; client_name: string | null; deleted_at: string | null };
+  onRestore: () => void;
+  restoring: boolean;
+}) {
+  return (
+    <div className="flex flex-col rounded-lg border border-border bg-white p-5">
+      <div className="min-w-0 flex-1">
+        <h3 className="font-display text-xl tracking-tight text-ch">{project.name}</h3>
+        {project.client_name && <p className="mt-0.5 text-sm text-ch/60">{project.client_name}</p>}
+        {project.deleted_at && (
+          <p className="mt-2 text-[12px] text-ch/45">
+            Deleted {new Date(project.deleted_at).toLocaleDateString()}
+          </p>
+        )}
+        <p className="mt-3 text-[12px] text-ch/50">
+          Time entries and audit history are preserved.
+        </p>
+      </div>
+      <Button type="button" variant="outline" size="sm" className="mt-4 self-start" disabled={restoring} onClick={onRestore}>
+        {restoring ? "Restoring…" : "Restore"}
+      </Button>
+    </div>
+  );
+}
+
 function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; autoOpenNew?: boolean }) {
   const getList = useServerFn(getProjectList);
+  const restoreProjectFn = useServerFn(restoreProject);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["sightline-list"], queryFn: () => getList() });
-  const [filter, setFilter] = useState<"all" | Status>("active");
+  const [filter, setFilter] = useState<ListFilter>("active");
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [chipFilter, setChipFilter] = useState<"all" | "attention" | "watch" | "healthy" | "stale">("all");
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"health" | "margin_desc" | "margin_asc" | "recent" | "name">("health");
@@ -185,11 +229,34 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
     return fin.marginRemainingPct;
   };
 
+  const filteredDeleted = useMemo(() => {
+    if (!data?.deletedProjects) return [];
+    const q = search.trim().toLowerCase();
+    let list = [...data.deletedProjects];
+    if (q) {
+      list = list.filter((p) =>
+        [p.name, p.client_name].filter(Boolean).some((v) => v!.toLowerCase().includes(q)),
+      );
+    }
+    list.sort((a, b) => {
+      const ta = a.deleted_at ? new Date(a.deleted_at).getTime() : 0;
+      const tb = b.deleted_at ? new Date(b.deleted_at).getTime() : 0;
+      return tb - ta;
+    });
+    return list;
+  }, [data, search]);
+
   const filtered = useMemo(() => {
-    if (!data) return [];
+    if (!data || filter === "deleted") return [];
     const q = search.trim().toLowerCase();
     const list = data.projects.filter((p) => {
-      if (filter !== "all" && p.status !== filter) return false;
+      const archivedAt = (p as { archived_at?: string | null }).archived_at;
+      if (filter === "archived") {
+        if (!archivedAt) return false;
+      } else {
+        if (archivedAt) return false;
+        if (filter !== "all" && p.status !== filter) return false;
+      }
       if (chipFilter !== "all") {
         if (chipFilter === "stale") {
           const f = projectFreshness(p);
@@ -225,6 +292,20 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, filter, chipFilter, search, sortBy]);
 
+  const isDeletedView = filter === "deleted";
+  const listEmpty = isDeletedView ? filteredDeleted.length === 0 : filtered.length === 0;
+
+  async function handleRestore(projectId: string) {
+    setRestoringId(projectId);
+    try {
+      await restoreProjectFn({ data: { id: projectId } });
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+      toast.success("Project restored");
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
   return (
     <ModulePage
       eyebrow="Practice"
@@ -256,8 +337,11 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
             <SelectItem value="collected">Collected</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="on_hold">On hold</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+            {data?.isAdmin && <SelectItem value="deleted">Recently deleted</SelectItem>}
           </SelectContent>
         </Select>
+        {!isDeletedView && (
         <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
           <SelectTrigger className="w-56 bg-white">
             <span className="mr-2 text-[11px] uppercase tracking-[0.15em] text-ch/40">Sort</span>
@@ -271,8 +355,10 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
             <SelectItem value="name">Project name</SelectItem>
           </SelectContent>
         </Select>
+        )}
       </div>
 
+      {!isDeletedView && (
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {([
           { id: "all", label: "All", color: "#2C2C2C" },
@@ -309,18 +395,36 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
           );
         })}
       </div>
+      )}
 
       {isLoading ? (
         <p className="text-ch/50">Loading…</p>
-      ) : filtered.length === 0 ? (
+      ) : listEmpty ? (
         <div className="rounded-lg border border-dashed border-border bg-white/60 p-12 text-center">
-          <p className="font-display text-2xl italic text-ch/60">No projects yet</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
-            Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library.
+          <p className="font-display text-2xl italic text-ch/60">
+            {isDeletedView ? "No deleted projects" : "No projects yet"}
           </p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-ch/60">
+            {isDeletedView
+              ? "Deleted projects appear here. Restore one to return it to your active list."
+              : "Create your first project to start tracking profitability. You can attach an SOP template later from the SOP Library."}
+          </p>
+          {!isDeletedView && (
           <Button data-tour="new-project-btn" onClick={() => setWizardOpen(true)} className="mt-5 bg-gold text-white hover:bg-goldl">
             <Plus className="mr-1.5 h-4 w-4" /> Create project
           </Button>
+          )}
+        </div>
+      ) : isDeletedView ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {filteredDeleted.map((p) => (
+            <DeletedProjectCard
+              key={p.id}
+              project={p}
+              restoring={restoringId === p.id}
+              onRestore={() => void handleRestore(p.id)}
+            />
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -331,6 +435,7 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
                 project={p as any}
                 snapshot={((p as any).snapshot ?? null) as any}
                 hoursLogged={Number((p as any).hoursLogged ?? 0)}
+                hoursLoggedThisMonth={Number((p as any).hoursLoggedThisMonth ?? 0)}
                 lastEntryDate={((p as any).lastEntryDate ?? null) as any}
                 onClick={() => onOpen(p.id)}
               />
@@ -338,6 +443,7 @@ function ProjectList({ onOpen, autoOpenNew }: { onOpen: (id: string) => void; au
           })}
         </div>
       )}
+
       <ProjectSetupWizard
         open={wizardOpen}
         onClose={() => { setWizardOpen(false); clearNewParam(); }}
@@ -706,11 +812,12 @@ type PhaseRow = {
   nonBillActual: number;
 };
 
-function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
+function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop, initialSubView }: {
   id: string;
   onBack: () => void;
   showOnboardHint?: boolean;
   autoAttachSop?: boolean;
+  initialSubView?: "details" | "scope" | "timelog" | "audit" | null;
 }) {
   const qc = useQueryClient();
   const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
@@ -731,7 +838,9 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
   const upsertPhaseFn = useServerFn(upsertProjectPhase);
   const deletePhaseFn = useServerFn(deleteProjectPhase);
   const listTemplatesFn = useServerFn(listSopTemplatesLite);
-  const attachTplFn = useServerFn(attachTemplateToProject);
+  const attachTplFn = useServerFn(attachWorkflowToProject);
+  const detachWfFn = useServerFn(detachWorkflowFromProject);
+  const detachAttachmentFn = useServerFn(detachProjectWorkflowAttachmentFn);
   const updateStepHrsFn = useServerFn(updateProjectStepHrs);
   const createStepFn = useServerFn(createProjectStep);
   const deleteStepFn = useServerFn(deleteProjectStep);
@@ -741,7 +850,14 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
   const deleteMilestoneFn = useServerFn(deleteProjectMilestone);
   const upsertStepAssigneeFn = useServerFn(upsertProjectStepAssignee);
   const deleteStepAssigneeFn = useServerFn(deleteProjectStepAssignee);
+  const toggleStepFn = useServerFn(toggleProjectStepComplete);
+  const toggleStepItemFn = useServerFn(toggleProjectStepItemComplete);
   const refreshSnapshotFn = useServerFn(refreshProjectCostSnapshotFn);
+  const recordPaymentFn = useServerFn(recordProjectPayment);
+  const archiveFn = useServerFn(archiveProject);
+  const unarchiveFn = useServerFn(unarchiveProject);
+  const deleteProjectFn = useServerFn(deleteProject);
+  const restoreProjectFn = useServerFn(restoreProject);
 
   const { data, isLoading } = useQuery({
     queryKey: ["sightline-detail", id],
@@ -799,6 +915,11 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
 
   // Add-from-template picker state
   const [tplPickerOpen, setTplPickerOpen] = useState(false);
+  const [changeDialogOpen, setChangeDialogOpen] = useState(false);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [changeConfirmed, setChangeConfirmed] = useState(false);
+  const [attachingWorkflow, setAttachingWorkflow] = useState(false);
+  const [removingWorkflow, setRemovingWorkflow] = useState(false);
   const navigate = useNavigate();
 
   // Guided tour Step 6: open template picker when arriving from setup.
@@ -806,7 +927,10 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
     if (!autoAttachSop) return;
     setTplPickerOpen(true);
   }, [autoAttachSop]);
-  const [tplPicked, setTplPicked] = useState<string>("");
+  const [tplPickedIds, setTplPickedIds] = useState<string[]>([]);
+  const [attachAppendMode, setAttachAppendMode] = useState(false);
+  const [workflowPeriod, setWorkflowPeriod] = useState<{ period_label?: string; period_start?: string; period_end?: string }>({});
+  const [removeAttachmentTarget, setRemoveAttachmentTarget] = useState<{ id: string; label: string } | null>(null);
 
   const { data: tplData } = useQuery({
     queryKey: ["sightline-templates"],
@@ -863,9 +987,15 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
   }
 
   const { project, phases, entries, team, steps, audit, isPrincipal, isAdmin, template, config } = data;
+  const workflowAttachments =
+    (data as { workflowAttachments?: import("@/lib/sop-workflow-period").ProjectWorkflowAttachmentRow[] })
+      .workflowAttachments ?? [];
+  const canWrite = !!(data as { canWrite?: boolean }).canWrite;
   const detailSnapshot = (data as unknown as { snapshot?: any }).snapshot ?? null;
   const detailFinancials = (data as unknown as { financials?: import("@/lib/finance").ProjectFinancials | null }).financials ?? null;
   const stepAssignees = (data as unknown as { stepAssignees?: Array<Record<string, unknown>> }).stepAssignees ?? [];
+  const stepResources = (data as unknown as { stepResources?: Array<{ project_step_id: string; resource_id: string }> }).stepResources ?? [];
+  const stepResourceMeta = (data as unknown as { stepResourceMeta?: Array<{ id: string; name: string; resource_type: string; url?: string | null; content?: string | null; subject_line?: string | null }> }).stepResourceMeta ?? [];
   const assigneePickerMembers = (data as unknown as { assigneePickerMembers?: Array<{ id: string; name: string; burdened_hourly_rate?: number | null }> }).assigneePickerMembers ?? [];
   const assigneePickerPrincipal = (data as unknown as { assigneePickerPrincipal?: { name: string } | null }).assigneePickerPrincipal;
   const assigneesNewerThanSnapshot = !!(data as unknown as { assigneesNewerThanSnapshot?: boolean }).assigneesNewerThanSnapshot;
@@ -1171,30 +1301,105 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
     }
   };
 
-  const attachSelectedTemplate = async () => {
-    if (!tplPicked) return;
+  const recordPayment = async (args: {
+    amount: number;
+    payment_collected_date: string;
+    payment_notes: string | null;
+    project_fee: number;
+  }) => {
     try {
-      const r = await attachTplFn({ data: { template_id: tplPicked, project_id: id } });
-      toast.success(`${r.attached} phase${r.attached !== 1 ? "s" : ""} added from template`);
-      if (r.migrationPending) {
-        toast.warning(
-          "Phases attached, but team assignments need a database update. Apply migration 20260716120000_task_assignee_cost_basis.sql in the Supabase SQL editor.",
-          { duration: 12000 },
-        );
+      await recordPaymentFn({ data: { id, ...args } });
+      toast.success("Payment recorded");
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["sightline-list"] });
+      qc.invalidateQueries({ queryKey: ["owner-pay-calc"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to record payment");
+      throw e;
+    }
+  };
+
+  const openAttachWorkflowPicker = () => {
+    setAttachAppendMode(!!template?.id || (phases?.length ?? 0) > 0);
+    setWorkflowPeriod({});
+    setTplPickedIds([]);
+    setTplPickerOpen(true);
+  };
+
+  const openReplaceWorkflowPicker = () => {
+    setChangeDialogOpen(true);
+  };
+
+  const attachSelectedTemplate = async () => {
+    const templates = tplData?.templates ?? [];
+    const ordered = orderWorkflowIdsForAttach(tplPickedIds, templates);
+    if (!ordered.length) return;
+    setAttachingWorkflow(true);
+    try {
+      if (template?.id && changeConfirmed) {
+        await detachWfFn({ data: { project_id: id } });
+        setChangeConfirmed(false);
       }
+      const periodPayload =
+        workflowPeriod.period_label?.trim() ||
+        workflowPeriod.period_start?.trim() ||
+        workflowPeriod.period_end?.trim()
+          ? {
+              period_label: workflowPeriod.period_label?.trim() || null,
+              period_start: workflowPeriod.period_start?.trim() || null,
+              period_end: workflowPeriod.period_end?.trim() || null,
+            }
+          : null;
+      for (const workflowId of ordered) {
+        await attachTplFn({
+          data: { workflow_id: workflowId, project_id: id, period: periodPayload },
+        });
+      }
+      toast.success(
+        ordered.length === 1
+          ? template?.id
+            ? "Workflow updated"
+            : "Workflow attached to project"
+          : `${ordered.length} workflows attached to project`,
+      );
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("sightline:sop-attached", { detail: { id } }),
         );
       }
       setTplPickerOpen(false);
-      setTplPicked("");
+      setTplPickedIds([]);
+      setWorkflowPeriod({});
       invalidate();
       if (autoAttachSop) {
         navigate({ to: "/sightline", search: { openProject: id }, replace: true });
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setAttachingWorkflow(false);
+    }
+  };
+
+  const confirmRemoveWorkflow = async () => {
+    setRemovingWorkflow(true);
+    try {
+      if (removeAttachmentTarget) {
+        await detachAttachmentFn({
+          data: { attachment_id: removeAttachmentTarget.id, project_id: id },
+        });
+        toast.success("Workflow period removed");
+      } else {
+        await detachWfFn({ data: { project_id: id } });
+        toast.success("Workflow removed");
+      }
+      setRemoveDialogOpen(false);
+      setRemoveAttachmentTarget(null);
+      invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setRemovingWorkflow(false);
     }
   };
 
@@ -1319,6 +1524,7 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
           invalidate();
         } : undefined}
         onSaveProjectDetails={isAdmin ? saveProjectDetails : undefined}
+        onRecordPayment={isAdmin ? recordPayment : undefined}
         onStatusChange={onStatusChange}
         financials={detailFinancials}
         stepAssignees={stepAssignees as any}
@@ -1355,8 +1561,41 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
               }
             : undefined
         }
-        onAttachSopTemplate={isAdmin ? () => setTplPickerOpen(true) : undefined}
+        onAttachSopTemplate={isAdmin ? openAttachWorkflowPicker : undefined}
         sopTemplateName={template?.name ?? null}
+        workflowAttachments={workflowAttachments}
+        onChangeWorkflow={isAdmin && (template || workflowAttachments.length) ? openReplaceWorkflowPicker : undefined}
+        onRemoveWorkflow={isAdmin && (template || workflowAttachments.length) ? () => {
+          setRemoveAttachmentTarget(null);
+          setRemoveDialogOpen(true);
+        } : undefined}
+        onRemoveWorkflowAttachment={
+          isAdmin
+            ? (attachmentId, label) => {
+                setRemoveAttachmentTarget({ id: attachmentId, label });
+                setRemoveDialogOpen(true);
+              }
+            : undefined
+        }
+        stepResources={stepResources}
+        stepResourceMeta={stepResourceMeta}
+        onToggleStepComplete={
+          isAdmin
+            ? async (stepId, completed) => {
+                await toggleStepFn({ data: { step_id: stepId, completed } });
+                invalidate();
+              }
+            : undefined
+        }
+        onToggleStepItemComplete={
+          canWrite
+            ? async (stepId, order, completed) => {
+                await toggleStepItemFn({ data: { step_id: stepId, order, completed } });
+                invalidate();
+              }
+            : undefined
+        }
+        initialSubView={initialSubView ?? null}
         onCreateProjectStep={
           isAdmin
             ? async (phaseId, description, estimatedHrs = 0) => {
@@ -1386,6 +1625,46 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
                   data: { project_step_id: stepId, ...payload },
                 });
                 toast.success("Assignee saved");
+                invalidate();
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+              }
+            : undefined
+        }
+        onArchive={
+          isAdmin
+            ? async () => {
+                await archiveFn({ data: { id } });
+                toast.success("Project archived");
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+                onBack();
+              }
+            : undefined
+        }
+        onUnarchive={
+          isAdmin
+            ? async () => {
+                await unarchiveFn({ data: { id } });
+                toast.success("Project unarchived");
+                invalidate();
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+              }
+            : undefined
+        }
+        onDelete={
+          isAdmin
+            ? async () => {
+                await deleteProjectFn({ data: { id } });
+                toast.success("Project deleted");
+                qc.invalidateQueries({ queryKey: ["sightline-list"] });
+                onBack();
+              }
+            : undefined
+        }
+        onRestore={
+          isAdmin
+            ? async () => {
+                await restoreProjectFn({ data: { id } });
+                toast.success("Project restored");
                 invalidate();
                 qc.invalidateQueries({ queryKey: ["sightline-list"] });
               }
@@ -1552,29 +1831,49 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop }: {
         </DialogContent>
       </Dialog>
 
-      {/* TEMPLATE PICKER DIALOG */}
-      <Dialog open={tplPickerOpen} onOpenChange={setTplPickerOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add phases from SOP Library</DialogTitle>
-            <DialogDescription>Phases are copied into this project. Future edits to the template won't affect this project.</DialogDescription>
-          </DialogHeader>
-          <Select value={tplPicked} onValueChange={setTplPicked}>
-            <SelectTrigger className="bg-white"><SelectValue placeholder="Choose a template…" /></SelectTrigger>
-            <SelectContent>
-              {(tplData?.templates ?? []).map((t) => (
-                <SelectItem key={t.id} value={t.id}>{t.name}{t.category ? ` — ${t.category}` : ""}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setTplPickerOpen(false)}>Cancel</Button>
-            <Button className="bg-ch text-cream hover:bg-ch/90" disabled={!tplPicked} onClick={attachSelectedTemplate}>
-              Attach phases
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <WorkflowChangeDialog
+        open={changeDialogOpen}
+        onOpenChange={setChangeDialogOpen}
+        confirming={attachingWorkflow}
+        onConfirm={() => {
+          setChangeConfirmed(true);
+          setChangeDialogOpen(false);
+          setTplPickerOpen(true);
+        }}
+      />
+      <WorkflowRemoveDialog
+        open={removeDialogOpen}
+        onOpenChange={(o) => {
+          setRemoveDialogOpen(o);
+          if (!o) setRemoveAttachmentTarget(null);
+        }}
+        confirming={removingWorkflow}
+        onConfirm={confirmRemoveWorkflow}
+        title={removeAttachmentTarget ? "Remove this workflow period?" : "Remove all workflows?"}
+        description={
+          removeAttachmentTarget
+            ? `This removes "${removeAttachmentTarget.label}" and its template tasks. Manually created tasks elsewhere on the project are kept.`
+            : "This will remove all template-based tasks on this project. Manually created tasks are preserved."
+        }
+      />
+      <WorkflowAttachDialog
+        open={tplPickerOpen}
+        onOpenChange={(o) => {
+          setTplPickerOpen(o);
+          if (!o) {
+            setTplPickedIds([]);
+            setWorkflowPeriod({});
+          }
+        }}
+        templates={tplData?.templates ?? []}
+        pickedIds={tplPickedIds}
+        onPickedIdsChange={setTplPickedIds}
+        onAttach={attachSelectedTemplate}
+        attaching={attachingWorkflow}
+        appendMode={attachAppendMode}
+        period={workflowPeriod}
+        onPeriodChange={setWorkflowPeriod}
+      />
       {/* Moment 3 — project close summary */}
       <ProjectCloseSummary
         projectId={id}

@@ -1,4 +1,4 @@
-import { sendLovableEmail } from '@lovable.dev/email-js'
+import { sendTransactionalEmail } from '@/lib/transactional-email.server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createFileRoute } from '@tanstack/react-router'
 
@@ -64,11 +64,10 @@ export const Route = createFileRoute("/lovable/email/queue/process")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const apiKey = process.env.LOVABLE_API_KEY
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-        if (!apiKey || !supabaseUrl || !supabaseServiceKey) {
+        if (!supabaseUrl || !supabaseServiceKey) {
           console.error('Missing required environment variables')
           return Response.json(
             { error: 'Server configuration error' },
@@ -221,23 +220,19 @@ export const Route = createFileRoute("/lovable/email/queue/process")({
             }
 
             try {
-              await sendLovableEmail(
-                {
-                  run_id: payload.run_id,
-                  to: payload.to,
-                  from: payload.from,
-                  sender_domain: payload.sender_domain,
-                  subject: payload.subject,
-                  html: payload.html,
-                  text: payload.text,
-                  purpose: payload.purpose,
-                  label: payload.label,
-                  idempotency_key: payload.idempotency_key,
-                  unsubscribe_token: payload.unsubscribe_token,
-                  message_id: payload.message_id,
-                },
-                { apiKey, sendUrl: process.env.LOVABLE_SEND_URL }
-              )
+              if (!payload.subject || !payload.to) {
+                throw new Error('Queue message missing subject or to')
+              }
+              const html = typeof payload.html === 'string' ? payload.html : ''
+              const text = typeof payload.text === 'string' ? payload.text : html.replace(/<[^>]+>/g, ' ')
+              await sendTransactionalEmail({
+                to: String(payload.to),
+                subject: String(payload.subject),
+                html: html || `<p>${text}</p>`,
+                text,
+                idempotencyKey:
+                  typeof payload.idempotency_key === 'string' ? payload.idempotency_key : undefined,
+              })
 
               // Log success
               await supabase.from('email_send_log').insert({

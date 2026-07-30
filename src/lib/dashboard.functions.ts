@@ -1,11 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { ensureTourRow } from "@/lib/tour.server";
+import { listFirmProjects } from "@/lib/project-lifecycle.server";
+import { requirePrincipalOrAdmin } from "@/lib/auth-guards.server";
 
 export const getDashboardData = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("id, firm_id, name, email, role, is_super_admin, impersonated_firm_id")
@@ -45,8 +49,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: scenarios },
       { data: prefs },
       { data: weekEntries },
-      { data: projects },
-      { data: capacityProjects },
+      projectsSummaryResult,
+      capacityProjectsResult,
       { data: phases },
       { data: pipeline },
       { data: team },
@@ -59,6 +63,8 @@ export const getDashboardData = createServerFn({ method: "GET" })
       { data: ytdEntries },
       { data: memberLastEntries },
       { data: projectMilestones },
+      { data: firmPreferences },
+      { data: paymentProjects },
     ] = await Promise.all([
       supabase.from("firms").select("*").eq("id", profile.firm_id).single(),
       supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
@@ -70,14 +76,16 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .select("hrs, billable, project_id, projects(status)")
         .eq("firm_id", profile.firm_id)
         .gte("date", isoWeek),
-      supabase
-        .from("projects")
-        .select("id, status, scoped_hrs, scoped_rate, fixed_fee")
-        .eq("firm_id", profile.firm_id),
-      supabase
-        .from("projects")
-        .select("id, name, status, start_date, end_date, scoped_hrs, scoped_rate, fixed_fee, sop_template_id, est_weekly_hrs")
-        .eq("firm_id", profile.firm_id),
+      listFirmProjects(supabase, profile.firm_id, {
+        select: "id, status, scoped_hrs, scoped_rate, fixed_fee",
+        excludeArchived: true,
+        orderBy: { column: "created_at", ascending: false },
+      }),
+      listFirmProjects(supabase, profile.firm_id, {
+        select: "id, name, status, start_date, end_date, scoped_hrs, scoped_rate, fixed_fee, sop_template_id, est_weekly_hrs",
+        excludeArchived: true,
+        orderBy: { column: "created_at", ascending: false },
+      }),
       supabase
         .from("project_phases")
         .select("id, project_id, name, expected_hrs, actual_hrs, billable, sort_order"),
@@ -115,7 +123,7 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .eq("firm_id", profile.firm_id),
       supabase
         .from("firm_members")
-        .select("id, role_type, burdened_weekly_cost, weeks_per_year, expected_hrs_per_week, billed_rate")
+        .select("id, role_type, burdened_weekly_cost, weeks_per_year, expected_hrs_per_week, productive_hrs_per_week, billed_rate, is_active")
         .eq("firm_id", profile.firm_id)
         .eq("is_active", true)
         .neq("role_type", "principal"),
@@ -134,7 +142,20 @@ export const getDashboardData = createServerFn({ method: "GET" })
         .from("project_milestones")
         .select("id, project_id, label, milestone_date")
         .eq("firm_id", profile.firm_id),
+      supabase
+        .from("firm_preferences")
+        .select("dashboard_primary_view, tour_completed, tour_step, welcome_banner_dismissed, last_cost_review_date, aligned_rate_at_last_review")
+        .eq("firm_id", profile.firm_id)
+        .maybeSingle(),
+      supabase
+        .from("projects")
+        .select("payment_collected, payment_collected_date")
+        .eq("firm_id", profile.firm_id)
+        .gt("payment_collected", 0),
     ]);
+
+    const projects = projectsSummaryResult.data;
+    const capacityProjects = capacityProjectsResult.data;
 
     const isBD = (status: string | null | undefined) =>
       status === "pursuit" || status === "pipeline";
@@ -213,9 +234,15 @@ export const getDashboardData = createServerFn({ method: "GET" })
       if (!lastEntryByUser[uid] || d > lastEntryByUser[uid]) lastEntryByUser[uid] = d;
     }
 
+    if (!firmPreferences) {
+      await ensureTourRow(supabase, profile.firm_id);
+    }
+
     return {
       profile, firm, config, expenses: expenses ?? [], scenarios: scenarios ?? [],
       prefs: { hidden_metrics: prefs?.hidden_metrics ?? [] },
+      firmPreferences: firmPreferences ?? { dashboard_primary_view: "revenue_architecture" },
+      paymentProjects: paymentProjects ?? [],
       weekHours,
       bdWeekHours,
       committedRevenue,
@@ -237,6 +264,31 @@ export const getDashboardData = createServerFn({ method: "GET" })
         milestones: projectMilestones ?? [],
       },
     };
+  });
+
+export const updateDashboardViewPreference = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        dashboard_primary_view: z.enum(["revenue_architecture", "aligned_rate"]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase.from("profiles").select("firm_id").eq("id", userId).single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    await ensureTourRow(supabase, profile.firm_id);
+    const { error } = await supabase
+      .from("firm_preferences")
+      .update({
+        dashboard_primary_view: data.dashboard_primary_view,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("firm_id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const updateMetricPrefs = createServerFn({ method: "POST" })

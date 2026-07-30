@@ -5,8 +5,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createStripeClient, getStripeErrorMessage } from "@/lib/stripe.server";
 import { backfillFirmBillingFromStripeServer } from "@/lib/stripe-billing-sync.server";
 
-async function assertSuper(supabase: any, userId: string) {
-  const { data } = await supabase
+async function assertSuper(userId: string) {
+  const { data } = await supabaseAdmin
     .from("profiles")
     .select("is_super_admin")
     .eq("id", userId)
@@ -17,7 +17,7 @@ async function assertSuper(supabase: any, userId: string) {
 export const listAllFirms = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const { data: firms } = await supabaseAdmin
       .from("firms")
       .select("id, name, owner_id, subscription_tier, subscription_status, trial_ends_at, created_at, is_demo")
@@ -42,7 +42,7 @@ export const listAllFirms = createServerFn({ method: "GET" })
 export const listAllUsers = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const [{ data: profiles }, { data: firms }] = await Promise.all([
       supabaseAdmin
         .from("profiles")
@@ -71,7 +71,7 @@ export const setFirmOverrides = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const patch: Record<string, any> = {};
     if (data.subscription_tier) patch.subscription_tier = data.subscription_tier;
     if (data.subscription_status) patch.subscription_status = data.subscription_status;
@@ -89,7 +89,7 @@ export const setImpersonation = createServerFn({ method: "POST" })
     z.object({ firm_id: z.string().uuid().nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const { error } = await supabaseAdmin
       .from("profiles")
       .update({ impersonated_firm_id: data.firm_id })
@@ -101,7 +101,7 @@ export const setImpersonation = createServerFn({ method: "POST" })
 export const listWebhookLog = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const [{ data: rows }, { data: firms }] = await Promise.all([
       supabaseAdmin
         .from("webhook_log")
@@ -150,7 +150,7 @@ export const replayWebhook = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     // Marks as delivered for now — actual HTTP POST wires in once Ivory.io endpoint is set.
     const { error } = await supabaseAdmin
       .from("webhook_log")
@@ -180,7 +180,7 @@ export const updateAppSettings = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const { error } = await supabaseAdmin
       .from("app_settings")
       .update({ ...data, updated_at: new Date().toISOString() })
@@ -212,7 +212,7 @@ const kbItemSchema = z.object({
 export const listKbItemsAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const { data } = await supabaseAdmin
       .from("knowledge_base_items")
       .select("*")
@@ -224,7 +224,7 @@ export const getKbItem = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const { data: row } = await supabaseAdmin
       .from("knowledge_base_items")
       .select("*")
@@ -237,7 +237,7 @@ export const upsertKbItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => kbItemSchema.parse(d))
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const payload: any = {
       type: data.type,
       title: data.title,
@@ -279,7 +279,7 @@ export const deleteKbItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertSuper(context.supabase, context.userId);
+    await assertSuper(context.userId);
     const { error } = await supabaseAdmin.from("knowledge_base_items").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };

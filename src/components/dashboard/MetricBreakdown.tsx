@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
 import type { calc, Expense } from "@/lib/finance";
 import { annualizeExpense, fmtUsd } from "@/lib/finance";
+import {
+  REVENUE_CAPACITY_LABEL,
+  REVENUE_CAPACITY_SHORT,
+  getRevenueDashboardCopy,
+} from "@/lib/revenue-framing";
 import { buildTeamCostBreakdown, type TeamMemberInput } from "@/lib/team-cost";
 
 type Calc = ReturnType<typeof calc>;
@@ -39,7 +44,7 @@ const LABELS: Record<MetricKind, string> = {
   margin: "Margin",
   breakeven: "Break-even",
   cost_floor: "Cost floor",
-  budget_revenue: "Budget revenue",
+  budget_revenue: "Revenue capacity (planning)",
 };
 
 function ClosingLine() {
@@ -672,8 +677,8 @@ function CostFloorContent({
         <div style={{ marginTop: 10, fontSize: 11, color: "white", fontWeight: 500 }}>Operating expenses</div>
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{fmtUsd(opex)}/yr · {pct(opex)}%</div>
         <SubRows
-          rows={opexRows.slice(0, 3).map((r) => [r.name, r.annual] as [string, number])}
-          more={opexRows.length > 3 ? opexRows.length - 3 : 0}
+          rows={opexRows.map((r) => [r.name, r.annual] as [string, number])}
+          previewCount={3}
           moreLabel="more expenses"
         />
       </div>
@@ -691,20 +696,68 @@ function SubRows({
   rows,
   more,
   moreLabel,
+  previewCount,
 }: {
   rows: Array<[string, number]>;
+  /** @deprecated use previewCount */
   more?: number;
   moreLabel?: string;
+  previewCount?: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = rows.filter(([, v]) => v > 0);
+  const limit = previewCount != null ? previewCount : visible.length;
+  const hiddenCount = Math.max(0, visible.length - limit);
+  const showToggle = hiddenCount > 0;
+  const displayed = expanded || !showToggle ? visible : visible.slice(0, limit);
+
   return (
     <div style={{ marginTop: 4, paddingLeft: 10, borderLeft: "1px solid rgba(255,255,255,0.08)" }}>
-      {rows.filter(([, v]) => v > 0).map(([label, value]) => (
-        <div key={label} style={{ display: "flex", padding: "2px 0", fontSize: 11 }}>
+      {displayed.map(([label, value], i) => (
+        <div key={`${label}-${i}`} style={{ display: "flex", padding: "2px 0", fontSize: 11 }}>
           <span style={{ flex: 1, color: "rgba(255,255,255,0.6)" }}>{label}</span>
           <span style={{ color: "rgba(255,255,255,0.85)" }}>{fmtUsd(value)}/yr</span>
         </div>
       ))}
-      {more && more > 0 ? (
+      {showToggle && !expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          style={{
+            marginTop: 4,
+            padding: 0,
+            border: "none",
+            background: "none",
+            fontSize: 11,
+            color: GOLD,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+          className="hover:underline"
+        >
+          + {hiddenCount} {moreLabel ?? "more"}
+        </button>
+      ) : null}
+      {showToggle && expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          style={{
+            marginTop: 4,
+            padding: 0,
+            border: "none",
+            background: "none",
+            fontSize: 11,
+            color: "rgba(255,255,255,0.45)",
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+          className="hover:underline"
+        >
+          Show less
+        </button>
+      ) : null}
+      {more && more > 0 && previewCount == null ? (
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
           + {more} {moreLabel}
         </div>
@@ -716,20 +769,33 @@ function SubRows({
 function BudgetRevenueContent({
   c,
   contributors = [],
+  cfg,
 }: {
   c: Calc;
   contributors?: RevenueContributor[];
+  cfg?: any;
 }) {
-  const total = c.annualRevenue || 0;
+  const totalAtTargets = c.revenueCapacityAtTargets ?? c.annualRevenue ?? 0;
+  const utilPct = c.targetUtilizationPct;
+  const total =
+    utilPct != null && utilPct > 0
+      ? c.revenueCapacityAtUtilization ?? totalAtTargets * (utilPct / 100)
+      : totalAtTargets;
   const floor = c.totalCost || 0;
   const alignedRevenue = (c.alignedRate || 0) * (c.annualBillableHrs || 0);
   const covers = total >= floor;
   const marginAnnual = total - floor;
   const marginPct = total > 0 ? Math.round((marginAnnual / total) * 100) : 0;
 
+  const copy = getRevenueDashboardCopy(cfg?.pricing_structure);
+
   return (
     <>
-      <Header>Your budget revenue — full firm picture</Header>
+      <Header>{REVENUE_CAPACITY_LABEL}</Header>
+      <Paragraph>{copy.dualLensDefinition}</Paragraph>
+      <div style={{ marginTop: 8 }}>
+        <Paragraph>{REVENUE_CAPACITY_SHORT}</Paragraph>
+      </div>
       {contributors.length > 0 ? (
         <div style={{ marginTop: 10 }}>
           {contributors.map((cn, i) => (
@@ -766,9 +832,18 @@ function BudgetRevenueContent({
         </div>
       ) : (
         <Paragraph>
-          Budget revenue is the potential annual revenue if every billable contributor hits
-          their target billable hours at their current billed rates (principal billable hours
-          are capped at available hours per week).
+          {REVENUE_CAPACITY_SHORT} Principal billable hours are capped at available hours per week when set.
+        </Paragraph>
+      )}
+      {utilPct != null && utilPct > 0 ? (
+        <Paragraph>
+          Applied planning utilization: <strong>{Math.round(utilPct)}%</strong> of target hours →{" "}
+          {fmtUsd(total)}/yr (before utilization: {fmtUsd(totalAtTargets)}/yr).
+        </Paragraph>
+      ) : (
+        <Paragraph>
+          Set <strong>target utilization %</strong> in Settings → Rate to apply a planning haircut (otherwise 100% of
+          configured hours).
         </Paragraph>
       )}
       <div
@@ -789,61 +864,52 @@ function BudgetRevenueContent({
             color: "rgba(255,255,255,0.35)",
           }}
         >
-          Combined budget revenue
+          Combined revenue capacity
         </span>
         <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 26, color: GOLD }}>
           {fmtUsd(total)}/yr
         </span>
       </div>
-      <Paragraph>
-        Potential revenue if everyone hits their target billable hours at their billed rates.
-      </Paragraph>
+      <Paragraph>Planning scenario — not collected revenue. Compare YTD and portfolio realized rate on the dashboard.</Paragraph>
 
-      <SectionHead>What this revenue does</SectionHead>
+      <SectionHead>Scenario vs. cost floor</SectionHead>
       <RowLine
-        label="Covers cost floor"
-        value={covers ? "✓ Covered" : "✗ Not covered"}
-        valueColor={covers ? GREEN : TERRA}
-        hint={covers ? `${fmtUsd(floor)}/yr` : `Shortfall: ${fmtUsd(floor - total)}/yr`}
+        label="Covers cost floor at this scenario"
+        value={covers ? "Yes (on paper)" : "No (on paper)"}
+        valueColor={covers ? "rgba(255,255,255,0.75)" : TERRA}
+        hint={covers ? `${fmtUsd(floor)}/yr floor` : `Shortfall: ${fmtUsd(floor - total)}/yr vs floor`}
       />
       <RowLine
-        label="Potential margin if targets are hit"
+        label="Margin if scenario were realized"
         value={covers ? `${fmtUsd(marginAnnual)}/yr` : `-${fmtUsd(Math.abs(marginAnnual))}/yr`}
-        valueColor={covers ? GOLD : TERRA}
+        valueColor="rgba(255,255,255,0.75)"
         hint={
           covers
-            ? `${marginPct}% of budget revenue at billed rates — not your target gross margin %`
-            : "Negative margin at billed rates"
+            ? `${marginPct}% at billed rates — not your target gross margin %`
+            : "Negative margin in this scenario"
         }
       />
       <RowLine
         label="vs. Revenue at aligned rate"
         value={`${fmtUsd(alignedRevenue)}/yr`}
         valueColor="rgba(255,255,255,0.55)"
-        hint={
-          total < alignedRevenue
-            ? `${fmtUsd(alignedRevenue - total)}/yr in uncaptured revenue at your target rate`
-            : `+${fmtUsd(total - alignedRevenue)}/yr surplus over aligned target`
-        }
+        hint="Structural target from aligned rate × capacity hours — not a forecast"
         border={false}
       />
 
       {total < floor ? (
         <Callout tone="critical">
-          At your current rate and hours, your firm cannot cover its own cost floor. This is
-          the gap that has likely existed for years. Closing it requires raising your rate,
-          billing more hours, or reducing your cost structure — or some combination of all three.
+          In this planning scenario, rate × hours would not cover your cost floor. That signals a structural gap in
+          rate, hours, or costs — not a prediction of this year&apos;s collections.
         </Callout>
       ) : total < alignedRevenue ? (
         <Callout tone="warn">
-          Your firm covers its costs but leaves {fmtUsd(alignedRevenue - total)}/yr in margin
-          on the table at your current rate. That gap is profit your firm is entitled to but
-          not capturing.
+          Scenario covers costs but sits below aligned-rate revenue. Useful for staffing decisions; use YTD to see what
+          is actually landing.
         </Callout>
       ) : (
         <Callout tone="good">
-          Your budget revenue exceeds your aligned rate target. Your current setup generates
-          the margin your firm needs.
+          Scenario exceeds aligned-rate revenue on paper. Treat as capacity headroom, not guaranteed income.
         </Callout>
       )}
     </>
@@ -953,7 +1019,7 @@ export function MetricBreakdown({
           {metric === "breakeven" && <BreakevenContent c={c} cfg={cfg} />}
           {metric === "cost_floor" && <CostFloorContent c={c} members={members} expenses={expenses} />}
           {metric === "budget_revenue" && (
-            <BudgetRevenueContent c={c} contributors={contributors} />
+            <BudgetRevenueContent c={c} contributors={contributors} cfg={cfg} />
           )}
 
           <ClosingLine />

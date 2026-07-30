@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { getTourFirmId, ensureTourRow } from "@/lib/tour.server";
+import { normalizePricingStructure, requiresBilledRate } from "@/lib/pricing-structure";
+import { TOUR_STEP_COUNT } from "@/lib/tour-steps";
 
 export const getFirmPreferences = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -28,7 +30,7 @@ export const getFirmPreferences = createServerFn({ method: "GET" })
 
 export const setTourStep = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d) => z.object({ step: z.number().int().min(0).max(7) }).parse(d))
+  .inputValidator((d) => z.object({ step: z.number().int().min(0).max(TOUR_STEP_COUNT) }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const firmId = await getTourFirmId(supabase, userId);
@@ -64,11 +66,18 @@ export const completeTourFn = createServerFn({ method: "POST" })
     const firmId = await getTourFirmId(supabase, userId);
     if (!firmId) throw new Error("No firm");
     await ensureTourRow(supabase, firmId);
-    const { error } = await supabase
+    const { error: prefErr } = await supabase
       .from("firm_preferences" as any)
-      .update({ tour_completed: true, tour_step: 7 })
+      .update({ tour_completed: true, tour_step: TOUR_STEP_COUNT })
       .eq("firm_id", firmId);
-    if (error) throw new Error(error.message);
+    if (prefErr) throw new Error(prefErr.message);
+    await supabase
+      .from("firms")
+      .update({
+        onboarding_completed: true,
+        onboarding_completed_at: new Date().toISOString(),
+      })
+      .eq("id", firmId);
     return { ok: true };
   });
 
@@ -208,22 +217,24 @@ export const reconcileTour = createServerFn({ method: "POST" })
       (Number(c.comp_retire_annual) || 0);
     const step1Done = compTotal > 0;
     const step2Done = (expenses ?? []).length > 0;
-    const step3Done =
-      Number(c.target_billable_hrs_per_week) > 0 &&
-      (c.pricing_structure === "flat_fee" || Number(c.rate_billed) > 0);
+    const step3Done = (() => {
+      const pricing = normalizePricingStructure(c.pricing_structure);
+      const marginSet = Number(c.target_gross_margin_pct) > 0;
+      const rateOk = !requiresBilledRate(pricing) || Number(c.rate_billed) > 0;
+      const hoursSaved =
+        c.target_billable_hrs_per_week !== null && c.target_billable_hrs_per_week !== undefined;
+      return marginSet && !!c.pricing_structure && rateOk && hoursSaved;
+    })();
     const step4Done = (members ?? []).length > 0;
 
     const doneFlags = [step1Done, step2Done, step3Done, step4Done];
-    let highest = 0;
-    for (let i = 0; i < 4; i += 1) if (doneFlags[i]) highest = i + 1;
-
-    if (step1Done && step2Done && step3Done && step4Done) {
-      await supabase
-        .from("firm_preferences" as any)
-        .update({ tour_completed: true, tour_step: 7 })
-        .eq("firm_id", firmId);
-      return { reconciled: true, completed: true, step: 7 };
-    }
+    // Map saved setup data to tour steps (1=welcome, 2=comp … 5=team). Never auto-complete —
+    // users must finish rate orientation, first project, and time logging.
+    let highest = 1;
+    if (step1Done) highest = 2;
+    if (step1Done && step2Done) highest = 3;
+    if (step1Done && step2Done && step3Done) highest = 4;
+    if (step1Done && step2Done && step3Done && step4Done) highest = 5;
 
     if (highest > ((prefs as any).tour_step ?? 0)) {
       await supabase

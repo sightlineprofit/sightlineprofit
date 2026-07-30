@@ -8,9 +8,10 @@ import {
   Calendar,
   LineChart,
   BookOpen,
-  Compass,
+  Sparkles,
   Settings,
   HelpCircle,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -18,9 +19,11 @@ import {
   Shield,
   EyeOff,
   Eye,
+  LayoutGrid,
 } from "lucide-react";
 import { setImpersonation } from "@/lib/admin.functions";
 import { useMe } from "@/lib/role";
+import { useViewAs } from "@/lib/view-as";
 import { supabase } from "@/integrations/supabase/client";
 import { TrialBanner } from "@/components/TrialBanner";
 import { ViewSwitcher, ViewSwitcherBanner } from "@/components/shell/ViewSwitcher";
@@ -33,41 +36,52 @@ type NavItem = {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
-  group: "workspace" | "insight" | "general";
+  group: "financial" | "operational";
   allowRoles?: Role[];
   search?: Record<string, string>;
+  nestedUnder?: string;
 };
 
 const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, group: "workspace", allowRoles: ["principal", "admin"] },
-  { to: "/time-calendar", label: "Time Calendar", icon: Calendar, group: "workspace" },
-  { to: "/sightline", label: "Sightline", icon: LineChart, group: "insight" },
-  { to: "/sop-library", label: "SOP Library", icon: BookOpen, group: "insight" },
-  { to: "/growth-roadmap", label: "Growth Roadmap", icon: Compass, group: "general", allowRoles: ["principal", "admin"] },
-  { to: "/settings", label: "Settings", icon: Settings, group: "general" },
-  { to: "/knowledge-base", label: "Knowledge Base", icon: HelpCircle, group: "general" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, group: "financial", allowRoles: ["principal", "admin"] },
+  { to: "/my-work", label: "My work", icon: LayoutGrid, group: "operational", allowRoles: ["team", "view_only"] },
+  { to: "/time-calendar", label: "Time", icon: Calendar, group: "operational" },
+  { to: "/sightline", label: "Sightline", icon: LineChart, group: "financial", allowRoles: ["principal", "admin", "view_only"] },
+  { to: "/capacity", label: "Capacity", icon: CalendarDays, group: "financial", allowRoles: ["principal", "admin"] },
+  { to: "/future", label: "Future", icon: Sparkles, group: "operational", allowRoles: ["principal", "admin"] },
+  { to: "/sop-library", label: "SOP Library", icon: BookOpen, group: "operational", allowRoles: ["principal", "admin", "view_only"] },
+  { to: "/knowledge-base", label: "Knowledge", icon: HelpCircle, group: "operational" },
+  { to: "/settings", label: "Settings", icon: Settings, group: "operational" },
 ];
 
 const GROUP_LABELS: Record<NavItem["group"], string> = {
-  workspace: "",
-  insight: "",
-  general: "",
+  financial: "Financial Architecture",
+  operational: "Operational Infrastructure",
 };
 
 // Which routes each restricted role can actually reach. If the current
 // pathname isn't in the allow-list, we render a preview panel instead.
+// Keep in sync with the team/view_only redirect effect below.
 const ROLE_ALLOWED_PATHS: Record<Role, string[] | "*"> = {
   principal: "*",
   admin: "*",
-  team: ["/time-calendar", "/projects", "/knowledge-base", "/settings", "/welcome"],
-  view_only: ["/projects", "/sop-library", "/knowledge-base", "/settings"],
+  team: ["/my-work", "/time-calendar", "/knowledge-base", "/settings", "/welcome"],
+  view_only: ["/my-work", "/sightline", "/sop-library", "/knowledge-base", "/settings"],
 };
 
-function simulatedRouteRestriction(role: Role, pathname: string): Role | null {
+function pathsAllowedForRole(role: Role): string[] | null {
   const allowed = ROLE_ALLOWED_PATHS[role];
-  if (allowed === "*") return null;
-  const ok = allowed.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  return ok ? null : role;
+  return allowed === "*" ? null : allowed;
+}
+
+function isPathAllowed(pathname: string, allowed: string[]): boolean {
+  return allowed.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
+function simulatedRouteRestriction(role: Role, pathname: string): Role | null {
+  const allowed = pathsAllowedForRole(role);
+  if (!allowed) return null;
+  return isPathAllowed(pathname, allowed) ? null : role;
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -76,51 +90,42 @@ export function AppShell({ children }: { children: ReactNode }) {
   const nav = useNavigate();
   const queryClient = useQueryClient();
   const stopImpFn = useServerFn(setImpersonation);
-  const { data, realIsSuper } = useMe();
+  const { data, realIsSuper, viewAsRoleActive } = useMe();
+  const va = useViewAs();
 
   // Chrome (admin nav, impersonation banner, pill) tracks the REAL super
-  // admin status. `data` itself is already view-as overridden, so nav
-  // filtering, tier gating, and role-conditional UI naturally degrade.
+  // admin status. `data` reflects view-as role simulation when active.
   const isSuper = realIsSuper;
   const impersonating = isSuper && !!data?.profile?.impersonated_firm_id;
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // `data` already reflects view-as overrides (useMe flips is_super_admin to
-  // false and swaps in the chosen role when an override is active).
-  const currentRole: Role = data?.profile?.is_super_admin
-    ? "principal"
-    : ((data?.profile?.role as Role) ?? "team");
+  const currentRole: Role =
+    isSuper && !viewAsRoleActive
+      ? "principal"
+      : data?.profile?.is_super_admin
+        ? "principal"
+        : ((data?.profile?.role as Role) ?? "team");
 
-  // Team-role route enforcement: redirect blocked paths to /time-calendar
-  // with a toast. Skipped for the real super admin even when previewing as
-  // team — view-as never reroutes the session; it just renders a preview.
+  // Team-role route enforcement: redirect blocked paths to /my-work with a toast.
   useEffect(() => {
     if (!data?.profile) return;
     if (isSuper) return;
-    if (currentRole !== "team") return;
-    const allowed = [
-      "/time-calendar",
-      "/projects",
-      "/knowledge-base",
-      "/settings",
-      "/welcome",
-    ];
-    const isAllowed = allowed.some(
-      (p) => pathname === p || pathname.startsWith(p + "/"),
-    );
-    if (!isAllowed && pathname !== "/") {
+    if (currentRole !== "team" && currentRole !== "view_only") return;
+    const allowed = pathsAllowedForRole(currentRole);
+    if (!allowed) return;
+    if (!isPathAllowed(pathname, allowed) && pathname !== "/") {
       toast.message("That section is managed by your firm principal.");
-      nav({ to: "/time-calendar", replace: true });
+      nav({ to: "/my-work", replace: true });
     }
   }, [pathname, currentRole, nav, isSuper]);
 
   // Compute whether the current path is restricted for the simulated role
   // (only meaningful when a real super admin has a view-as override).
-  const overrideActive = isSuper && !data?.profile?.is_super_admin;
+  const overrideActive = isSuper && viewAsRoleActive;
   const restrictedRole = overrideActive
     ? simulatedRouteRestriction(currentRole, pathname)
     : null;
 
-  const groups: NavItem["group"][] = ["workspace", "insight", "general"];
+  const groups: NavItem["group"][] = ["financial", "operational"];
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -132,6 +137,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   async function stopImpersonating() {
     await stopImpFn({ data: { firm_id: null } });
     window.location.assign("/admin");
+  }
+
+  async function exitViewAsRole() {
+    va.clearAll();
+    await stopImpFn({ data: { firm_id: null } });
+    await queryClient.invalidateQueries();
+    toast.success("Back to super admin view");
+    setUserMenu(false);
   }
 
   return (
@@ -154,49 +167,77 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 pb-4">
-          {groups.map((g, gi) => {
+          {groups.map((g) => {
             const items = NAV.filter(
               (n) => n.group === g && (!n.allowRoles || n.allowRoles.includes(currentRole)),
             );
             if (items.length === 0) return null;
-            const showDivider = g === "general" && gi > 0;
+            const showDivider = g === "operational";
             return (
               <div key={g} className={cn("mt-1", showDivider && "mt-4 border-t border-border pt-3")}>
                 {!collapsed && GROUP_LABELS[g] && (
-                  <div className="px-3 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.18em] text-ch/40">
+                  <div className="px-3 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.18em] text-gold">
                     {GROUP_LABELS[g]}
                   </div>
                 )}
                 <ul className="space-y-0.5">
-                  {items.map((item) => {
-                    const active = pathname === item.to || pathname.startsWith(item.to + "/");
-                    const Icon = item.icon;
-                    const content = (
-                      <>
-                        <Icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-                      </>
-                    );
-                    const baseClass = cn(
-                      "group flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                      active
-                        ? "bg-goldp text-ch font-medium"
-                        : "text-ch/70 hover:bg-creamd hover:text-ch",
-                      collapsed && "justify-center px-2",
-                    );
-                    return (
-                      <li key={item.to}>
-                        <Link to={item.to as any} search={item.search as any} className={baseClass} title={collapsed ? item.label : undefined}>
-                          {content}
-                        </Link>
-                      </li>
-                    );
-                  })}
+                  {items
+                    .filter((item) => !item.nestedUnder)
+                    .map((item) => {
+                      const children = items.filter((n) => n.nestedUnder === item.to);
+
+                      const linkClass = (navItem: NavItem, nested: boolean) => {
+                        const isActive =
+                          pathname === navItem.to || pathname.startsWith(navItem.to + "/");
+                        return cn(
+                          "group flex w-full items-center gap-3 rounded-md py-2 text-sm transition-colors",
+                          nested ? "pl-9 pr-3" : "px-3",
+                          isActive
+                            ? "bg-goldp text-ch font-medium"
+                            : "text-ch/70 hover:bg-creamd hover:text-ch",
+                          collapsed && !nested && "justify-center px-2",
+                          collapsed && nested && "hidden",
+                        );
+                      };
+
+                      const renderLink = (navItem: NavItem, nested = false) => {
+                        const NavIcon = navItem.icon;
+                        return (
+                          <Link
+                            key={navItem.to}
+                            to={navItem.to as any}
+                            search={navItem.search as any}
+                            className={linkClass(navItem, nested)}
+                            title={collapsed ? navItem.label : undefined}
+                          >
+                            <NavIcon className={cn("shrink-0", nested ? "h-3.5 w-3.5" : "h-4 w-4")} />
+                            {!collapsed && (
+                              <span className={cn("flex-1 truncate", nested && "text-[13px]")}>
+                                {navItem.label}
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      };
+
+                      return (
+                        <li key={item.to}>
+                          {renderLink(item)}
+                          {children.length > 0 && !collapsed && (
+                            <ul className="mt-0.5 space-y-0.5">
+                              {children.map((child) => (
+                                <li key={child.to}>{renderLink(child, true)}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </li>
+                      );
+                    })}
                 </ul>
               </div>
             );
           })}
-          {isSuper && !!data?.profile?.is_super_admin && (
+          {isSuper && (
             <div className="mt-4 border-t border-border pt-3">
               {!collapsed && (
                 <div className="px-3 pb-1.5 pt-2 text-[11px] font-medium uppercase tracking-[0.18em] text-gold">
@@ -254,7 +295,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {data?.profile?.name || data?.profile?.email || "—"}
                 </div>
                 <div className="text-[11px] uppercase tracking-[0.14em] text-gold">
-                  {data?.profile?.role ?? "team"}
+                  {isSuper && !viewAsRoleActive
+                    ? "Super Admin"
+                    : viewAsRoleActive
+                      ? `View as ${data?.profile?.role ?? "team"}`
+                      : (data?.profile?.role ?? "team")}
                 </div>
               </div>
             )}
@@ -273,6 +318,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <User className="h-4 w-4" /> Profile & settings
               </Link>
+              {isSuper && viewAsRoleActive && (
+                <button
+                  type="button"
+                  onClick={exitViewAsRole}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ch hover:bg-creamd"
+                >
+                  <EyeOff className="h-4 w-4" /> Exit team preview
+                </button>
+              )}
               <button
                 type="button"
                 onClick={signOut}

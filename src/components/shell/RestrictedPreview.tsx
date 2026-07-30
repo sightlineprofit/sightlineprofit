@@ -3,11 +3,11 @@ type Role = "principal" | "admin" | "team" | "view_only";
 const ROLE_DESCRIPTIONS: Record<Role, { heading: string; body: string }> = {
   team: {
     heading: "Team members cannot access this section.",
-    body: "They see: Time Calendar, assigned Projects, Knowledge Base.",
+    body: "They see: My Work, Time Calendar, Knowledge Base, and Settings.",
   },
   view_only: {
     heading: "View-only users cannot access this section.",
-    body: "They see: Projects (read-only), SOP Library (read-only), Knowledge Base.",
+    body: "They see: My Work, Projects (read-only), SOP Library (read-only), and Knowledge Base.",
   },
   admin: {
     heading: "Admins cannot access this section.",

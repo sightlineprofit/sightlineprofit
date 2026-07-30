@@ -23,7 +23,12 @@ import {
   resetDemoFirm,
   loadDemoData,
 } from "@/lib/demo.functions";
-import { getMyContext } from "@/lib/firm.functions";
+import {
+  getPrivateMeridianDemoStatus,
+  resetPrivateMeridianDemoDates,
+  seedPrivateMeridianDemo,
+} from "@/lib/meridian-demo.functions";
+import { useMe } from "@/lib/role";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { GoLiveChecklist } from "@/components/admin/GoLiveChecklist";
 import { cn } from "@/lib/utils";
@@ -40,14 +45,13 @@ export const Route = createFileRoute("/_authenticated/admin")({
 type Tab = "firms" | "users" | "webhooks" | "kb" | "settings" | "demo";
 
 function AdminPage() {
-  const getCtx = useServerFn(getMyContext);
-  const { data: ctx, isLoading } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
+  const { realIsSuper, realProfile, isLoading } = useMe();
   const [tab, setTab] = useState<Tab>("firms");
 
   if (isLoading) {
     return <ModulePage title="Admin"><p className="text-ch/60">Loading…</p></ModulePage>;
   }
-  if (!ctx?.profile?.is_super_admin) {
+  if (!realIsSuper || !realProfile) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -84,7 +88,7 @@ function AdminPage() {
         ))}
       </div>
 
-      {tab === "firms" && <FirmsTab impersonatedFirmId={ctx.profile.impersonated_firm_id} />}
+      {tab === "firms" && <FirmsTab impersonatedFirmId={realProfile.impersonated_firm_id} />}
       {tab === "users" && <UsersTab />}
       {tab === "demo" && <DemoTab />}
       {tab === "webhooks" && <WebhooksTab />}
@@ -756,24 +760,26 @@ function DemoTab() {
   }
 
   if (isLoading) return <p className="text-ch/60">Loading…</p>;
-  if (!firm) {
-    return (
-      <div className="rounded-lg border border-border bg-white p-6 text-sm text-ch/70">
-        Demo firm has not been provisioned yet. Contact engineering.
-      </div>
-    );
-  }
-
-  const isClean = firm.data_status === "clean";
-  const lastReset = firm.last_reset_at
-    ? new Date(firm.last_reset_at).toLocaleString()
-    : "Never";
-  const lastLoad = firm.last_demo_loaded_at
-    ? new Date(firm.last_demo_loaded_at).toLocaleString()
-    : "Never loaded";
 
   return (
     <div className="space-y-6">
+      {!firm ? (
+        <div className="rounded-lg border border-border bg-white p-6 text-sm text-ch/70">
+          Shared Aldrich demo firm has not been provisioned yet. You can still use the private
+          Meridian presentation account below.
+        </div>
+      ) : (
+        <>
+      {(() => {
+        const isClean = firm.data_status === "clean";
+        const lastReset = firm.last_reset_at
+          ? new Date(firm.last_reset_at).toLocaleString()
+          : "Never";
+        const lastLoad = firm.last_demo_loaded_at
+          ? new Date(firm.last_demo_loaded_at).toLocaleString()
+          : "Never loaded";
+        return (
+          <>
       <div>
         <h2 style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 28 }}>
           Demo Account
@@ -886,6 +892,187 @@ function DemoTab() {
                   : confirm === "reset"
                   ? "Reset demo firm"
                   : "Load demo data"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+          </>
+        );
+      })()}
+        </>
+      )}
+
+      <PrivateMeridianDemoPanel />
+    </div>
+  );
+}
+
+function PrivateMeridianDemoPanel() {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  const getStatus = useServerFn(getPrivateMeridianDemoStatus);
+  const seedFn = useServerFn(seedPrivateMeridianDemo);
+  const resetFn = useServerFn(resetPrivateMeridianDemoDates);
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ["private-meridian-demo"],
+    queryFn: () => getStatus(),
+  });
+
+  async function runSeed() {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await seedFn();
+      if (res.skipped) {
+        setMsg("Demo account already exists — no changes made.");
+      } else {
+        setMsg(`Meridian demo seeded for ${res.email}.`);
+      }
+      await qc.invalidateQueries({ queryKey: ["private-meridian-demo"] });
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runResetDates() {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      await resetFn();
+      setMsg("Time entries and owner draws refreshed to current dates.");
+      setConfirmReset(false);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-white p-6 space-y-4">
+      <div>
+        <p
+          className="text-xs uppercase tracking-[0.14em] text-[#5C8A6E]"
+          style={{ fontFamily: "Jost, sans-serif" }}
+        >
+          Demo account
+        </p>
+        <h3
+          className="mt-1"
+          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22 }}
+        >
+          Private presentation login (Meridian Interiors)
+        </h3>
+        <p className="mt-1 text-sm text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+          Dedicated credentials from{" "}
+          <code className="text-xs">DEMO_ACCOUNT_EMAIL</code> /{" "}
+          <code className="text-xs">DEMO_ACCOUNT_PASSWORD</code>. One-time seed; use reset to
+          refresh dates before a demo.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-ch/60">Checking status…</p>
+      ) : !status?.configured ? (
+        <p className="text-sm text-ch/60">
+          Environment not configured. Add Worker secrets{" "}
+          <code className="text-xs">DEMO_ACCOUNT_EMAIL</code> and{" "}
+          <code className="text-xs">DEMO_ACCOUNT_PASSWORD</code>.
+        </p>
+      ) : status.accountExists ? (
+        <div>
+          <p className="text-sm text-[#5C8A6E]" style={{ fontFamily: "Jost, sans-serif" }}>
+            Demo account active ✓
+          </p>
+          <p className="mt-1 text-xs text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+            {status.email}
+            {status.teamEmail ? ` · Team: ${status.teamEmail}` : null}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+          Demo account not created
+        </p>
+      )}
+
+      {err && (
+        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">{err}</div>
+      )}
+      {msg && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          {msg}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-3">
+        {status?.configured && !status.accountExists && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={runSeed}
+            className="rounded-md px-4 py-2 text-white disabled:opacity-60"
+            style={{
+              fontFamily: "Jost, sans-serif",
+              fontSize: 12,
+              fontWeight: 500,
+              background: "#2C2C2C",
+            }}
+          >
+            {busy ? "Seeding… this takes about 30 seconds" : "Seed demo account →"}
+          </button>
+        )}
+        {status?.accountExists && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirmReset(true)}
+            className="rounded-md border border-border bg-white px-4 py-2 text-sm text-ch hover:bg-creamd disabled:opacity-60"
+          >
+            Reset demo data →
+          </button>
+        )}
+      </div>
+
+      {confirmReset && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50"
+          onClick={() => !busy && setConfirmReset(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="mb-2 text-lg font-medium">Reset demo dates?</h3>
+            <p className="mb-4 text-sm text-ch/70">
+              This will reset all time entries and draw dates to current dates. The projects and
+              firm structure will remain. Are you sure?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmReset(false)}
+                className="rounded-md border border-border px-4 py-2 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={runResetDates}
+                className="rounded-md bg-[#B85C5C] px-4 py-2 text-sm text-white disabled:opacity-60"
+              >
+                {busy ? "Resetting…" : "Reset"}
               </button>
             </div>
           </div>

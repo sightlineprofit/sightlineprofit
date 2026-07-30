@@ -43,6 +43,8 @@ type ProjectShape = {
   scoped_rate?: number | null;
   scoped_hrs?: number | null;
   hourly_scoped_hours?: number | null;
+  retainer_monthly_amount?: number | null;
+  retainer_duration_months?: number | null;
 };
 
 export function ProjectDetailPanel({
@@ -104,7 +106,13 @@ export function ProjectDetailPanel({
           : SAGE;
 
   const pricingLabel =
-    fin.pricingMethod === "hourly" ? "Hourly" : fin.pricingMethod === "hybrid" ? "Hybrid" : "Flat fee";
+    fin.pricingMethod === "hourly"
+      ? "Hourly"
+      : fin.pricingMethod === "hybrid"
+        ? "Hybrid"
+        : fin.pricingMethod === "retainer"
+          ? "Retainer"
+          : "Flat fee";
 
   const rev = Math.max(fin.totalRevenue, 1);
   const seg = (v: number) => Math.max(0, (v / rev) * 100);
@@ -294,6 +302,28 @@ export function ProjectDetailPanel({
             <BreakdownRow label="Total revenue (if fully billed)" value={moneyExact(fin.totalRevenue)} strong />
             <div style={{ fontSize: 11, color: MUTED, fontStyle: "italic", marginTop: 8 }}>
               Revenue assumes all scoped hours are billed at the rate above.
+            </div>
+          </>
+        )}
+        {fin.pricingMethod === "retainer" && (
+          <>
+            <BreakdownRow
+              label="Monthly retainer"
+              value={moneyExact(Number(project.retainer_monthly_amount) || 0)}
+            />
+            <BreakdownRow
+              label="Duration"
+              value={
+                Number(project.retainer_duration_months) > 0
+                  ? `${Number(project.retainer_duration_months)} months`
+                  : "Not set"
+              }
+            />
+            <Divider />
+            <BreakdownRow label="Total contract value" value={moneyExact(fin.totalRevenue)} strong />
+            <BreakdownRow label="Scoped hours (for margin tracking)" value={`${fin.scopedHours} hrs`} />
+            <div style={{ fontSize: 11, color: MUTED, fontStyle: "italic", marginTop: 8 }}>
+              Retainer revenue is the monthly amount × term length. Scoped hours track margin against logged time.
             </div>
           </>
         )}

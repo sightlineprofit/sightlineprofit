@@ -5,8 +5,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { computeBurden } from "@/lib/cost";
 import { seedDefaultSops } from "@/lib/sop-seed.server";
 import { recordAlignedRate } from "@/lib/rate-history.server";
+import {
+  recordCostReviewAfterSave,
+} from "@/lib/cost-review.server";
+import type { CostReviewNotifications } from "@/lib/cost-review.utils";
+import { ensureTourRow } from "@/lib/tour.server";
 import { logChange, diffFields, type ChangedField } from "@/lib/change-log.server";
-import { capTargetBillableToAvailable } from "@/lib/finance";
+import { calc, capTargetBillableToAvailable, mapTeamBurdenRow, type FirmConfig } from "@/lib/finance";
+import { loadFirmConfigForCaller, type CallerProfile } from "@/lib/auth-guards.server";
+import { getRuntimeEnv } from "@/lib/runtime-env.server";
 
 // Single-plan model: no tier parameter. All new firms are Practice-access
 // with a 27-day trial. Optional Stripe billing fields (billing_frequency,
@@ -20,14 +27,73 @@ const createFirmSchema = z.object({
   paymentMethodId: z.string().trim().max(120).optional().nullable(),
 });
 
+async function linkProfileToFirmIfNull(
+  userId: string,
+  firmId: string,
+  ownerName: string,
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.rpc("link_profile_to_firm_if_null" as any, {
+    p_user_id: userId,
+    p_firm_id: firmId,
+    p_role: "principal",
+    p_name: ownerName,
+  });
+  if (error) {
+    const msg = error.message ?? "";
+    if (/firm_id cannot be changed/i.test(msg)) {
+      const { data: again } = await supabaseAdmin
+        .from("profiles")
+        .select("firm_id")
+        .eq("id", userId)
+        .maybeSingle();
+      if (again?.firm_id) return again.firm_id;
+    }
+    if (/link_profile_to_firm_if_null|Could not find the function/i.test(msg)) {
+      const { data: linked, error: updErr } = await supabaseAdmin
+        .from("profiles")
+        .update({
+          firm_id: firmId,
+          role: "principal",
+          name: ownerName || undefined,
+          accepted_at: new Date().toISOString(),
+        })
+        .eq("id", userId)
+        .is("firm_id", null)
+        .select("firm_id")
+        .maybeSingle();
+      if (updErr) throw new Error(updErr.message);
+      return linked?.firm_id ?? null;
+    }
+    throw new Error(error.message);
+  }
+  return typeof data === "string" ? data : null;
+}
+
+/** Admin read of firm_id — used at login before any bootstrap writes. */
+export const getAuthBootstrapState = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { userId } = context;
+    await linkOwnedFirmIfMissing(userId);
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("firm_id, is_super_admin")
+      .eq("id", userId)
+      .maybeSingle();
+    return {
+      firmId: profile?.firm_id ?? null,
+      isSuperAdmin: !!profile?.is_super_admin,
+    };
+  });
+
 export const createFirmForCurrentUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => createFirmSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { userId } = context;
 
-    // If user already has a firm, return it (idempotent).
-    const { data: profile } = await supabase
+    // Admin read: user-scoped client can lag behind bootstrap; service role is source of truth.
+    const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("firm_id, name")
       .eq("id", userId)
@@ -35,6 +101,26 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
 
     if (profile?.firm_id) {
       return { firmId: profile.firm_id, alreadyExists: true };
+    }
+
+    // Recover orphaned owner rows (firm exists, profile.firm_id still null).
+    const { data: ownedFirm } = await supabaseAdmin
+      .from("firms")
+      .select("id")
+      .eq("owner_id", userId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (ownedFirm?.id) {
+      const linkedFirmId = await linkProfileToFirmIfNull(
+        userId,
+        ownedFirm.id,
+        data.ownerName || profile?.name || "",
+      );
+      if (linkedFirmId) {
+        return { firmId: linkedFirmId, alreadyExists: true };
+      }
     }
 
     const trialEndsAt = new Date(Date.now() + 27 * 24 * 60 * 60 * 1000).toISOString();
@@ -59,16 +145,18 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
       .single();
     if (firmErr || !firm) throw new Error(firmErr?.message ?? "Failed to create firm");
 
-    const { error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .update({
-        firm_id: firm.id,
-        role: "principal",
-        name: data.ownerName,
-        accepted_at: new Date().toISOString(),
-      })
-      .eq("id", userId);
-    if (profErr) throw new Error(profErr.message);
+    const linkedFirmId = await linkProfileToFirmIfNull(userId, firm.id, data.ownerName);
+    if (!linkedFirmId) {
+      const { data: again } = await supabaseAdmin
+        .from("profiles")
+        .select("firm_id")
+        .eq("id", userId)
+        .maybeSingle();
+      if (again?.firm_id) {
+        return { firmId: again.firm_id, alreadyExists: true };
+      }
+      throw new Error("Could not link your account to the new studio. Try signing in again.");
+    }
 
     await supabaseAdmin.from("firm_config").insert({ firm_id: firm.id });
 
@@ -90,21 +178,57 @@ export const createFirmForCurrentUser = createServerFn({ method: "POST" })
     return { firmId: firm.id, alreadyExists: false };
   });
 
+/** Link profile.firm_id when the user owns a firm row but bootstrap never ran. */
+async function linkOwnedFirmIfMissing(userId: string): Promise<void> {
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("firm_id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (profile?.firm_id) return;
+
+  const { data: ownedFirm } = await supabaseAdmin
+    .from("firms")
+    .select("id")
+    .eq("owner_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!ownedFirm?.id) return;
+
+  try {
+    await linkProfileToFirmIfNull(userId, ownedFirm.id, "");
+  } catch (e) {
+    console.error("[linkOwnedFirmIfMissing]", e);
+  }
+}
+
 export const getMyContext = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { data: profile } = await supabase
+    await linkOwnedFirmIfMissing(userId);
+    // Admin read for the signed-in user only — avoids RLS gaps during login/bootstrap.
+    const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("id, firm_id, role, name, email, is_super_admin, impersonated_firm_id, preferred_home, welcomed_at")
       .eq("id", userId)
       .maybeSingle();
     const effectiveFirmId = profile?.impersonated_firm_id ?? profile?.firm_id ?? null;
     if (!effectiveFirmId) return { profile, firm: null, config: null };
-    const [{ data: firm }, { data: config }] = await Promise.all([
-      supabase.from("firms").select("*").eq("id", effectiveFirmId).single(),
-      supabase.from("firm_config").select("*").eq("firm_id", effectiveFirmId).maybeSingle(),
+    const callerProfile: CallerProfile | null = profile
+      ? {
+          role: profile.role,
+          firm_id: profile.firm_id!,
+          is_super_admin: profile.is_super_admin,
+          impersonated_firm_id: profile.impersonated_firm_id,
+        }
+      : null;
+    const [{ data: firm }, configResult] = await Promise.all([
+      supabaseAdmin.from("firms").select("*").eq("id", effectiveFirmId).single(),
+      loadFirmConfigForCaller(supabase, userId, effectiveFirmId, callerProfile),
     ]);
+    const { data: config } = configResult;
     return { profile, firm, config };
   });
 
@@ -184,6 +308,41 @@ export const setDefaultLandingPage = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+async function attachCostReview(
+  supabase: Parameters<typeof recordAlignedRate>[0],
+  firmId: string,
+): Promise<CostReviewNotifications | null | undefined> {
+  try {
+    return await recordCostReviewAfterSave(supabase, firmId);
+  } catch (e) {
+    console.error("[cost-review] notification failed", e);
+    return undefined;
+  }
+}
+
+export const confirmCostReviewUnchanged = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!profile?.firm_id) throw new Error("No firm");
+    await ensureTourRow(supabase, profile.firm_id);
+    const today = new Date().toISOString().slice(0, 10);
+    const { error } = await supabase
+      .from("firm_preferences")
+      .update({
+        last_cost_review_date: today,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("firm_id", profile.firm_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const dismissWelcomeBanner = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -210,8 +369,9 @@ const configSchema = z.object({
   available_hrs_per_week: z.number().min(0).max(168).nullable().optional(),
   target_billable_hrs_per_week: z.number().min(0).max(168).nullable().optional(),
   target_gross_margin_pct: z.number().min(0).max(100).nullable().optional(),
+  target_utilization_pct: z.number().min(0).max(100).nullable().optional(),
   rate_billed: z.number().min(0).max(100000).nullable().optional(),
-  pricing_structure: z.enum(["hourly", "flat_fee", "both"]).optional(),
+  pricing_structure: z.enum(["hourly", "flat_fee", "both", "retainer"]).optional(),
   actual_billed_rate: z.number().min(0).max(100000).nullable().optional(),
   accounting_basis: z.enum(["cash", "accrual"]).optional(),
   business_structure: z
@@ -252,6 +412,7 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Capacity or rate updated");
+    const costReview = await attachCostReview(supabase, profile.firm_id);
     const rateChanges = diffFields(
       (prevConfig ?? {}) as Record<string, unknown>,
       payload,
@@ -273,7 +434,7 @@ export const upsertFirmConfig = createServerFn({ method: "POST" })
         changes: rateChanges,
       });
     }
-    return { ok: true };
+    return { ok: true, costReview };
   });
 
 const expenseSchema = z.object({
@@ -303,6 +464,7 @@ export const addExpense = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, profile.firm_id, "Operating expenses updated");
+    const costReview = await attachCostReview(supabase, profile.firm_id);
     await logChange(supabase, {
       firmId: profile.firm_id,
       userId,
@@ -314,7 +476,7 @@ export const addExpense = createServerFn({ method: "POST" })
         ...(data.category ? [{ field: "Category", key: "category", old_value: null, new_value: data.category, type: "text" as const }] : []),
       ],
     });
-    return row;
+    return { ...row, costReview };
   });
 
 export const deleteExpense = createServerFn({ method: "POST" })
@@ -334,7 +496,11 @@ export const deleteExpense = createServerFn({ method: "POST" })
       .maybeSingle();
     const { error } = await supabase.from("expenses").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    if (me?.firm_id) await recordAlignedRate(supabase, me.firm_id, "Operating expenses updated");
+    let costReview: CostReviewNotifications | null | undefined;
+    if (me?.firm_id) {
+      await recordAlignedRate(supabase, me.firm_id, "Operating expenses updated");
+      costReview = await attachCostReview(supabase, me.firm_id);
+    }
     if (me?.firm_id && prev) {
       await logChange(supabase, {
         firmId: me.firm_id,
@@ -346,7 +512,7 @@ export const deleteExpense = createServerFn({ method: "POST" })
         ],
       });
     }
-    return { ok: true };
+    return { ok: true, costReview };
   });
 
 export const listExpenses = createServerFn({ method: "GET" })
@@ -381,6 +547,7 @@ const inviteSchema = z.object({
   employer_payroll_tax_pct: z.number().min(0).max(100).optional().nullable(),
   annual_benefits: z.number().min(0).max(1e9).optional().nullable(),
   other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
+  firm_member_id: z.string().uuid().optional(),
 });
 
 export const inviteTeamMember = createServerFn({ method: "POST" })
@@ -395,6 +562,33 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
     if (!["principal", "admin"].includes(profile.role)) throw new Error("Not allowed");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    await assertEmailAvailableForTeamInvite(supabaseAdmin, data.email, profile.firm_id);
+
+    if (data.firm_member_id) {
+      const { data: memberRow, error: memberErr } = await supabaseAdmin
+        .from("firm_members")
+        .select("id, firm_id, is_active, profile_id")
+        .eq("id", data.firm_member_id)
+        .maybeSingle();
+      if (memberErr) throw new Error(memberErr.message);
+      if (!memberRow || memberRow.firm_id !== profile.firm_id || !memberRow.is_active) {
+        throw new Error("Team member not found");
+      }
+      if (memberRow.profile_id) {
+        throw new Error("This person already has a Sightline account.");
+      }
+      await supabaseAdmin
+        .from("firm_members")
+        .update({
+          email: data.email,
+          name: data.name ?? undefined,
+        })
+        .eq("id", data.firm_member_id);
+    }
+
     // Fresh token + 7-day expiry on every (re)invite
     const newToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
     const expiry = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -423,18 +617,25 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
 
+    let teamCapacityToast: { totalAnnualHrs: number } | undefined;
+
     // Mirror invite state on firm_members for non-principal roles (Team cost
     // panel). Principals use profiles + owner_compensation, not firm_members.
     if (data.role !== "principal") {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: existing } = await supabaseAdmin
-        .from("firm_members")
-        .select("id")
-        .eq("firm_id", profile.firm_id)
-        .ilike("email", data.email)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
+      let existing: { id: string } | null = null;
+      if (data.firm_member_id) {
+        existing = { id: data.firm_member_id };
+      } else {
+        const { data: found } = await supabaseAdmin
+          .from("firm_members")
+          .select("id")
+          .eq("firm_id", profile.firm_id)
+          .ilike("email", data.email)
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+        existing = found;
+      }
       const patch = {
         invite_sent_at: new Date().toISOString(),
         invite_accepted_at: null as string | null,
@@ -443,6 +644,8 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
       if (existing?.id) {
         await supabaseAdmin.from("firm_members").update(patch).eq("id", existing.id);
       } else {
+        const wasFirstTeamMember =
+          (await countActiveNonPrincipalTeam(supabaseAdmin, profile.firm_id)) === 0;
         await supabaseAdmin.from("firm_members").insert({
           firm_id: profile.firm_id,
           name: data.name ?? data.email,
@@ -452,49 +655,116 @@ export const inviteTeamMember = createServerFn({ method: "POST" })
           is_platform_user: false,
           invite_sent_at: patch.invite_sent_at,
           expected_hrs_per_week: data.expected_hrs_per_week ?? 40,
+          productive_hrs_per_week: data.expected_hrs_per_week ?? 40,
           weeks_per_year: data.weeks_per_year ?? 48,
         });
+        if (wasFirstTeamMember) {
+          teamCapacityToast = await teamCapacityToastAfterFirstMember(
+            supabaseAdmin,
+            profile.firm_id,
+          );
+        }
       }
     }
 
     // Fire off invitation email (async, non-blocking on failure) +
     // log to webhook_log so Ivorey.io / observability has a record.
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: firm }] = await Promise.all([
       supabaseAdmin.from("firms").select("name").eq("id", profile.firm_id).single(),
     ]);
-    await supabaseAdmin.from("webhook_log").insert({
-      event_tag: "team-invite",
-      firm_id: profile.firm_id,
-      recipient_email: data.email,
-      payload: {
-        invitation_id: row.id,
-        token: newToken,
-        role: data.role,
-        firm_name: firm?.name ?? null,
-        principal_name: profile.name ?? profile.email,
-        principal_email: profile.email,
-        member_name: data.name ?? null,
-      },
-      status: "pending",
-    });
+    const { data: logRow, error: logErr } = await supabaseAdmin
+      .from("webhook_log")
+      .insert({
+        event_tag: "team-invite",
+        firm_id: profile.firm_id,
+        recipient_email: data.email,
+        payload: {
+          invitation_id: row.id,
+          token: newToken,
+          role: data.role,
+          firm_name: firm?.name ?? null,
+          principal_name: profile.name ?? profile.email,
+          principal_email: profile.email,
+          member_name: data.name ?? null,
+        },
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (logErr) console.warn("[inviteTeamMember] webhook_log insert:", logErr.message);
+
+    let emailSent = false;
+    let emailError: string | null = null;
     try {
-      await sendInvitationEmail({
+      const sendResult = await sendInvitationEmail({
         to: data.email,
         memberName: data.name ?? null,
         principalName: profile.name || profile.email,
         firmName: firm?.name ?? "their studio",
         role: data.role,
         token: newToken,
+        invitationId: row.id as string,
       });
+      emailSent = inviteEmailDelivered(sendResult);
+      if (!emailSent && sendResult.skipped) {
+        emailError = "Email skipped (Resend not configured on this server).";
+      }
+      if (logRow?.id) {
+        await logTeamInviteEmailOutcome(supabaseAdmin, logRow.id, {
+          sent: emailSent,
+          providerId: sendResult.providerId,
+          error: emailError,
+        });
+      }
     } catch (e) {
-      // Email infrastructure may not be wired yet — record was saved, token is valid.
+      emailError = e instanceof Error ? e.message : "Email send failed";
       console.warn("[inviteTeamMember] email send failed:", e);
+      if (logRow?.id) {
+        await logTeamInviteEmailOutcome(supabaseAdmin, logRow.id, { sent: false, error: emailError });
+      }
     }
-    return row;
+    return { ...row, teamCapacityToast, emailSent, emailError };
   });
 
 // ─────────────── Invitation: token validation + acceptance + resend ───────────────
+
+async function assertEmailAvailableForTeamInvite(
+  supabaseAdmin: Awaited<ReturnType<typeof import("@/integrations/supabase/client.server")>>["supabaseAdmin"],
+  email: string,
+  firmId: string,
+) {
+  const normalized = email.trim().toLowerCase();
+  const { data: existing } = await supabaseAdmin
+    .from("profiles")
+    .select("id, email, name, role, firm_id")
+    .ilike("email", normalized)
+    .maybeSingle();
+  if (!existing) return;
+  const label = (existing.name as string) || (existing.email as string);
+  if (existing.firm_id === firmId) {
+    throw new Error(
+      `${label} already uses this email for Sightline (${existing.role as string}). Use the team member's own work email — not the firm owner login.`,
+    );
+  }
+  throw new Error("That email is already registered on another Sightline firm.");
+}
+
+function inviteEmailDelivered(result: { sent?: boolean; skipped?: boolean; providerId?: string }) {
+  return result.sent === true && !result.skipped && !!result.providerId;
+}
+
+async function logTeamInviteEmailOutcome(
+  supabaseAdmin: Awaited<ReturnType<typeof import("@/integrations/supabase/client.server")>>["supabaseAdmin"],
+  logId: string,
+  outcome: { sent: boolean; error?: string | null; providerId?: string },
+) {
+  const patch: Record<string, unknown> = {
+    status: outcome.sent ? "sent" : "failed",
+    error: outcome.sent ? null : (outcome.error ?? "Email send failed"),
+    delivered_at: outcome.sent ? new Date().toISOString() : null,
+  };
+  await supabaseAdmin.from("webhook_log").update(patch).eq("id", logId);
+}
 
 async function sendInvitationEmail(args: {
   to: string;
@@ -503,33 +773,63 @@ async function sendInvitationEmail(args: {
   firmName: string;
   role: string;
   token: string;
+  invitationId?: string;
 }) {
-  // Best-effort send via Lovable's transactional email route.
-  // If the route hasn't been scaffolded yet (no email infra), this no-ops.
-  const url = process.env.PUBLIC_APP_URL || "";
-  if (!url) return;
+  const base = (getRuntimeEnv("PUBLIC_APP_URL") || "https://sightlineprofit.com").replace(/\/$/, "");
+  const acceptUrl = `${base}/accept-invite?token=${encodeURIComponent(args.token)}`;
+  const { buildTeamInvitationEmail } = await import("@/lib/email-templates/team-invitation");
+  const { sendTransactionalEmail } = await import("@/lib/transactional-email.server");
+  const { subject, html, text, templateVariables } = buildTeamInvitationEmail({
+    memberName: args.memberName,
+    principalName: args.principalName,
+    firmName: args.firmName,
+    role: args.role,
+    acceptUrl,
+  });
+  const templateId = getRuntimeEnv("RESEND_TEAM_INVITE_TEMPLATE_ID");
+  const idempotencyKey = args.invitationId
+    ? `team-invite-${args.invitationId}-${Date.now()}`
+    : `team-invite-${args.token}-${Date.now()}`;
+
   try {
-    const res = await fetch(`${url}/lovable/email/transactional/send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
-      },
-      body: JSON.stringify({
-        templateName: "team-invitation",
-        recipientEmail: args.to,
-        idempotencyKey: `team-invite-${args.token}`,
-        templateData: args,
-      }),
+    return await sendTransactionalEmail({
+      to: args.to,
+      subject,
+      ...(templateId
+        ? { template: { id: templateId, variables: templateVariables } }
+        : { html, text }),
+      idempotencyKey,
     });
-    if (!res.ok) throw new Error(`email send ${res.status}`);
-  } catch (e) {
-    throw e;
+  } catch (templateErr) {
+    if (!templateId) throw templateErr;
+    console.warn("[sendInvitationEmail] template send failed, retrying inline HTML:", templateErr);
+    return sendTransactionalEmail({
+      to: args.to,
+      subject,
+      html,
+      text,
+      idempotencyKey: `${idempotencyKey}-inline`,
+    });
   }
 }
 
 export const validateInviteToken = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ token: z.string().min(8).max(200) }).parse(d))
+  .inputValidator((d) =>
+    z
+      .object({
+        token: z
+          .string()
+          .transform((s) => {
+            try {
+              return decodeURIComponent(s).trim();
+            } catch {
+              return s.trim();
+            }
+          })
+          .pipe(z.string().min(8).max(512)),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: inv } = await supabaseAdmin
@@ -552,11 +852,28 @@ export const validateInviteToken = createServerFn({ method: "POST" })
       role: inv.role,
     };
     if (expired) return { status: "expired" as const, ...meta };
+    const { data: existingProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .ilike("email", (inv.email as string).trim())
+      .maybeSingle();
+    if (existingProfile) {
+      return { status: "existing_account" as const, ...meta };
+    }
     return { status: "valid" as const, ...meta };
   });
 
 const acceptSchema = z.object({
-  token: z.string().min(8).max(200),
+  token: z
+    .string()
+    .transform((s) => {
+      try {
+        return decodeURIComponent(s).trim();
+      } catch {
+        return s.trim();
+      }
+    })
+    .pipe(z.string().min(8).max(512)),
   password: z.string().min(8).max(200),
   name: z.string().trim().min(1).max(120),
 });
@@ -688,12 +1005,29 @@ export const resendInvitation = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!inv) throw new Error("Invitation not found");
 
-    const newToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const { data: rosterMatch } = await supabaseAdmin
+      .from("firm_members")
+      .select("email")
+      .eq("firm_id", me.firm_id)
+      .ilike("email", inv.email as string)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    let sendTo = (inv.email as string).trim().toLowerCase();
+    const rosterEmail = (rosterMatch?.email as string | null)?.trim().toLowerCase();
+    if (rosterEmail && rosterEmail !== sendTo) {
+      sendTo = rosterEmail;
+      await supabaseAdmin.from("team_invitations").update({ email: sendTo }).eq("id", inv.id);
+    }
+
+    await assertEmailAvailableForTeamInvite(supabaseAdmin, sendTo, me.firm_id);
+
+    // Keep the same token so any in-flight email still works; extend expiry on resend.
+    const inviteToken = String(inv.token).trim();
     const expiry = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     await supabaseAdmin
       .from("team_invitations")
       .update({
-        token: newToken,
         invite_token_expiry: expiry,
         invited_at: new Date().toISOString(),
       })
@@ -704,33 +1038,292 @@ export const resendInvitation = createServerFn({ method: "POST" })
       .select("name")
       .eq("id", me.firm_id)
       .single();
-    await supabaseAdmin.from("webhook_log").insert({
-      event_tag: "team-invite",
-      firm_id: me.firm_id,
-      recipient_email: inv.email,
-      payload: {
-        invitation_id: inv.id,
-        token: newToken,
-        role: inv.role,
-        firm_name: firm?.name ?? null,
-        principal_name: me.name ?? me.email,
-        resent: true,
-      },
-      status: "pending",
-    });
+    const { data: logRow, error: logErr } = await supabaseAdmin
+      .from("webhook_log")
+      .insert({
+        event_tag: "team-invite",
+        firm_id: me.firm_id,
+        recipient_email: sendTo,
+        payload: {
+          invitation_id: inv.id,
+          token: inviteToken,
+          role: inv.role,
+          firm_name: firm?.name ?? null,
+          principal_name: me.name ?? me.email,
+          resent: true,
+        },
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (logErr) console.warn("[resendInvitation] webhook_log insert:", logErr.message);
+
     try {
-      await sendInvitationEmail({
-        to: inv.email,
+      const sendResult = await sendInvitationEmail({
+        to: sendTo,
         memberName: inv.name,
         principalName: me.name || me.email,
         firmName: firm?.name ?? "their studio",
         role: inv.role,
-        token: newToken,
+        token: inviteToken,
+        invitationId: inv.id as string,
       });
+      console.info("[resendInvitation] sent", {
+        to: sendTo,
+        providerId: sendResult?.providerId,
+      });
+      if (logRow?.id) {
+        await logTeamInviteEmailOutcome(supabaseAdmin, logRow.id, {
+          sent: inviteEmailDelivered(sendResult),
+          providerId: sendResult.providerId,
+          error: inviteEmailDelivered(sendResult) ? null : "Resend did not confirm delivery",
+        });
+      }
+      const delivered = inviteEmailDelivered(sendResult);
+      return {
+        ok: true,
+        email: sendTo,
+        emailSent: delivered,
+        emailError: delivered ? null : ("Resend did not accept the message" as string | null),
+      };
     } catch (e) {
+      const emailError = e instanceof Error ? e.message : "Email send failed";
       console.warn("[resendInvitation] email send failed:", e);
+      if (logRow?.id) {
+        await logTeamInviteEmailOutcome(supabaseAdmin, logRow.id, { sent: false, error: emailError });
+      }
+      return { ok: true, email: sendTo, emailSent: false, emailError };
     }
-    return { ok: true, email: inv.email };
+  });
+
+/** Send a real invite email to the caller's own address (delivery / template test). */
+export const sendTeamInviteDeliveryTest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role, name, email")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+    const to = (me.email as string)?.trim().toLowerCase();
+    if (!to) throw new Error("Your profile has no email address.");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const newToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+    const expiry = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+
+    const { data: row, error: upsertErr } = await supabaseAdmin
+      .from("team_invitations")
+      .upsert(
+        {
+          firm_id: me.firm_id,
+          email: to,
+          role: "team",
+          name: "Invite delivery test",
+          invited_by: userId,
+          token: newToken,
+          invite_token_expiry: expiry,
+          invited_at: new Date().toISOString(),
+          accepted_at: null,
+        },
+        { onConflict: "firm_id,email" },
+      )
+      .select("id")
+      .single();
+    if (upsertErr) throw new Error(upsertErr.message);
+
+    const { data: firm } = await supabaseAdmin
+      .from("firms")
+      .select("name")
+      .eq("id", me.firm_id)
+      .single();
+
+    const { data: logRow } = await supabaseAdmin
+      .from("webhook_log")
+      .insert({
+        event_tag: "team-invite",
+        firm_id: me.firm_id,
+        recipient_email: to,
+        payload: {
+          invitation_id: row?.id,
+          delivery_test: true,
+          token: newToken,
+        },
+        status: "pending",
+      })
+      .select("id")
+      .single();
+
+    try {
+      const sendResult = await sendInvitationEmail({
+        to,
+        memberName: "Invite delivery test",
+        principalName: me.name || me.email,
+        firmName: firm?.name ?? "your firm",
+        role: "team",
+        token: newToken,
+        invitationId: row?.id as string,
+      });
+      if (logRow?.id) {
+        await logTeamInviteEmailOutcome(supabaseAdmin, logRow.id, {
+          sent: inviteEmailDelivered(sendResult),
+          providerId: sendResult.providerId,
+          error: inviteEmailDelivered(sendResult) ? null : "Resend did not confirm delivery",
+        });
+      }
+      const delivered = inviteEmailDelivered(sendResult);
+      return {
+        emailSent: delivered,
+        email: to,
+        emailError: delivered ? null : ("Resend did not accept the message" as string | null),
+        providerId: sendResult.providerId,
+      };
+    } catch (e) {
+      const emailError = e instanceof Error ? e.message : "Email send failed";
+      if (logRow?.id) {
+        await logTeamInviteEmailOutcome(supabaseAdmin, logRow.id, { sent: false, error: emailError });
+      }
+      return { emailSent: false, email: to, emailError };
+    }
+  });
+
+export const getInviteEmailConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    if (!me || !["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+    const { getTransactionalEmailConfig } = await import("@/lib/transactional-email.server");
+    return getTransactionalEmailConfig();
+  });
+
+const cancelPendingInvitationSchema = z
+  .object({
+    invitationId: z.string().uuid().optional(),
+    firmMemberId: z.string().uuid().optional(),
+  })
+  .refine((d) => d.invitationId || d.firmMemberId, {
+    message: "invitationId or firmMemberId required",
+  });
+
+/** Cancel a pending team invite and remove the roster record if they never joined. */
+export const cancelPendingInvitation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => cancelPendingInvitationSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: me } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!me?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(me.role)) throw new Error("Not allowed");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    let invitationId = data.invitationId ?? null;
+    let memberId = data.firmMemberId ?? null;
+    let memberName = "Team member";
+    let memberEmail: string | null = null;
+
+    if (memberId) {
+      const { data: member } = await supabaseAdmin
+        .from("firm_members")
+        .select("id, name, email, is_platform_user, invite_accepted_at")
+        .eq("id", memberId)
+        .eq("firm_id", me.firm_id)
+        .maybeSingle();
+      if (!member) throw new Error("Team member not found");
+      if (member.is_platform_user) {
+        throw new Error("This person has already joined. Manage them from Team cost instead.");
+      }
+      memberName = (member.name as string) || "Team member";
+      memberEmail = (member.email as string | null) ?? null;
+    }
+
+    if (invitationId) {
+      const { data: inv } = await supabaseAdmin
+        .from("team_invitations")
+        .select("id, email, name, accepted_at")
+        .eq("id", invitationId)
+        .eq("firm_id", me.firm_id)
+        .maybeSingle();
+      if (!inv) throw new Error("Invitation not found");
+      if (inv.accepted_at) throw new Error("This invitation was already accepted.");
+      memberEmail = memberEmail ?? (inv.email as string);
+      memberName = memberName === "Team member" ? ((inv.name as string) || memberEmail || memberName) : memberName;
+    } else if (memberEmail) {
+      const { data: inv } = await supabaseAdmin
+        .from("team_invitations")
+        .select("id, accepted_at")
+        .eq("firm_id", me.firm_id)
+        .ilike("email", memberEmail)
+        .is("accepted_at", null)
+        .maybeSingle();
+      if (inv?.id) invitationId = inv.id as string;
+      if (inv?.accepted_at) throw new Error("This invitation was already accepted.");
+    }
+
+    if (invitationId) {
+      const { error: delErr } = await supabaseAdmin
+        .from("team_invitations")
+        .delete()
+        .eq("id", invitationId)
+        .eq("firm_id", me.firm_id)
+        .is("accepted_at", null);
+      if (delErr) throw new Error(delErr.message);
+    }
+
+    if (memberId) {
+      const { error: memErr } = await supabaseAdmin
+        .from("firm_members")
+        .update({
+          is_active: false,
+          invite_sent_at: null,
+          invite_accepted_at: null,
+        })
+        .eq("id", memberId)
+        .eq("firm_id", me.firm_id)
+        .eq("is_platform_user", false);
+      if (memErr) throw new Error(memErr.message);
+    } else if (memberEmail) {
+      await supabaseAdmin
+        .from("firm_members")
+        .update({
+          is_active: false,
+          invite_sent_at: null,
+          invite_accepted_at: null,
+        })
+        .eq("firm_id", me.firm_id)
+        .ilike("email", memberEmail)
+        .eq("is_platform_user", false);
+    }
+
+    await logChange(supabase, {
+      firmId: me.firm_id,
+      userId,
+      category: "team_capacity",
+      entityLabel: memberName,
+      changes: [
+        {
+          field: "Invitation",
+          key: "invitation",
+          old_value: memberEmail ?? "pending",
+          new_value: "cancelled",
+          type: "text",
+        },
+      ],
+    });
+
+    return { ok: true };
   });
 
 export const backfillStarterSops = createServerFn({ method: "POST" })
@@ -860,9 +1453,45 @@ const firmMemberSchema = z.object({
   annual_benefits: z.number().min(0).max(1e9).optional().nullable(),
   other_annual_costs: z.number().min(0).max(1e9).optional().nullable(),
   expected_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
+  productive_hrs_per_week: z.number().min(0).max(168).optional().nullable(),
   weeks_per_year: z.number().min(0).max(60).optional().nullable(),
   billed_rate: z.number().min(0).max(100000).optional().nullable(),
 });
+
+async function countActiveNonPrincipalTeam(
+  supabase: Parameters<typeof logChange>[0],
+  firmId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("firm_members")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", firmId)
+    .eq("is_active", true)
+    .neq("role_type", "principal");
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function teamCapacityToastAfterFirstMember(
+  supabase: Parameters<typeof logChange>[0],
+  firmId: string,
+): Promise<{ totalAnnualHrs: number }> {
+  const [{ data: config }, { data: members }] = await Promise.all([
+    supabase.from("firm_config").select("*").eq("firm_id", firmId).maybeSingle(),
+    supabase
+      .from("firm_members")
+      .select(
+        "burdened_weekly_cost, weeks_per_year, expected_hrs_per_week, productive_hrs_per_week, billed_rate, is_active, role_type",
+      )
+      .eq("firm_id", firmId)
+      .eq("is_active", true),
+  ]);
+  const teamProfiles = (members ?? [])
+    .filter((m) => m.role_type !== "principal")
+    .map(mapTeamBurdenRow);
+  const result = calc(config as FirmConfig, [], { teamProfiles });
+  return { totalAnnualHrs: result.annualBillableHrs || 0 };
+}
 
 export const saveFirmMember = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -903,6 +1532,16 @@ export const saveFirmMember = createServerFn({ method: "POST" })
     }
     const wk = hr * hpw;
 
+    const isNonPrincipal = data.role_type !== "principal";
+    let wasFirstTeamMember = false;
+    if (!data.id && isNonPrincipal) {
+      wasFirstTeamMember = (await countActiveNonPrincipalTeam(supabase, me.firm_id)) === 0;
+    }
+
+    const productiveHrs =
+      data.productive_hrs_per_week ??
+      (data.id ? null : (data.expected_hrs_per_week ?? 40));
+
     const row = {
       firm_id: me.firm_id,
       name: data.name,
@@ -918,6 +1557,7 @@ export const saveFirmMember = createServerFn({ method: "POST" })
       annual_benefits: isContract ? null : (data.annual_benefits ?? null),
       other_annual_costs: data.other_annual_costs ?? null,
       expected_hrs_per_week: data.expected_hrs_per_week ?? null,
+      productive_hrs_per_week: productiveHrs,
       weeks_per_year: data.weeks_per_year ?? null,
       billed_rate: data.billed_rate ?? null,
       burdened_hourly_rate: hr || null,
@@ -936,9 +1576,23 @@ export const saveFirmMember = createServerFn({ method: "POST" })
         .eq("id", data.id)
         .eq("firm_id", me.firm_id);
       if (error) throw new Error(error.message);
+
+      const nextEmail = (data.email ?? "").trim().toLowerCase();
+      const prevEmail = (prevMember?.email as string | null)?.trim().toLowerCase() ?? "";
+      if (nextEmail && prevEmail && nextEmail !== prevEmail && !prevMember?.is_platform_user) {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        await supabaseAdmin
+          .from("team_invitations")
+          .update({ email: nextEmail })
+          .eq("firm_id", me.firm_id)
+          .ilike("email", prevEmail)
+          .is("accepted_at", null);
+      }
+
       await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+      const costReview = await attachCostReview(supabase, me.firm_id);
       await logMemberChanges(supabase, me.firm_id, userId, data.name, prevMember, row);
-      return { ok: true, id: data.id };
+      return { ok: true, id: data.id, costReview };
     }
     const { data: inserted, error } = await supabase
       .from("firm_members")
@@ -947,8 +1601,13 @@ export const saveFirmMember = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+    const costReview = await attachCostReview(supabase, me.firm_id);
     await logMemberChanges(supabase, me.firm_id, userId, data.name, null, row);
-    return { ok: true, id: inserted!.id };
+    let teamCapacityToast: { totalAnnualHrs: number } | undefined;
+    if (wasFirstTeamMember) {
+      teamCapacityToast = await teamCapacityToastAfterFirstMember(supabase, me.firm_id);
+    }
+    return { ok: true, id: inserted!.id, costReview, teamCapacityToast };
   });
 
 async function logMemberChanges(
@@ -971,6 +1630,7 @@ async function logMemberChanges(
   ]);
   const capChanges: ChangedField[] = diffFields(prev, next, [
     { key: "expected_hrs_per_week", label: "Expected hours / week", type: "hours_per_week" },
+    { key: "productive_hrs_per_week", label: "Productive hours / week", type: "hours_per_week" },
     { key: "weeks_per_year", label: "Weeks / year", type: "weeks" },
   ]);
   if (costChanges.length) {
@@ -1009,6 +1669,7 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       .eq("firm_id", me.firm_id);
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Team cost updated");
+    const costReview = await attachCostReview(supabase, me.firm_id);
     await logChange(supabase, {
       firmId: me.firm_id,
       userId,
@@ -1016,7 +1677,7 @@ export const deleteFirmMember = createServerFn({ method: "POST" })
       entityLabel: (prev?.name as string) || "Team member",
       changes: [{ field: "Active", key: "is_active", old_value: true, new_value: false, type: "boolean" }],
     });
-    return { ok: true };
+    return { ok: true, costReview };
   });
 
 export const listActivityGroups = createServerFn({ method: "GET" })
@@ -1070,6 +1731,237 @@ export const deleteActivityGroup = createServerFn({ method: "POST" })
     const { error } = await supabase.from("activity_groups").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+const CUSTOM_ACTIVITY_COLORS = ["#6B8E9B", "#C4714A", "#9B7BB8", "#5C8A6E", "#B8860B", "#4A7FA5"];
+
+export const listActivityTypes = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return [];
+    const { data } = await supabase
+      .from("activity_types")
+      .select("id, name, is_billable, is_default, is_system, color, sort_order")
+      .eq("firm_id", profile.firm_id)
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true });
+    return data ?? [];
+  });
+
+const activityTypeCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  is_billable: z.boolean().default(false),
+});
+
+export const addActivityType = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => activityTypeCreateSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role)) throw new Error("Admin only");
+
+    const { data: last } = await supabase
+      .from("activity_types")
+      .select("sort_order")
+      .eq("firm_id", profile.firm_id)
+      .lt("sort_order", 99)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const sortOrder = Math.min(98, (last?.sort_order ?? 5) + 1);
+    const color = CUSTOM_ACTIVITY_COLORS[sortOrder % CUSTOM_ACTIVITY_COLORS.length];
+
+    const { data: row, error } = await supabase
+      .from("activity_types")
+      .insert({
+        firm_id: profile.firm_id,
+        name: data.name,
+        is_billable: data.is_billable,
+        is_default: false,
+        is_system: false,
+        color,
+        sort_order: sortOrder,
+      })
+      .select("id, name, is_billable, is_default, is_system, color, sort_order")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+const activityTypeUpdateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(80).optional(),
+  is_billable: z.boolean().optional(),
+  /** Required when changing an activity that has linked time entries. */
+  applyToExistingEntries: z.boolean().optional(),
+});
+
+export const getActivityTypeEntryCount = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) return { count: 0 };
+
+    const { count, error } = await supabase
+      .from("time_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", profile.firm_id)
+      .eq("activity_type_id", data.id);
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
+
+export const updateActivityType = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => activityTypeUpdateSchema.parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role)) throw new Error("Admin only");
+
+    const { data: existing } = await supabase
+      .from("activity_types")
+      .select("id, name, is_billable, is_default, is_system")
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id)
+      .maybeSingle();
+    if (!existing) throw new Error("Activity not found");
+    if (existing.is_system) throw new Error("System activities cannot be edited");
+
+    const nameChanging = data.name !== undefined && data.name !== existing.name;
+    const billableChanging =
+      data.is_billable !== undefined && data.is_billable !== existing.is_billable;
+    if (!nameChanging && !billableChanging) return { ok: true, entriesUpdated: 0 };
+
+    const { count: entryCount, error: countError } = await supabase
+      .from("time_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("firm_id", profile.firm_id)
+      .eq("activity_type_id", data.id);
+    if (countError) throw new Error(countError.message);
+    const linkedEntries = entryCount ?? 0;
+
+    if (linkedEntries > 0 && !data.applyToExistingEntries) {
+      throw new Error(
+        `${linkedEntries} time ${linkedEntries === 1 ? "entry uses" : "entries use"} this activity. Confirm to update them.`,
+      );
+    }
+
+    const patch: { name?: string; is_billable?: boolean } = {};
+    if (billableChanging) patch.is_billable = data.is_billable;
+    if (nameChanging) patch.name = data.name;
+
+    const { error: typeError } = await supabase.from("activity_types").update(patch).eq("id", data.id);
+    if (typeError) throw new Error(typeError.message);
+
+    let entriesUpdated = 0;
+    if (billableChanging && linkedEntries > 0) {
+      const { error: entryError } = await supabase
+        .from("time_entries")
+        .update({ billable: data.is_billable! })
+        .eq("firm_id", profile.firm_id)
+        .eq("activity_type_id", data.id);
+      if (entryError) throw new Error(entryError.message);
+      entriesUpdated = linkedEntries;
+    }
+
+    // Renames propagate automatically — entries store activity_type_id, not the name.
+    return {
+      ok: true,
+      entriesUpdated,
+      entriesLinked: linkedEntries,
+      nameChanged: nameChanging,
+      billableChanged: billableChanging,
+    };
+  });
+
+export const deleteActivityType = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role)) throw new Error("Admin only");
+
+    const { data: existing } = await supabase
+      .from("activity_types")
+      .select("id, is_default, is_system")
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id)
+      .maybeSingle();
+    if (!existing) throw new Error("Activity not found");
+    if (existing.is_default || existing.is_system) {
+      throw new Error("Default activities cannot be deleted");
+    }
+
+    const { error } = await supabase.from("activity_types").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const logOwnerDraw = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        draw_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        amount: z.number().positive().max(1e9),
+        draw_type: z.enum(["salary", "distribution"]),
+        notes: z.string().trim().max(500).optional().nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (!profile?.firm_id) throw new Error("No firm");
+    if (!["principal", "admin"].includes(profile.role)) throw new Error("Admin only");
+
+    const { data: row, error } = await supabase
+      .from("owner_draws")
+      .insert({
+        firm_id: profile.firm_id,
+        draw_date: data.draw_date,
+        amount: data.amount,
+        draw_type: data.draw_type,
+        notes: data.notes ?? null,
+      })
+      .select("id, amount, draw_type")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
   });
 
 const firmUpdateSchema = z.object({
@@ -1219,6 +2111,7 @@ const ownerCompSchema = z.object({
   health_insurance_annual: z.number().min(0).max(1e9).nullable().optional(),
   retirement_annual: z.number().min(0).max(1e9).nullable().optional(),
   distribution_annual: z.number().min(0).max(1e9).nullable().optional(),
+  distribution_tax_rate: z.number().min(0).max(1).nullable().optional(),
   reserve_target: z.number().min(0).max(1e9).nullable().optional(),
   reserve_months: z.number().int().min(0).max(60).nullable().optional(),
   compensation_notes: z.string().max(2000).nullable().optional(),
@@ -1259,12 +2152,14 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
       );
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
+    const costReview = await attachCostReview(supabase, me.firm_id);
     const changes = diffFields(prev as Record<string, unknown> | null, data as Record<string, unknown>, [
       { key: "comp_draw_annual", label: "Compensation draw", type: "currency_annual" },
       { key: "payroll_tax_pct", label: "Payroll tax", type: "percent" },
       { key: "health_insurance_annual", label: "Health insurance", type: "currency_annual" },
       { key: "retirement_annual", label: "Retirement", type: "currency_annual" },
       { key: "distribution_annual", label: "Distributions", type: "currency_annual" },
+      { key: "distribution_tax_rate", label: "Distribution tax rate", type: "percent" },
       { key: "reserve_target", label: "Reserve target", type: "currency" },
       { key: "reserve_months", label: "Reserve months", type: "weeks" },
       { key: "employee_payroll_tax_pct", label: "Employee payroll tax", type: "percent" },
@@ -1275,7 +2170,7 @@ export const upsertOwnerCompensation = createServerFn({ method: "POST" })
         entityLabel, changes,
       });
     }
-    return { ok: true };
+    return { ok: true, costReview };
   });
 
 export const deleteOwnerCompensation = createServerFn({ method: "POST" })
@@ -1304,10 +2199,11 @@ export const deleteOwnerCompensation = createServerFn({ method: "POST" })
       .eq("profile_id", userId);
     if (error) throw new Error(error.message);
     await recordAlignedRate(supabase, me.firm_id, "Compensation updated");
+    const costReview = await attachCostReview(supabase, me.firm_id);
     await logChange(supabase, {
       firmId: me.firm_id, userId, category: "owner_compensation",
       entityLabel: (meProfile?.name as string) || (meProfile?.email as string) || "Principal",
       changes: [{ field: "Removed compensation record", key: "comp_draw_annual", old_value: prev?.comp_draw_annual ?? null, new_value: null, type: "currency_annual" }],
     });
-    return { ok: true };
+    return { ok: true, costReview };
   });

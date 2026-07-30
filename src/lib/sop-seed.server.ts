@@ -840,6 +840,8 @@ export async function seedDefaultSops(firmId: string): Promise<{ inserted: numbe
         scope_risk_level: tpl.scope_risk_level,
         common_failure_modes: tpl.common_failure_modes,
         is_default: true,
+        workflow_type: "project",
+        is_active: true,
       })
       .select("id")
       .single();
@@ -873,9 +875,12 @@ export async function seedDefaultSops(firmId: string): Promise<{ inserted: numbe
         const { error: stepsErr } = await supabaseAdmin.from("sop_steps").insert(
           ph.steps.map((s, j) => ({
             phase_id: phRow.id,
+            name: s.description.slice(0, 200),
             description: s.description,
             estimated_hrs: s.estimated_hrs,
             sort_order: j,
+            assigned_role: "principal",
+            is_billable: ph.billable,
           })),
         );
         if (stepsErr) console.error(`[seedDefaultSops] failed to insert steps for "${ph.name}":`, stepsErr);
@@ -884,4 +889,9 @@ export async function seedDefaultSops(firmId: string): Promise<{ inserted: numbe
     inserted++;
   }
   return { inserted, skipped };
+}
+
+/** Idempotent: insert any starter templates missing for this firm (by name). */
+export async function ensureDefaultSopsForFirm(firmId: string): Promise<{ inserted: number; skipped: number }> {
+  return seedDefaultSops(firmId);
 }

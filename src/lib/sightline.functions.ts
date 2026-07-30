@@ -17,6 +17,23 @@ import {
   listFirmMembersForAssigneePicker,
   refreshProjectCostSnapshot,
 } from "@/lib/project-cost-snapshot.server";
+import {
+  logMarginImpactForProjectHoursChange,
+  resolveEntryProjectId,
+  sumProjectHours,
+} from "@/lib/project-margin-audit.server";
+import {
+  listDeletedFirmProjects,
+  listFirmProjects,
+  requireProjectLifecycleMigration,
+  isMissingProjectLifecycleColumn,
+} from "@/lib/project-lifecycle.server";
+import {
+  isFinancialRole,
+  requireCanWrite,
+  requirePrincipalOrAdmin,
+} from "@/lib/auth-guards.server";
+import { insertProjectWithSchemaFallback, stripProjectForRole } from "@/lib/project-safety.server";
 
 function assigneeDbError(error: { message: string }): Error {
   if (isTaskAssigneeSchemaMissingError(error)) {
@@ -31,25 +48,25 @@ export const getProjectList = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
-      .select("firm_id")
+      .select("firm_id, role")
       .eq("id", userId)
       .single();
-    if (!profile?.firm_id) return { projects: [], config: null };
-    const [
-      { data: projects },
-      { data: phases },
-      { data: config },
-      { data: team },
-      { data: expenses },
-    ] = await Promise.all([
-      supabase.from("projects").select("*").eq("firm_id", profile.firm_id).order("created_at", { ascending: false }),
-      supabase.from("project_phases").select("project_id, expected_hrs, actual_hrs"),
-      supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
-      supabase.from("profiles").select("id, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
-      supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
-    ]);
+    if (!profile?.firm_id) return { projects: [], deletedProjects: [], config: null, isAdmin: false };
+    const isAdmin = profile.role === "principal" || profile.role === "admin";
+    const [projectsResult, { data: phases }, { data: config }, { data: team }, { data: expenses }, deletedResult] =
+      await Promise.all([
+        listFirmProjects(supabase, profile.firm_id),
+        supabase.from("project_phases").select("project_id, expected_hrs, actual_hrs"),
+        supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+        supabase.from("profiles").select("id, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
+        supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
+        isAdmin ? listDeletedFirmProjects(supabase, profile.firm_id) : Promise.resolve({ data: [], lifecycleReady: false }),
+      ]);
+    const projects = projectsResult.data;
+    const deletedProjects = deletedResult.data;
     const totals: Record<string, { scoped: number; actual: number }> = {};
     for (const p of phases ?? []) {
       const t = (totals[p.project_id] ||= { scoped: 0, actual: 0 });
@@ -120,16 +137,21 @@ export const getProjectList = createServerFn({ method: "GET" })
       usingFallbackCostRate: boolean;
       lastEntryAt: string | null;
       hoursLogged: number;
+      hoursLoggedThisMonth: number;
     };
     const agg: Record<string, Agg> = {};
+    const monthStartIso = new Date(now);
+    monthStartIso.setDate(1);
+    const monthStart = monthStartIso.toISOString().slice(0, 10);
     for (const e of entries ?? []) {
       if (!e.project_id) continue;
       const a = (agg[e.project_id] ||= {
-        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null, hoursLogged: 0,
+        totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null, hoursLogged: 0, hoursLoggedThisMonth: 0,
       });
       a.hasAnyEntry = true;
       const hrs = Number(e.hrs || 0);
       a.hoursLogged += hrs;
+      if ((e.date as string) >= monthStart) a.hoursLoggedThisMonth += hrs;
       let cr = costRateByUser.get(e.user_id);
       if (cr == null) { cr = firmBreakEven; a.usingFallbackCostRate = true; }
       const cost = hrs * (cr || 0);
@@ -151,7 +173,7 @@ export const getProjectList = createServerFn({ method: "GET" })
         perHour: fin.perHour,
       },
       projects: (projects ?? []).map((p) => {
-        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null, hoursLogged: 0 };
+        const a = agg[p.id] ?? { totalCost: 0, weeklyCost: 0, revenue: 0, hasAnyEntry: false, usingFallbackCostRate: false, lastEntryAt: null, hoursLogged: 0, hoursLoggedThisMonth: 0 };
         const fixedFee = Number((p as { fixed_fee?: number | null }).fixed_fee) || 0;
         const scopedRate = Number(p.scoped_rate) || 0;
         const scopedHrs = totals[p.id]?.scoped ?? Number(p.scoped_hrs || 0);
@@ -206,6 +228,7 @@ export const getProjectList = createServerFn({ method: "GET" })
           totals: totals[p.id] ?? { scoped: Number(p.scoped_hrs || 0), actual: 0 },
           snapshot: snapshotByProject.get(p.id) ?? null,
           hoursLogged: a.hoursLogged,
+          hoursLoggedThisMonth: a.hoursLoggedThisMonth,
           lastEntryDate: a.lastEntryAt,
           freshness: {
             lastEntryAt: lastActivityAt,
@@ -225,6 +248,8 @@ export const getProjectList = createServerFn({ method: "GET" })
           },
         };
       }),
+      deletedProjects,
+      isAdmin,
     };
   });
 
@@ -239,17 +264,20 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
+    const isFinancialUser = isFinancialRole(profile.role as string);
     const isPrincipal = profile.role === "principal";
     const isAdmin = profile.role === "principal" || profile.role === "admin";
     const [
-      { data: project }, { data: phases }, { data: entries }, { data: config },
+      { data: project }, { data: phases }, { data: entries }, configResult,
       { data: template }, { data: team }, { data: activityLog }, { data: milestones },
-      { data: expenses }, { data: ownerComp }, { data: teamBurdens },
+      expensesResult, ownerCompResult, teamBurdensResult,
     ] = await Promise.all([
       supabase.from("projects").select("*").eq("id", data.id).eq("firm_id", profile.firm_id).single(),
       supabase.from("project_phases").select("*").eq("project_id", data.id).order("sort_order"),
       supabase.from("time_entries").select("*").eq("project_id", data.id).order("date", { ascending: false }),
-      supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
+      isFinancialUser
+        ? supabase.from("firm_config").select("*").eq("firm_id", profile.firm_id).maybeSingle()
+        : supabase.from("firm_config_team_safe").select("*").eq("firm_id", profile.firm_id).maybeSingle(),
       supabase.from("projects").select("sop_template_id").eq("id", data.id).single().then(async (r) => {
         const tid = r.data?.sop_template_id;
         if (!tid) return { data: null };
@@ -258,16 +286,29 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       supabase.from("profiles").select("id, name, email, cost_rate, billable_rate").eq("firm_id", profile.firm_id),
       supabase.from("project_activity_log").select("*").eq("project_id", data.id).order("occurred_at", { ascending: false }),
       supabase.from("project_milestones").select("*").eq("project_id", data.id).order("milestone_date"),
-      supabase.from("expenses").select("*").eq("firm_id", profile.firm_id),
-      supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id),
-      supabase
-        .from("firm_members")
-        .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
-        .eq("firm_id", profile.firm_id)
-        .eq("is_active", true)
-        .neq("role_type", "principal"),
+      isFinancialUser
+        ? supabase.from("expenses").select("*").eq("firm_id", profile.firm_id)
+        : Promise.resolve({ data: [] as never[] }),
+      isFinancialUser
+        ? supabase.from("owner_compensation").select("*").eq("firm_id", profile.firm_id)
+        : Promise.resolve({ data: [] as never[] }),
+      isFinancialUser
+        ? supabase
+            .from("firm_members")
+            .select("burdened_weekly_cost, weeks_per_year, role_type, expected_hrs_per_week, billed_rate")
+            .eq("firm_id", profile.firm_id)
+            .eq("is_active", true)
+            .neq("role_type", "principal")
+        : Promise.resolve({ data: [] as never[] }),
     ]);
+    const config = configResult.data;
+    const expenses = expensesResult.data;
+    const ownerComp = ownerCompResult.data;
+    const teamBurdens = teamBurdensResult.data;
     if (!project) throw new Error("Project not found");
+    if ((project as { deleted_at?: string | null }).deleted_at && !isAdmin) {
+      throw new Error("Project not found");
+    }
     const phaseIds = (phases ?? []).map((p) => p.id);
     const { data: steps } = phaseIds.length
       ? await supabase.from("project_steps").select("*").in("project_phase_id", phaseIds).order("sort_order")
@@ -298,12 +339,38 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       }
     }
 
+    let stepResources: unknown[] = [];
+    let stepResourceMeta: unknown[] = [];
+    const stepIds = (steps ?? []).map((s: { id: string }) => s.id);
+    if (stepIds.length) {
+      const { data: links, error: linkErr } = await supabase
+        .from("project_step_resources")
+        .select("*")
+        .in("project_step_id", stepIds);
+      if (!linkErr && links?.length) {
+        stepResources = links;
+        const resourceIds = [...new Set(links.map((l: { resource_id: string }) => l.resource_id))];
+        const { data: resources } = await supabase
+          .from("firm_resources")
+          .select("id, name, resource_type, url, content, subject_line, file_path, file_name")
+          .in("id", resourceIds);
+        stepResourceMeta = resources ?? [];
+      }
+    }
+
     const sopPhaseIds = (phases ?? [])
       .map((p) => p.sop_phase_id)
       .filter((id): id is string => !!id);
     const { data: sopPhases } = sopPhaseIds.length
       ? await supabase.from("sop_phases").select("id, description").in("id", sopPhaseIds)
       : { data: [] as { id: string; description: string | null }[] };
+
+    const { listProjectWorkflowAttachments } = await import("@/lib/sop-library.server");
+    const workflowAttachments = await listProjectWorkflowAttachments(
+      supabase,
+      data.id,
+      profile.firm_id,
+    );
 
     const importLogIds = [
       ...new Set(
@@ -315,13 +382,24 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     const { data: importLogs } = importLogIds.length
       ? await supabase.from("time_import_logs").select("*").in("id", importLogIds).order("imported_at", { ascending: false })
       : { data: [] as never[] };
-    const { data: audit } = isPrincipal
+    const { data: audit } = isAdmin
       ? await supabase
           .from("project_financial_audit")
           .select("*")
           .eq("project_id", data.id)
           .order("changed_at", { ascending: false })
       : { data: [] as never[] };
+    let firmMetrics: {
+      breakEvenRate: number;
+      alignedRate: number;
+      billedRate: number;
+      perHour: ReturnType<typeof calcFinance>["perHour"];
+    } | null = null;
+    let snapshot: any = null;
+    let financials: ReturnType<typeof getProjectFinancials> | null = null;
+    let assigneesNewerThanSnapshot = false;
+
+    if (isFinancialUser) {
     const fin = calcFinance(
       (config as FirmConfig | null) ?? null,
       ((expenses as unknown) as Expense[]) ?? [],
@@ -330,7 +408,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
         teamProfiles: (teamBurdens as any) ?? [],
       },
     );
-    const firmMetrics = {
+    firmMetrics = {
       breakEvenRate: Number(fin.breakEvenRate) || 0,
       alignedRate: Number(fin.alignedRate) || 0,
       billedRate: Number(fin.billedRate) || 0,
@@ -338,7 +416,6 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     };
 
     // ─── Locked cost snapshot (retroactively backfilled on first load) ───
-    let snapshot: any = null;
     {
       const { data: existing } = await (supabase
         .from("project_cost_snapshots") as any)
@@ -361,10 +438,7 @@ export const getProjectDetail = createServerFn({ method: "GET" })
     }
 
     // Compute snapshot-locked financials for this project
-    const hoursLogged = (entries ?? []).reduce(
-      (s: number, e: any) => s + (Number(e.hrs) || 0),
-      0,
-    );
+    const hoursLogged = await sumProjectHours(supabase, data.id);
     const lastEntryDate = (entries ?? [])
       .map((e: any) => e.date as string | null)
       .filter(Boolean)
@@ -372,7 +446,6 @@ export const getProjectDetail = createServerFn({ method: "GET" })
       .slice(-1)[0] ?? null;
 
     let breakEvenResult = null;
-    let assigneesNewerThanSnapshot = false;
     if (snapshot) {
       const { liveResult } = await fetchProjectStepAssigneeRows(
         supabase,
@@ -388,35 +461,48 @@ export const getProjectDetail = createServerFn({ method: "GET" })
         liveResult.hasAssigneeData && !assigneesNewerThanSnapshot ? liveResult : snapshotResult;
     }
 
-    const financials = snapshot
-      ? getProjectFinancials({
-          project: project as any,
-          snapshot: snapshot as any,
-          hoursLogged,
-          lastEntryDate,
-          breakEvenResult,
-          assigneesNewerThanSnapshot,
-        })
-      : null;
+      financials = snapshot
+        ? getProjectFinancials({
+            project: project as any,
+            snapshot: snapshot as any,
+            hoursLogged,
+            lastEntryDate,
+            breakEvenResult,
+            assigneesNewerThanSnapshot,
+          })
+        : null;
+    }
+
+    const safeTeam = isFinancialUser
+      ? (team ?? [])
+      : (team ?? []).map((m: { id: string; name: string | null; email: string | null }) => ({
+          id: m.id,
+          name: m.name,
+          email: m.email,
+        }));
 
     return {
-      project,
+      project: stripProjectForRole(project as Record<string, unknown>, profile.role as string),
       phases: phases ?? [],
       steps: steps ?? [],
       stepAssignees,
+      stepResources,
+      stepResourceMeta,
       assigneePickerMembers,
       assigneePickerPrincipal,
       entries: entries ?? [],
       config,
       template,
-      team: team ?? [],
+      team: safeTeam,
       audit: audit ?? [],
       activityLog: activityLog ?? [],
       milestones: milestones ?? [],
       sopPhases: sopPhases ?? [],
+      workflowAttachments,
       importLogs: importLogs ?? [],
       isPrincipal,
       isAdmin,
+      canWrite: profile.role !== "view_only",
       firmMetrics,
       snapshot,
       financials,
@@ -432,9 +518,7 @@ export const confirmProjectReviewed = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: profile } = await supabase
-      .from("profiles").select("firm_id").eq("id", userId).single();
-    if (!profile?.firm_id) throw new Error("No firm");
+    const profile = await requireCanWrite(supabase, userId);
     const now = new Date().toISOString();
     const { error: logErr } = await supabase.from("project_activity_log").insert({
       project_id: data.project_id,
@@ -470,9 +554,7 @@ export const logNothingToReport = createServerFn({ method: "POST" })
       throw new Error(`You must type "${NOTHING_TO_REPORT_PHRASE}" exactly to confirm.`);
     }
     const { supabase, userId } = context;
-    const { data: profile } = await supabase
-      .from("profiles").select("firm_id").eq("id", userId).single();
-    if (!profile?.firm_id) throw new Error("No firm");
+    const profile = await requireCanWrite(supabase, userId);
     const now = new Date().toISOString();
     const { error: logErr } = await supabase.from("project_activity_log").insert({
       project_id: data.project_id,
@@ -508,24 +590,118 @@ export const updateProjectStatus = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { error } = await supabase.from("projects").update({ status: data.status }).eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
 
+async function requireProjectAdmin(
+  supabase: { from: (t: string) => any },
+  userId: string,
+  projectId: string,
+) {
+  const profile = await requirePrincipalOrAdmin(supabase, userId);
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id, firm_id, deleted_at")
+    .eq("id", projectId)
+    .eq("firm_id", profile.firm_id)
+    .maybeSingle();
+  if (!project) throw new Error("Project not found");
+  return { profile, project };
+}
+
+export const archiveProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { project } = await requireProjectAdmin(supabase, userId, data.id);
+    if (project.deleted_at) throw new Error("Deleted projects cannot be archived");
+    const { error } = await supabase
+      .from("projects")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", data.id);
+    if (error && isMissingProjectLifecycleColumn(error)) requireProjectLifecycleMigration();
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const unarchiveProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireProjectAdmin(supabase, userId, data.id);
+    const { error } = await supabase.from("projects").update({ archived_at: null }).eq("id", data.id);
+    if (error && isMissingProjectLifecycleColumn(error)) requireProjectLifecycleMigration();
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireProjectAdmin(supabase, userId, data.id);
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("projects")
+      .update({ deleted_at: now, archived_at: null })
+      .eq("id", data.id);
+    if (error && isMissingProjectLifecycleColumn(error)) requireProjectLifecycleMigration();
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const restoreProject = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireProjectAdmin(supabase, userId, data.id);
+    const { error } = await supabase
+      .from("projects")
+      .update({ deleted_at: null, archived_at: null })
+      .eq("id", data.id);
+    if (error && isMissingProjectLifecycleColumn(error)) requireProjectLifecycleMigration();
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const workflowPeriodSchema = z.object({
+  period_label: z.string().trim().max(120).optional().nullable(),
+  period_start: z.string().trim().max(32).optional().nullable(),
+  period_end: z.string().trim().max(32).optional().nullable(),
+});
+
 const createProjectSchema = z.object({
   name: z.string().trim().min(1).max(160),
   client_name: z.string().trim().max(160).optional().nullable(),
+  client_email: z.string().trim().max(200).optional().nullable(),
+  client_phone: z.string().trim().max(40).optional().nullable(),
+  client_preferred_communication: z
+    .enum(["email", "phone", "text", "in_person"])
+    .optional()
+    .nullable(),
   status: z.enum(["active", "pipeline", "completed", "on_hold"]).default("active"),
   scoped_rate: z.number().min(0).max(100000).optional().nullable(),
   fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
-  pricing_method: z.enum(["flat_fee", "hourly", "hybrid"]).optional().nullable(),
+  pricing_method: z.enum(["flat_fee", "hourly", "hybrid", "retainer"]).optional().nullable(),
   flat_fee_amount: z.number().min(0).max(100000000).optional().nullable(),
   hourly_scoped_hours: z.number().min(0).max(100000).optional().nullable(),
+  retainer_monthly_amount: z.number().min(0).max(100000000).optional().nullable(),
+  retainer_duration_months: z.number().min(0).max(600).optional().nullable(),
+  monthly_retainer_fee: z.number().min(0).max(100000000).optional().nullable(),
+  retainer_start_date: z.string().optional().nullable(),
   start_date: z.string().optional().nullable(),
   end_date: z.string().optional().nullable(),
   sop_template_id: z.string().uuid().optional().nullable(),
+  workflow_ids: z.array(z.string().uuid()).max(20).optional().nullable(),
+  workflow_period: workflowPeriodSchema.optional().nullable(),
   phases: z
     .array(
       z.object({
@@ -537,6 +713,15 @@ const createProjectSchema = z.object({
     .max(200)
     .optional()
     .nullable(),
+  assignments: z
+    .array(
+      z.object({
+        firm_member_id: z.string().uuid(),
+        role_on_project: z.string().trim().max(120).optional().nullable(),
+      }),
+    )
+    .optional()
+    .nullable(),
 });
 
 export const createProject = createServerFn({ method: "POST" })
@@ -544,21 +729,34 @@ export const createProject = createServerFn({ method: "POST" })
   .inputValidator((d) => createProjectSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("firm_id, role")
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
-    if (!["principal", "admin"].includes(profile.role as string)) throw new Error("Admin only");
 
-    // If explicit phases are provided (wizard), use them. Otherwise, if a
-    // template is attached, snapshot its phases (independent copy).
+    // If explicit phases are provided (wizard), use them. Otherwise, if
+    // workflow template(s) are attached, snapshot their phases (with tasks).
     let scopedHrs = 0;
     let tplPhases: { name: string; expected_hrs: number; billable: boolean; sort_order: number; id: string }[] = [];
     const customPhases = data.phases ?? null;
+    const useAttachPath = !!(data.workflow_ids?.length);
+    const workflowIds = useAttachPath
+      ? (data.workflow_ids ?? [])
+      : data.sop_template_id
+        ? [data.sop_template_id]
+        : [];
+
     if (customPhases && customPhases.length) {
       scopedHrs = customPhases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
+    } else if (useAttachPath && workflowIds.length) {
+      const { data: phases } = await supabase
+        .from("sop_phases")
+        .select("expected_hrs")
+        .in("template_id", workflowIds);
+      scopedHrs = (phases ?? []).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
     } else if (data.sop_template_id) {
       const { data: phases } = await supabase
         .from("sop_phases")
@@ -569,33 +767,48 @@ export const createProject = createServerFn({ method: "POST" })
       scopedHrs = tplPhases.reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
     }
 
-    const { data: project, error } = await supabase
-      .from("projects")
-      .insert({
-        firm_id: profile.firm_id,
-        name: data.name,
-        client_name: data.client_name ?? null,
-        status: data.status,
-        scoped_rate: data.scoped_rate ?? null,
-        fixed_fee: data.fixed_fee ?? null,
-        scoped_hrs: scopedHrs || null,
-        start_date: data.start_date || null,
-        end_date: data.end_date || null,
-        sop_template_id: data.sop_template_id ?? null,
-        // Explicit pricing method (falls back to legacy inference).
-        pricing_method:
-          data.pricing_method ??
-          ((Number(data.fixed_fee) || 0) > 0 && (Number(data.scoped_rate) || 0) > 0
-            ? "hybrid"
-            : (Number(data.scoped_rate) || 0) > 0
-              ? "hourly"
-              : "flat_fee"),
-        flat_fee_amount: data.flat_fee_amount ?? data.fixed_fee ?? null,
-        hourly_scoped_hours: data.hourly_scoped_hours ?? null,
-      } as any)
-      .select("id")
-      .single();
-    if (error) throw new Error(error.message);
+    const pricingMethod =
+      data.pricing_method ??
+      ((Number(data.fixed_fee) || 0) > 0 && (Number(data.scoped_rate) || 0) > 0
+        ? "hybrid"
+        : (Number(data.scoped_rate) || 0) > 0
+          ? "hourly"
+          : "flat_fee");
+
+    const insertRow: Record<string, unknown> = {
+      firm_id: profile.firm_id,
+      name: data.name,
+      client_name: data.client_name ?? null,
+      status: data.status,
+      scoped_rate: data.scoped_rate ?? null,
+      fixed_fee: data.fixed_fee ?? null,
+      scoped_hrs: scopedHrs || null,
+      start_date: data.start_date || null,
+      end_date: data.end_date || null,
+      sop_template_id: useAttachPath ? null : (data.sop_template_id ?? null),
+      pricing_method: pricingMethod,
+      flat_fee_amount: data.flat_fee_amount ?? data.fixed_fee ?? null,
+      hourly_scoped_hours: data.hourly_scoped_hours ?? null,
+    };
+
+    const clientEmail = data.client_email?.trim();
+    if (clientEmail) insertRow.client_email = clientEmail;
+    const clientPhone = data.client_phone?.trim();
+    if (clientPhone) insertRow.client_phone = clientPhone;
+    if (data.client_preferred_communication) {
+      insertRow.client_preferred_communication = data.client_preferred_communication;
+    }
+
+    if (pricingMethod === "retainer") {
+      insertRow.retainer_monthly_amount =
+        data.retainer_monthly_amount ?? data.monthly_retainer_fee ?? null;
+      insertRow.retainer_duration_months = data.retainer_duration_months ?? null;
+      insertRow.monthly_retainer_fee =
+        data.monthly_retainer_fee ?? data.retainer_monthly_amount ?? null;
+      insertRow.retainer_start_date = data.retainer_start_date ?? data.start_date ?? null;
+    }
+
+    const project = await insertProjectWithSchemaFallback(supabase, insertRow);
 
     if (customPhases && customPhases.length) {
       // Insert wizard-provided phases as a plain snapshot (no template link
@@ -611,6 +824,12 @@ export const createProject = createServerFn({ method: "POST" })
       }));
       const { error: phErr } = await supabase.from("project_phases").insert(rows);
       if (phErr) throw new Error(phErr.message);
+    } else if (useAttachPath && workflowIds.length) {
+      const { attachWorkflowToProject } = await import("@/lib/sop-library.server");
+      const period = data.workflow_period ?? null;
+      for (const wfId of workflowIds) {
+        await attachWorkflowToProject(supabase, wfId, project.id, profile.firm_id, period);
+      }
     } else if (tplPhases.length) {
       const phaseIds = tplPhases.map((p) => p.id);
       const { data: allSteps } = await supabase
@@ -704,6 +923,18 @@ export const createProject = createServerFn({ method: "POST" })
       console.warn("[createProject] snapshot insert failed:", e);
     }
 
+    if (data.assignments?.length) {
+      const rows = data.assignments.map((a) => ({
+        project_id: project.id,
+        firm_id: profile.firm_id,
+        assignee_id: a.firm_member_id,
+        assigned_by: userId,
+        role_on_project: a.role_on_project?.trim() || null,
+      }));
+      const { error: assignErr } = await supabase.from("project_assignments").insert(rows);
+      if (assignErr) console.warn("[createProject] assignments insert failed:", assignErr.message);
+    }
+
     return { id: project.id };
   });
 
@@ -720,7 +951,8 @@ export const upsertProjectPhase = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => phaseUpsertSchema.parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     if (data.id) {
       const { error } = await supabase
         .from("project_phases")
@@ -761,7 +993,8 @@ export const deleteProjectPhase = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { error } = await supabase.from("project_phases").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -774,6 +1007,12 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
       id: z.string().uuid(),
       name: z.string().trim().min(1).max(160).optional(),
       client_name: z.string().trim().max(160).optional().nullable(),
+      client_email: z.string().trim().max(200).optional().nullable(),
+      client_phone: z.string().trim().max(40).optional().nullable(),
+      client_preferred_communication: z
+        .enum(["email", "phone", "text", "in_person"])
+        .optional()
+        .nullable(),
       status: z.enum([
         "pursuit",
         "pipeline",
@@ -783,11 +1022,13 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
         "completed",
         "on_hold",
       ]).optional(),
-      pricing_method: z.enum(["flat_fee", "hourly", "hybrid"]).optional(),
+      pricing_method: z.enum(["flat_fee", "hourly", "hybrid", "retainer"]).optional(),
       scoped_rate: z.number().min(0).max(100000).optional().nullable(),
       fixed_fee: z.number().min(0).max(100000000).optional().nullable(),
       flat_fee_amount: z.number().min(0).max(100000000).optional().nullable(),
       hourly_scoped_hours: z.number().min(0).max(100000).optional().nullable(),
+      retainer_monthly_amount: z.number().min(0).max(100000000).optional().nullable(),
+      retainer_duration_months: z.number().min(0).max(600).optional().nullable(),
       scoped_hrs: z.number().min(0).max(100000).optional().nullable(),
       start_date: z.string().optional().nullable(),
       end_date: z.string().optional().nullable(),
@@ -796,18 +1037,66 @@ export const updateProjectMeta = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", userId)
-      .single();
-    if (profile?.role !== "principal" && profile?.role !== "admin") {
-      throw new Error("Only firm admins can edit project details");
-    }
+    await requireCanWrite(supabase, userId);
     const { id, ...patch } = data;
     const { error } = await supabase.from("projects").update(patch).eq("id", id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const recordProjectPayment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        amount: z.number().min(0).max(1e9),
+        payment_collected_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        payment_notes: z.string().trim().max(500).optional().nullable(),
+        project_fee: z.number().min(0).max(1e9),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("firm_id, role")
+      .eq("id", userId)
+      .single();
+    if (profile?.role !== "principal" && profile?.role !== "admin") {
+      throw new Error("Only firm admins can record payments");
+    }
+    if (!profile?.firm_id) throw new Error("No firm");
+
+    const { data: project, error: projectErr } = await supabase
+      .from("projects")
+      .select("id, firm_id")
+      .eq("id", data.id)
+      .eq("firm_id", profile.firm_id)
+      .maybeSingle();
+    if (projectErr) throw new Error(projectErr.message);
+    if (!project) throw new Error("Project not found");
+
+    const fee = data.project_fee;
+    const newTotal = data.amount;
+    let payment_status: "unpaid" | "partially_paid" | "paid" = "partially_paid";
+    if (newTotal <= 0) payment_status = "unpaid";
+    else if (fee > 0 && newTotal >= fee) payment_status = "paid";
+    else if (newTotal > 0 && fee > 0 && newTotal < fee) payment_status = "partially_paid";
+    else if (newTotal > 0) payment_status = "paid";
+
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        payment_status,
+        payment_collected: newTotal > 0 ? newTotal : null,
+        payment_collected_date: newTotal > 0 ? data.payment_collected_date : null,
+        payment_notes: data.payment_notes ?? null,
+      })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, payment_status, payment_collected: newTotal || null };
   });
 
 // ---- Milestones ------------------------------------------------------------
@@ -824,9 +1113,7 @@ export const saveProjectMilestone = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: profile } = await supabase
-      .from("profiles").select("firm_id").eq("id", userId).single();
-    if (!profile?.firm_id) throw new Error("No firm");
+    const profile = await requireCanWrite(supabase, userId);
     if (data.id) {
       const { error } = await supabase.from("project_milestones")
         .update({ label: data.label, milestone_date: data.milestone_date })
@@ -850,7 +1137,8 @@ export const deleteProjectMilestone = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { error } = await supabase.from("project_milestones").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -859,15 +1147,7 @@ export const deleteProjectMilestone = createServerFn({ method: "POST" })
 // --- Financial mutations (principal-only) -----------------------------------
 
 async function ensureAdminOrPrincipal(supabase: any, userId: string) {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("firm_id, role")
-    .eq("id", userId)
-    .single();
-  if (!profile?.firm_id) throw new Error("No firm");
-  if (profile.role !== "principal" && profile.role !== "admin") {
-    throw new Error("Only firm admins can change financial parameters");
-  }
+  const profile = await requirePrincipalOrAdmin(supabase, userId);
   return { firmId: profile.firm_id as string };
 }
 
@@ -1012,12 +1292,21 @@ export const patchTimeEntry = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { data: prev } = await supabase
       .from("time_entries")
-      .select("project_phase_id, hrs")
+      .select("project_phase_id, project_id, hrs, firm_id")
       .eq("id", data.id)
       .single();
+    if (!prev) throw new Error("Time entry not found");
+
+    const projectIdBefore = await resolveEntryProjectId(supabase, {
+      project_id: prev.project_id as string | null,
+      project_phase_id: prev.project_phase_id as string | null,
+    });
+    const hoursBefore = projectIdBefore ? await sumProjectHours(supabase, projectIdBefore) : 0;
+
     const patch: { project_phase_id?: string | null; billable?: boolean; notes?: string | null } = {};
     if (data.project_phase_id !== undefined) patch.project_phase_id = data.project_phase_id;
     if (data.billable !== undefined) patch.billable = data.billable;
@@ -1036,6 +1325,44 @@ export const patchTimeEntry = createServerFn({ method: "POST" })
       const expected = Number(ph?.expected_hrs ?? 0);
       await supabase.from("project_phases").update({ actual_hrs: total, phase_over_scope: total > expected }).eq("id", phaseId);
     }
+
+    const projectIdAfter = await resolveEntryProjectId(supabase, {
+      project_id: prev.project_id as string | null,
+      project_phase_id: (data.project_phase_id ?? prev.project_phase_id) as string | null,
+    });
+
+    if (projectIdBefore && projectIdBefore === projectIdAfter) {
+      await logMarginImpactForProjectHoursChange({
+        supabase,
+        projectId: projectIdBefore,
+        firmId: prev.firm_id as string,
+        userId,
+        hoursBefore,
+        note: "Time entry updated",
+      });
+    } else {
+      if (projectIdBefore) {
+        await logMarginImpactForProjectHoursChange({
+          supabase,
+          projectId: projectIdBefore,
+          firmId: prev.firm_id as string,
+          userId,
+          hoursBefore,
+          note: "Time entry moved to another project",
+        });
+      }
+      if (projectIdAfter && projectIdAfter !== projectIdBefore) {
+        await logMarginImpactForProjectHoursChange({
+          supabase,
+          projectId: projectIdAfter,
+          firmId: prev.firm_id as string,
+          userId,
+          hoursBefore: await sumProjectHours(supabase, projectIdAfter),
+          note: "Time entry moved from another project",
+        });
+      }
+    }
+
     return { ok: true };
   });
 
@@ -1047,10 +1374,24 @@ export const listSopTemplatesLite = createServerFn({ method: "GET" })
     if (!profile?.firm_id) return { templates: [] };
     const { data: templates } = await supabase
       .from("sop_templates")
-      .select("id, name, category")
+      .select("id, name, category, workflow_type, is_active")
       .eq("firm_id", profile.firm_id)
+      .is("deleted_at", null)
       .order("name");
-    return { templates: templates ?? [] };
+    const filtered = (templates ?? []).filter(
+      (t) =>
+        ["project", "firm_operation"].includes(
+          (t as { workflow_type?: string }).workflow_type ?? "project",
+        ) && ((t as { is_active?: boolean }).is_active ?? true),
+    );
+    return {
+      templates: filtered.map(({ id, name, category, workflow_type }) => ({
+        id,
+        name,
+        category,
+        workflowType: (workflow_type as string | null) ?? "project",
+      })),
+    };
   });
 // --- Project step (process step) mutations ----------------------------------
 
@@ -1084,7 +1425,8 @@ export const updateProjectStepHrs = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { data: existing } = await supabase
       .from("project_steps")
       .select("id, project_phase_id")
@@ -1110,7 +1452,8 @@ export const createProjectStep = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { data: existing } = await supabase
       .from("project_steps")
       .select("sort_order")
@@ -1137,11 +1480,84 @@ export const createProjectStep = createServerFn({ method: "POST" })
     return { id: row.id };
   });
 
+export const toggleProjectStepComplete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ step_id: z.string().uuid(), completed: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
+    const { error } = await supabase
+      .from("project_steps")
+      .update({
+        completed_at: data.completed ? new Date().toISOString() : null,
+        completed_by: data.completed ? userId : null,
+      })
+      .eq("id", data.step_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const toggleProjectStepItemComplete = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        step_id: z.string().uuid(),
+        order: z.number().int(),
+        completed: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
+
+    const { data: row, error: fetchErr } = await supabase
+      .from("project_steps")
+      .select("id, steps, completed_at")
+      .eq("id", data.step_id)
+      .single();
+    if (fetchErr || !row) throw new Error("Step not found");
+
+    const items = Array.isArray(row.steps) ? (row.steps as Array<Record<string, unknown>>) : [];
+    const idx = items.findIndex((s) => s.order === data.order);
+    if (idx < 0) throw new Error("Sub-step not found");
+
+    const updated = items.map((s, i) => {
+      if (i !== idx) return s;
+      if (data.completed) {
+        return { ...s, completed_at: new Date().toISOString() };
+      }
+      const { completed_at: _removed, ...rest } = s;
+      return rest;
+    });
+
+    const allDone =
+      updated.length > 0 &&
+      updated.every((s) => typeof s.completed_at === "string" && !!s.completed_at);
+
+    const patch: Record<string, unknown> = { steps: updated };
+    if (allDone) {
+      patch.completed_at = new Date().toISOString();
+      patch.completed_by = userId;
+    } else if (row.completed_at) {
+      patch.completed_at = null;
+      patch.completed_by = null;
+    }
+
+    const { error } = await supabase.from("project_steps").update(patch).eq("id", data.step_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const deleteProjectStep = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { data: existing } = await supabase
       .from("project_steps")
       .select("id, project_phase_id, is_custom")
@@ -1169,15 +1585,13 @@ export const upsertProjectStepAssignee = createServerFn({ method: "POST" })
   .inputValidator((d) => stepAssigneeSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("firm_id, role")
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
-    if (profile.role !== "principal" && profile.role !== "admin") {
-      throw new Error("Admin only");
-    }
 
     if (data.assignee_kind === "member" && !data.firm_member_id) {
       throw new Error("firm_member_id required for member assignees");
@@ -1232,7 +1646,8 @@ export const deleteProjectStepAssignee = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await requireCanWrite(supabase, userId);
     const { error } = await supabase.from("project_step_assignees").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1243,15 +1658,7 @@ export const refreshProjectCostSnapshotFn = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ project_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("firm_id, role")
-      .eq("id", userId)
-      .single();
-    if (!profile?.firm_id) throw new Error("No firm");
-    if (profile.role !== "principal" && profile.role !== "admin") {
-      throw new Error("Admin only");
-    }
+    const profile = await requirePrincipalOrAdmin(supabase, userId);
     const updated = await refreshProjectCostSnapshot(
       supabase,
       data.project_id,

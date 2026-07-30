@@ -72,7 +72,6 @@ export function UtilizationRealityCheck({ firmId }: { firmId: string }) {
         borderLeft: `3px solid ${GOLD}`,
         borderRadius: "0 8px 8px 0",
         padding: "16px 18px",
-        marginTop: 12,
       }}
     >
       <div className="flex items-start justify-between gap-3">

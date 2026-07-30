@@ -18,7 +18,7 @@ export function PricingStructureSelector({
       <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-ch/50">
         How do you typically charge clients?
       </div>
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {PRICING_STRUCTURE_OPTIONS.map((opt) => (
           <button
             key={opt.value}

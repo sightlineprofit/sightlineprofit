@@ -22,11 +22,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { TimeImportWizard } from "@/components/settings/TimeImportWizard";
 import type { ImportResult } from "@/lib/time-import/types";
 import { PricingStructureSelector } from "@/components/pricing/PricingStructureSelector";
+import { DistributionTaxExpansion } from "@/components/compensation/DistributionTaxExpansion";
+import { computeDistributionTaxReserve, memberProductiveHrsWeek } from "@/lib/finance";
 import {
+  getAlignedRateOrientationCopy,
+  getCapacitySetupCopy,
   normalizePricingStructure,
   requiresBilledRate,
   type PricingStructure,
 } from "@/lib/pricing-structure";
+import { SIGHTLINE_FEATURES, TOUR_JOURNEY, TOUR_STEP_COUNT } from "@/lib/tour-steps";
 
 type TourPrefs = {
   tour_completed: boolean;
@@ -38,7 +43,7 @@ type TourPrefs = {
 type TourCtx = {
   prefs: TourPrefs;
   isOpen: boolean;
-  currentStep: number; // 1..7
+  currentStep: number; // 1..TOUR_STEP_COUNT
   startTour: (options?: { fromBeginning?: boolean }) => void;
   resumeTour: () => void;
   skipTour: () => Promise<void>;
@@ -122,14 +127,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const startTour = useCallback((options?: { fromBeginning?: boolean }) => {
     const resumeAt = options?.fromBeginning
       ? 1
-      : Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
+      : Math.min(TOUR_STEP_COUNT, Math.max(1, (prefs?.tour_step ?? 0) + 1));
     setCurrent(resumeAt);
     setOpen(true);
     if (location.pathname !== "/dashboard") navigate({ to: "/dashboard" });
   }, [prefs, location.pathname, navigate]);
 
   const resumeTour = useCallback(() => {
-    const next = Math.min(7, Math.max(1, (prefs?.tour_step ?? 0) + 1));
+    const next = Math.min(TOUR_STEP_COUNT, Math.max(1, (prefs?.tour_step ?? 0) + 1));
     setCurrent(next);
     setOpen(true);
     if (location.pathname !== "/dashboard") navigate({ to: "/dashboard" });
@@ -144,33 +149,33 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       console.warn("setTourStep failed", e);
     }
     await refetch();
-    if (currentStep >= 7) {
+    if (currentStep >= TOUR_STEP_COUNT) {
       await completeFn();
       qc.invalidateQueries({ queryKey: ["firm-preferences"] });
       setOpen(false);
       return;
     }
-    // Step 4 → Step 5: ensure we're on /dashboard with rate visible before spotlighting.
-    if (currentStep === 4) {
+    // Step 5 (team) → Step 6 (rate): ensure dashboard is visible.
+    if (currentStep === 5) {
       if (location.pathname !== "/dashboard") {
         await navigate({ to: "/dashboard" });
       }
       await new Promise((r) => setTimeout(r, 350));
     }
-    // Step 6 → Step 7: Step 7 spotlights the time calendar.
-    if (currentStep === 6) {
+    // Step 7 (project) → Step 8 (time): spotlight the time calendar.
+    if (currentStep === 7) {
       if (location.pathname !== "/time-calendar") {
         await navigate({ to: "/time-calendar" });
       }
       await new Promise((r) => setTimeout(r, 350));
     }
-    setCurrent((s) => Math.min(7, s + 1));
+    setCurrent((s) => Math.min(TOUR_STEP_COUNT, s + 1));
   }, [currentStep, setStep, refetch, completeFn, qc, location.pathname, navigate]);
 
   const previousStep = useCallback(async () => {
     if (currentStep <= 1) return;
-    // Step 7 lives on /time-calendar; step 6 may open /sightline — return to dashboard when going back.
-    if (currentStep === 7 || currentStep === 6) {
+    // Step 8 lives on /time-calendar; steps 7–8 may open /sightline — return to dashboard when going back.
+    if (currentStep === TOUR_STEP_COUNT || currentStep === 7) {
       if (location.pathname !== "/dashboard") {
         await navigate({ to: "/dashboard" });
         await new Promise((r) => setTimeout(r, 350));
@@ -192,7 +197,7 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   // Split skip behavior: confirm only when skipping before Step 3 is complete.
   const skipTour = useCallback(async () => {
-    if (currentStep < 3) {
+    if (currentStep < 4) {
       setSkipConfirmOpen(true);
       return;
     }
@@ -205,6 +210,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     } finally {
       if (typeof window !== "undefined") sessionStorage.removeItem("sightline-tour-replay");
       qc.invalidateQueries({ queryKey: ["firm-preferences"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["me"] });
       setOpen(false);
     }
   }, [completeFn, qc]);
@@ -273,7 +280,7 @@ function TourOverlay() {
   const [step7ImportOpen, setStep7ImportOpen] = useState(false);
 
   useEffect(() => {
-    if (currentStep !== 7) setStep7ImportOpen(false);
+    if (currentStep !== TOUR_STEP_COUNT) setStep7ImportOpen(false);
   }, [currentStep]);
 
   // While the project setup wizard or SOP attach flow is active on /sightline,
@@ -287,10 +294,10 @@ function TourOverlay() {
       (search.openProject != null && String(search.openProject) !== "")
     );
 
-  // Step 7 on the time calendar: float a compact card so Quick log stays usable.
-  const step7OnCalendar = currentStep === 7 && location.pathname === "/time-calendar";
-  const step7Float = step7OnCalendar && !step7ImportOpen;
-  const suppressed = sightlineSuppressed || step7Float;
+  // Step 8 on the time calendar: float a compact card so Quick log stays usable.
+  const step8OnCalendar = currentStep === TOUR_STEP_COUNT && location.pathname === "/time-calendar";
+  const step8Float = step8OnCalendar && !step7ImportOpen;
+  const suppressed = sightlineSuppressed || step8Float;
 
   const step7Props = {
     onComplete: completeTour,
@@ -371,15 +378,15 @@ function TourOverlay() {
         pointerEvents: "auto",
       };
 
-  const showFullOverlay = !step7Float;
+  const showFullOverlay = !step8Float;
 
   return (
     <>
       <style>{`@keyframes tourSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes tourPulseGold { 0% { box-shadow: 0 0 0 0 rgba(184,134,11,0.4);} 100% { box-shadow: 0 0 0 8px rgba(184,134,11,0);} }`}</style>
-      {step7Float ? (
+      {step8Float ? (
         <div style={floatPanelStyle}>
-          <StepHeader step={7} />
+          <StepHeader step={TOUR_STEP_COUNT} />
           <Step7TimeEntry
             {...step7Props}
             variant="compact"
@@ -402,7 +409,7 @@ function TourOverlay() {
               <div style={{ width: 36, height: 4, background: "rgba(44,44,44,0.15)", borderRadius: 2, margin: "0 auto 16px" }} />
             ) : null}
             <StepHeader step={currentStep} />
-            {currentStep === 7 ? (
+            {currentStep === TOUR_STEP_COUNT ? (
               <Step7TimeEntry
                 {...step7Props}
                 variant="modal"
@@ -430,10 +437,10 @@ function StepHeader({ step }: { step: number }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".14em", textTransform: "uppercase", color: "#8A7F75" }}>
-        Step {step} of 7
+        Step {step} of {TOUR_STEP_COUNT}
       </div>
       <div style={{ display: "flex", gap: 6 }}>
-        {[1, 2, 3, 4, 5, 6, 7].map((n) => {
+        {Array.from({ length: TOUR_STEP_COUNT }, (_, i) => i + 1).map((n) => {
           const done = n < step;
           const current = n === step;
           return (
@@ -575,22 +582,65 @@ function StepBody({
   const skip = () => { void onSkip(); };
   switch (step) {
     case 1:
-      return <Step1Compensation onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
+      return <Step0Welcome onAdvance={onAdvance} onSkip={skip} />;
     case 2:
-      return <Step2Expenses onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
+      return <Step1Compensation onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
     case 3:
-      return <Step3Capacity onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
+      return <Step2Expenses onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
     case 4:
-      return <Step4Team onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
+      return <Step3Capacity onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
     case 5:
-      return <Step5RateOrientation onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
+      return <Step4Team onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
     case 6:
-      return <Step6Project onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
+      return <Step5RateOrientation onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
     case 7:
-      return <Step7TimeEntry onComplete={onComplete} onBack={onBack} onSkip={skip} />;
+      return <Step6Project onAdvance={onAdvance} onBack={onBack} onSkip={skip} />;
     default:
       return null;
   }
+}
+
+function Step0Welcome({ onAdvance, onSkip }: { onAdvance: () => Promise<void>; onSkip: () => void }) {
+  return (
+    <>
+      <h2 style={titleStyle}>Welcome to Sightline</h2>
+      <p style={bodyStyle}>
+        Sightline answers one question for your firm:{" "}
+        <strong style={{ fontWeight: 500, color: "#2C2C2C" }}>what must you earn per hour</strong> to fund
+        your compensation, your team, operating costs, and your target margin — your{" "}
+        <strong style={{ fontWeight: 500, color: "#2C2C2C" }}>aligned rate</strong>.
+        {"\n\n"}
+        This guided setup takes about 10 minutes. You&apos;ll enter your numbers, see your rate, and learn
+        where to track profitability day to day.
+      </p>
+      <div
+        style={{
+          background: "rgba(184,134,11,0.06)",
+          border: "0.5px solid rgba(184,134,11,0.18)",
+          borderRadius: 8,
+          padding: "12px 14px",
+          marginBottom: 4,
+        }}
+      >
+        <p style={{ fontSize: 11, fontWeight: 500, color: "#8A7F75", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+          What we&apos;ll cover
+        </p>
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {TOUR_JOURNEY.slice(1).map((item) => (
+            <li key={item.n} style={{ display: "flex", gap: 10, padding: "4px 0", fontSize: 12, color: "#6B6259" }}>
+              <span style={{ color: "#B8860B", fontWeight: 500, width: 14, flexShrink: 0 }}>{item.n - 1}</span>
+              <span>
+                <span style={{ fontWeight: 500, color: "#2C2C2C" }}>{item.label}</span>
+                {" — "}
+                {item.detail}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <NavRow step={1} onSkip={onSkip} onNext={() => void onAdvance()} nextLabel="Let's begin →" />
+    </>
+  );
 }
 
 function usd(n: number) {
@@ -598,8 +648,10 @@ function usd(n: number) {
 }
 
 function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise<void>; onBack: () => void; onSkip: () => void }) {
+  const [payStructure, setPayStructure] = useState<"salary_only" | "salary_plus_dist">("salary_plus_dist");
   const [salary, setSalary] = useState<string>("");
   const [distributions, setDistributions] = useState<string>("");
+  const [distributionTaxRate, setDistributionTaxRate] = useState<number | null>(null);
   const [health, setHealth] = useState<string>("");
   const [retire, setRetire] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
@@ -607,12 +659,17 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
   const upsert = useServerFn(upsertFirmConfig);
   const upsertOwnerComp = useServerFn(upsertOwnerCompensation);
 
-  const total = (Number(salary) || 0) + (Number(distributions) || 0) + (Number(health) || 0) + (Number(retire) || 0);
+  const dist = payStructure === "salary_plus_dist" ? Number(distributions) || 0 : 0;
+  const distTax = computeDistributionTaxReserve(dist, distributionTaxRate);
+  const distTaxReserve = distTax.distributionTaxReserve;
+  const grossedUpDistributions = distTax.grossedUpDistributions;
+  const total =
+    (Number(salary) || 0) + dist + (Number(health) || 0) + (Number(retire) || 0) + distTaxReserve;
 
   const save = async () => {
     setErr(null);
     const s = Number(salary) || 0;
-    const d = Number(distributions) || 0;
+    const d = payStructure === "salary_plus_dist" ? Number(distributions) || 0 : 0;
     if (s <= 0 && d <= 0) {
       setErr("Enter at least your salary or distributions to continue.");
       return;
@@ -635,6 +692,7 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
           data: {
             comp_draw_annual: s,
             distribution_annual: d,
+            distribution_tax_rate: distributionTaxRate,
             health_insurance_annual: Number(health) || 0,
             retirement_annual: Number(retire) || 0,
           },
@@ -659,15 +717,58 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
       </p>
       <div style={{ display: "grid", gap: 14 }}>
         <div>
+          <div style={{ ...labelStyle, marginTop: 14, marginBottom: 8, fontWeight: 500, color: "#2C2C2C" }}>How do you pay yourself?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {([
+              { id: "salary_only" as const, title: "Salary only", sub: "Regular W-2 payroll" },
+              { id: "salary_plus_dist" as const, title: "Salary + distributions", sub: "Base salary plus owner draws" },
+            ]).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setPayStructure(opt.id)}
+                style={{
+                  flex: 1,
+                  textAlign: "left",
+                  border: payStructure === opt.id ? "0.5px solid #5C8A6E" : "0.5px solid rgba(44,44,44,0.10)",
+                  borderRadius: 8,
+                  padding: 12,
+                  cursor: "pointer",
+                  background: payStructure === opt.id ? "rgba(92,138,110,0.06)" : "white",
+                }}
+              >
+                <div style={{ fontFamily: "Jost, sans-serif", fontSize: 13, fontWeight: 500, color: "#2C2C2C" }}>{opt.title}</div>
+                <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#8A7F75", marginTop: 4 }}>{opt.sub}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
           <label style={labelStyle}>W-2 salary (annual)</label>
           <input style={inputStyle} inputMode="numeric" placeholder="$60,000" value={salary} onChange={(e) => setSalary(e.target.value.replace(/[^0-9.]/g, ""))} />
           <div style={helperStyle}>What you pay yourself on payroll before taxes</div>
         </div>
-        <div>
-          <label style={labelStyle}>Owner distributions (annual)</label>
-          <input style={inputStyle} inputMode="numeric" placeholder="$60,000" value={distributions} onChange={(e) => setDistributions(e.target.value.replace(/[^0-9.]/g, ""))} />
-          <div style={helperStyle}>Lower-taxed draw on top of salary — common for S-corps</div>
-        </div>
+        {payStructure === "salary_plus_dist" && (
+          <div>
+            <label style={labelStyle}>Owner distributions (annual)</label>
+            <input style={inputStyle} inputMode="numeric" placeholder="$60,000" value={distributions} onChange={(e) => setDistributions(e.target.value.replace(/[^0-9.]/g, ""))} />
+            <div style={helperStyle}>Lower-taxed draw on top of salary — common for S-corps</div>
+            <div style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#8A7F75", marginTop: 6, lineHeight: 1.5 }}>
+              Take-home (salary + distributions): {usd((Number(salary) || 0) + (Number(distributions) || 0))}
+              {distTaxReserve > 0 && (
+                <span style={{ display: "block", color: "#7a5c1e", marginTop: 4 }}>
+                  Firm cost for distributions: {usd(grossedUpDistributions)} (includes {usd(distTaxReserve)} tax reserve)
+                </span>
+              )}
+            </div>
+            <DistributionTaxExpansion
+              distributions={Number(distributions) || 0}
+              distributionTaxRate={distributionTaxRate}
+              onRateChange={setDistributionTaxRate}
+              variant="tour"
+            />
+          </div>
+        )}
         <div>
           <label style={labelStyle}>Health insurance (annual)</label>
           <input style={inputStyle} inputMode="numeric" placeholder="$5,000" value={health} onChange={(e) => setHealth(e.target.value.replace(/[^0-9.]/g, ""))} />
@@ -683,9 +784,19 @@ function Step1Compensation({ onAdvance, onBack, onSkip }: { onAdvance: () => Pro
         <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 22, color: "#2C2C2C" }}>
           Total compensation: {usd(total)}
         </div>
+        {distTaxReserve > 0 ? (
+          <p style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#6B6259", marginTop: 6, lineHeight: 1.5 }}>
+            Includes {usd(distTaxReserve)} distribution tax reserve — the firm must generate{" "}
+            {usd(grossedUpDistributions)} so you can keep {usd(dist)} in distributions after tax.
+          </p>
+        ) : dist > 0 ? (
+          <p style={{ fontFamily: "Jost, sans-serif", fontSize: 11, color: "#7a5c1e", marginTop: 6, lineHeight: 1.5 }}>
+            Add your distribution tax rate above to reflect the firm&apos;s true cost obligation.
+          </p>
+        ) : null}
       </div>
       {err ? <div style={{ color: "#B23B3B", fontSize: 12, marginTop: 10 }}>{err}</div> : null}
-      <NavRow step={1} onBack={onBack} onSkip={onSkip} onNext={save} nextLabel={saving ? "Saving…" : "Save & continue →"} nextDisabled={saving} />
+      <NavRow step={2} onBack={onBack} onSkip={onSkip} onNext={save} nextLabel={saving ? "Saving…" : "Save & continue →"} nextDisabled={saving} />
     </>
   );
 }
@@ -760,7 +871,7 @@ function Step2Expenses({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
         + Add expense
       </button>
       <div style={{ fontSize: 13, fontWeight: 500, color: "#2C2C2C", marginTop: 12 }}>Annual expenses: {usd(total)}</div>
-      <NavRow step={2} onBack={onBack} onSkip={onSkip} onNext={save} nextLabel={saving ? "Saving…" : "Save & continue →"} nextDisabled={saving} />
+      <NavRow step={3} onBack={onBack} onSkip={onSkip} onNext={save} nextLabel={saving ? "Saving…" : "Save & continue →"} nextDisabled={saving} />
     </>
   );
 }
@@ -778,12 +889,19 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
   const qc = useQueryClient();
   const fetchDashDirect = useServerFn(getDashboardData);
 
-  // Load current comp+expenses via dashboard fetch to preview aligned rate
   const fetchDash = useServerFn(getDashboardData);
   const { data: dash } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetchDash() });
 
+  useEffect(() => {
+    const saved = normalizePricingStructure(
+      (dash?.config as { pricing_structure?: string } | undefined)?.pricing_structure,
+    );
+    if (saved) setPricingStructure(saved);
+  }, [dash?.config]);
+
+  // Load current comp+expenses via dashboard fetch to preview aligned rate
   const preview = useMemo(() => {
-    const h = Number(hrs) || 0;
+    const h = hrs === "" ? 0 : Number(hrs) || 0;
     const w = Number(weeks) || 0;
     const m = Number(margin) || 0;
     const cfg: any = dash?.config ?? {};
@@ -793,20 +911,31 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
       return s + (e.frequency === "monthly" ? a * 12 : e.frequency === "quarterly" ? a * 4 : a);
     }, 0);
     const totalCost = comp + exp;
-    if (!h || !w) return null;
-    const breakEven = totalCost / (h * w);
+    const teamWeekly = ((dash as any)?.capacity?.team ?? []).reduce(
+      (sum: number, member: any) => sum + memberProductiveHrsWeek(member),
+      0,
+    );
+    const effectiveWeekly = h + teamWeekly;
+    if (!w) return null;
+    if (effectiveWeekly <= 0) return { needsTeam: true as const, totalCost };
+    const breakEven = totalCost / (effectiveWeekly * w);
     const aligned = m < 100 ? breakEven / (1 - m / 100) : breakEven;
-    return { breakEven, aligned, totalCost };
+    return { breakEven, aligned, totalCost, needsTeam: false as const };
   }, [hrs, weeks, margin, dash]);
 
   const save = async () => {
     setErr(null);
+    if (hrs.trim() === "") {
+      setErr("Enter your client-work hours, or 0 if you don't do client work yourself.");
+      return;
+    }
     const h = Number(hrs);
     const w = Number(weeks);
     const r = Number(rate);
     const m = Number(margin);
-    if (!h || !w || !m) {
-      setErr("Billable hours, working weeks, and margin are required.");
+    const copy = getCapacitySetupCopy(pricingStructure);
+    if (!Number.isFinite(h) || h < 0 || !w || !m) {
+      setErr(copy.requiredFieldsError);
       return;
     }
     if (requiresBilledRate(pricingStructure) && !r) {
@@ -818,23 +947,23 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
       await upsert({
         data: {
           target_billable_hrs_per_week: h,
-          available_hrs_per_week: h,
+          available_hrs_per_week: h > 0 ? h : null,
           pricing_structure: pricingStructure,
           rate_billed: requiresBilledRate(pricingStructure) && r > 0 ? r : null,
           target_gross_margin_pct: m,
         },
       });
-      // Race condition fix: wait for aligned rate to recalculate before Step 5.
+      // Race condition fix: wait for config to persist before Step 5.
       setCalculating(true);
       const start = Date.now();
       while (Date.now() - start < 3000) {
         try {
           const fresh: any = await fetchDashDirect();
           const freshStructure = normalizePricingStructure(fresh?.config?.pricing_structure);
-          const hasCapacity = Number(fresh?.config?.target_billable_hrs_per_week) > 0;
           const hasRate =
-            freshStructure === "flat_fee" || Number(fresh?.config?.rate_billed) > 0;
-          if (hasCapacity && hasRate) break;
+            !requiresBilledRate(freshStructure) || Number(fresh?.config?.rate_billed) > 0;
+          const marginSaved = Number(fresh?.config?.target_gross_margin_pct) > 0;
+          if (marginSaved && hasRate) break;
         } catch { /* keep polling */ }
         await new Promise((r2) => setTimeout(r2, 300));
       }
@@ -848,17 +977,25 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
     }
   };
 
+  const capacityCopy = getCapacitySetupCopy(pricingStructure);
+
   return (
     <>
-      <h2 style={titleStyle}>How many hours do you bill?</h2>
-      <p style={bodyStyle}>
-        Your costs are divided across your billable hours — this is the key number most designers overlook. Enter your capacity and watch your aligned rate appear in real time below.
-      </p>
+      <h2 style={titleStyle}>{capacityCopy.stepTitle}</h2>
+      <p style={bodyStyle}>{capacityCopy.stepBody}</p>
+      <PricingStructureSelector
+        value={pricingStructure}
+        onChange={(nextStructure) => {
+          setPricingStructure(nextStructure);
+          if (!requiresBilledRate(nextStructure)) setRate("");
+        }}
+        className="mb-4"
+      />
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" }}>
         <div>
-          <label style={labelStyle}>Target billable hrs/week</label>
-          <input style={inputStyle} inputMode="numeric" placeholder="25" value={hrs} onChange={(e) => setHrs(e.target.value.replace(/[^0-9.]/g, ""))} />
-          <div style={helperStyle}>Hours billed to clients each week</div>
+          <label style={labelStyle}>{capacityCopy.hrsPerWeekLabel}</label>
+          <input style={inputStyle} inputMode="numeric" placeholder="0 if none" value={hrs} onChange={(e) => setHrs(e.target.value.replace(/[^0-9.]/g, ""))} />
+          <div style={helperStyle}>{capacityCopy.hrsPerWeekHelper}</div>
         </div>
         <div>
           <label style={labelStyle}>Working weeks per year</label>
@@ -868,17 +1005,12 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
         <div>
           <label style={labelStyle}>Target profit margin</label>
           <input style={inputStyle} inputMode="numeric" value={margin} onChange={(e) => setMargin(e.target.value.replace(/[^0-9.]/g, ""))} />
-          <div style={helperStyle}>Profit % on each dollar billed</div>
+          <div style={helperStyle}>{capacityCopy.marginHelper}</div>
         </div>
       </div>
-      <PricingStructureSelector
-        value={pricingStructure}
-        onChange={(nextStructure) => {
-          setPricingStructure(nextStructure);
-          if (!requiresBilledRate(nextStructure)) setRate("");
-        }}
-        className="mt-4"
-      />
+      <p style={{ ...helperStyle, marginTop: 4, lineHeight: 1.55, color: "#6B6259" }}>
+        {capacityCopy.teamNote}
+      </p>
       {requiresBilledRate(pricingStructure) ? (
         <div style={{ marginTop: 14 }}>
           <label style={labelStyle}>Your current billed rate *</label>
@@ -887,24 +1019,28 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
         </div>
       ) : null}
       <div style={{ background: "rgba(184,134,11,0.07)", border: "0.5px solid rgba(184,134,11,0.2)", borderRadius: 6, padding: "12px 14px", marginTop: 16 }}>
-        {preview && preview.totalCost > 0 ? (
+        {preview && preview.totalCost > 0 && !preview.needsTeam ? (
           <>
             <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 26, color: "#B8860B" }}>
               Aligned rate: {usd(preview.aligned)}/hr
             </div>
             <div style={{ fontSize: 13, color: "#8A7F75", marginTop: 4 }}>
-              Break-even: {usd(preview.breakEven)}/hr — the minimum before profit
+              Break-even: {usd(preview.breakEven)}/hr — {capacityCopy.breakEvenSuffix}
             </div>
           </>
+        ) : preview?.needsTeam ? (
+          <div style={{ fontSize: 12, color: "#7a5c1e", lineHeight: 1.55 }}>
+            {capacityCopy.previewNeedsTeam}
+          </div>
         ) : (
           <div style={{ fontSize: 12, color: "#8A7F75" }}>
-            Complete compensation and expenses above to see your rate.
+            {capacityCopy.previewEmpty}
           </div>
         )}
       </div>
       {err ? <div style={{ color: "#B23B3B", fontSize: 12, marginTop: 10 }}>{err}</div> : null}
       <NavRow
-        step={3}
+        step={4}
         onBack={onBack}
         onSkip={onSkip}
         onNext={save}
@@ -917,24 +1053,48 @@ function Step3Capacity({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise
 
 function Step4Team({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise<void>; onBack: () => void; onSkip: () => void }) {
   const [mode, setMode] = useState<"choose" | "add">("choose");
+  const fetchDash = useServerFn(getDashboardData);
+  const { data: dash } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetchDash() });
+  const principalHrs = Number((dash?.config as { target_billable_hrs_per_week?: number } | undefined)?.target_billable_hrs_per_week) || 0;
+  const ownerDoesNoClientWork = principalHrs <= 0;
 
   if (mode === "choose") {
     return (
       <>
         <h2 style={titleStyle}>Do you have a team?</h2>
         <p style={bodyStyle}>
-          Team members add to your cost floor and your billable capacity. Add them now or skip — you can always come back in Settings.
+          {ownerDoesNoClientWork
+            ? "You entered 0 client-work hours for yourself — your team's hours will drive your aligned rate. Add each person who delivers client work, with their weekly hours, in Settings after the tour."
+            : "Team members add to your cost floor and your billable capacity. Add them now or skip — you can always come back in Settings."}
         </p>
+        {ownerDoesNoClientWork ? (
+          <div
+            style={{
+              background: "rgba(184,134,11,0.08)",
+              border: "0.5px solid rgba(184,134,11,0.22)",
+              borderRadius: 6,
+              padding: "12px 14px",
+              marginBottom: 10,
+              fontSize: 12,
+              color: "#7a5c1e",
+              lineHeight: 1.55,
+            }}
+          >
+            Without team hours configured, your aligned rate cannot be calculated — the firm still has a cost floor, but no delivery hours to spread it across.
+          </div>
+        ) : null}
         <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
           <button type="button" onClick={onAdvance} style={{ ...ghostBtn, padding: 14, width: "100%" }}>
-            I work solo for now
-            <div style={{ fontSize: 11, color: "#8A7F75", marginTop: 4, fontWeight: 400 }}>Skip this step</div>
+            {ownerDoesNoClientWork ? "I'll add team hours in Settings" : "I work solo for now"}
+            <div style={{ fontSize: 11, color: "#8A7F75", marginTop: 4, fontWeight: 400 }}>
+              {ownerDoesNoClientWork ? "Continue the tour — add team capacity before relying on your rate" : "Skip this step"}
+            </div>
           </button>
           <button type="button" onClick={() => setMode("add")} style={{ ...primaryBtn, padding: 14, width: "100%" }}>
             Add a team member
           </button>
         </div>
-        <NavRow step={4} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Save & continue →" />
+        <NavRow step={5} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Save & continue →" />
       </>
     );
   }
@@ -948,22 +1108,54 @@ function Step4Team({ onAdvance, onBack, onSkip }: { onAdvance: () => Promise<voi
       <button type="button" onClick={() => setMode("choose")} style={{ ...ghostBtn, marginBottom: 6 }}>
         ← Back to options
       </button>
-      <NavRow step={4} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Save & continue →" />
+      <NavRow step={5} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Save & continue →" />
     </>
   );
 }
 
 function Step5RateOrientation({ onAdvance, onSkip, onBack }: { onAdvance: () => Promise<void>; onSkip: () => void; onBack: () => void }) {
+  const fetchDash = useServerFn(getDashboardData);
+  const { data: dash } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetchDash() });
+  const orientationCopy = getAlignedRateOrientationCopy(
+    normalizePricingStructure((dash?.config as { pricing_structure?: string } | undefined)?.pricing_structure),
+  );
+
+  useEffect(() => {
+    const el = document.querySelector('[data-tour="rate-panel"]');
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   return (
     <>
       <h2 style={titleStyle}>This is your aligned rate.</h2>
-      <p style={bodyStyle}>
-        Built from your compensation, expenses, team costs, and billable hours — this is the minimum your firm needs to charge per hour to cover costs and hit your margin target.{"\n\n"}The gap between this number and your billed rate is what Sightline tracks.
+      <p style={bodyStyle}>{orientationCopy.body}</p>
+      <p style={{ fontSize: 12, color: "#8A7F75", fontStyle: "italic", marginBottom: 10 }}>
+        Behind this modal, your dashboard shows the rate panel. Click any ⓘ icon there to see how each cost layer contributes.
       </p>
-      <p style={{ fontSize: 12, color: "#8A7F75", fontStyle: "italic", marginBottom: 4 }}>
-        Click any ⓘ icon on the rate panel to see how each layer contributes.
-      </p>
-      <NavRow step={5} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Next →" />
+      <div
+        style={{
+          background: "rgba(92,138,110,0.06)",
+          border: "0.5px solid rgba(92,138,110,0.18)",
+          borderRadius: 8,
+          padding: "12px 14px",
+          marginBottom: 8,
+        }}
+      >
+        <p style={{ fontSize: 11, fontWeight: 500, color: "#8A7F75", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+          Where to work in Sightline
+        </p>
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {SIGHTLINE_FEATURES.map((f) => (
+            <li key={f.title} style={{ padding: "5px 0", borderBottom: "0.5px solid rgba(44,44,44,0.06)" }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "#2C2C2C" }}>{f.title}</span>
+              <span style={{ display: "block", fontSize: 11, color: "#6B6259", marginTop: 2, lineHeight: 1.45 }}>
+                {f.description}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <NavRow step={6} onBack={onBack} onSkip={onSkip} onNext={onAdvance} nextLabel="Next →" />
     </>
   );
 }
@@ -1362,7 +1554,7 @@ function Step7TimeEntry({
 /* ─────────────────────────── Resume Prompt ─────────────────────────── */
 
 function ResumePrompt({ onClick, step }: { onClick: () => void; step: number }) {
-  const next = Math.min(7, step + 1);
+  const next = Math.min(TOUR_STEP_COUNT, step + 1);
   return (
     <button
       type="button"
@@ -1461,7 +1653,7 @@ function CompletionBanner({ onDismiss }: { onDismiss: () => void | Promise<void>
         <div>
           <div style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontSize: 18, color: "#2C2C2C" }}>You're all set.</div>
           <div style={{ fontSize: 13, color: "#6B6259", marginTop: 2, lineHeight: 1.5 }}>
-            Your aligned rate is live — add projects and log time to start tracking profitability.
+            Setup is complete. Your aligned rate is live — use Sightline, Time, and Capacity to track profitability as you work.
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { isValidImportDate } from "./parsers";
+import {
+  logMarginImpactForProjectHoursChange,
+  sumProjectHours,
+} from "@/lib/project-margin-audit.server";
 import type {
   ImportResult,
   ImportSource,
@@ -338,11 +342,24 @@ export async function importResolvedEntries(
   if (logError || !log) throw new Error(logError?.message ?? "Failed to create import log");
   const importLogId = log.id;
 
+  const hoursBeforeByProject = new Map<string, number>();
+  const candidateProjectIds = new Set<string>();
+  for (const entry of entries) {
+    const row = buildImportableRow(entry, firmId, userId, source, importLogId);
+    if (row?.project_id) candidateProjectIds.add(row.project_id);
+  }
+  await Promise.all(
+    [...candidateProjectIds].map(async (projectId) => {
+      hoursBeforeByProject.set(projectId, await sumProjectHours(supabase, projectId));
+    }),
+  );
+
   let imported = 0;
   let skipped = 0;
   let errored = 0;
   const skipped_detail: SkippedDetailRow[] = [];
   const importedDates: string[] = [];
+  const importedProjectIds = new Set<string>();
 
   for (const entry of entries) {
     if (entry.status === "error") {
@@ -369,6 +386,7 @@ export async function importResolvedEntries(
       await insertImportedEntry(supabase, row);
       imported++;
       importedDates.push(entry.date);
+      if (row.project_id) importedProjectIds.add(row.project_id);
     } catch (e) {
       errored++;
       skipped_detail.push({
@@ -393,6 +411,19 @@ export async function importResolvedEntries(
     .eq("id", importLogId);
 
   if (updateError) throw new Error(updateError.message);
+
+  for (const projectId of importedProjectIds) {
+    const hoursBefore = hoursBeforeByProject.get(projectId);
+    if (hoursBefore === undefined) continue;
+    await logMarginImpactForProjectHoursChange({
+      supabase,
+      projectId,
+      firmId,
+      userId,
+      hoursBefore,
+      note: `Time import from ${source}`,
+    });
+  }
 
   return {
     imported,

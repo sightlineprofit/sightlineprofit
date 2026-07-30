@@ -380,11 +380,16 @@ export type Database = {
       firm_config: {
         Row: {
           accounting_basis: string
+          accepting_new_clients: boolean
+          accepting_new_clients_until: string | null
           actual_billed_rate: number | null
           aligned_rate_at_signup: number | null
           available_hrs_per_week: number | null
           business_structure: string | null
+          capacity_ceiling_hrs_per_week: number | null
+          capacity_blocks_onboarded: boolean
           capacity_constrained_indicator: string
+          capacity_view_horizon: string
           comp_distribution_annual: number | null
           comp_draw_annual: number | null
           comp_health_annual: number | null
@@ -394,21 +399,28 @@ export type Database = {
           comp_retire_annual: number | null
           firm_id: string
           growth_signals: Json
+          maternity_leave_savings_per_month: number | null
           planned_activity_allocation: Json
           pricing_structure: string
           rate_billed: number | null
           rate_insight_shown: boolean
           target_billable_hrs_per_week: number | null
           target_gross_margin_pct: number | null
+          target_utilization_pct: number | null
           updated_at: string
         }
         Insert: {
           accounting_basis?: string
+          accepting_new_clients?: boolean
+          accepting_new_clients_until?: string | null
           actual_billed_rate?: number | null
           aligned_rate_at_signup?: number | null
           available_hrs_per_week?: number | null
           business_structure?: string | null
+          capacity_ceiling_hrs_per_week?: number | null
+          capacity_blocks_onboarded?: boolean
           capacity_constrained_indicator?: string
+          capacity_view_horizon?: string
           comp_distribution_annual?: number | null
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
@@ -418,21 +430,28 @@ export type Database = {
           comp_retire_annual?: number | null
           firm_id: string
           growth_signals?: Json
+          maternity_leave_savings_per_month?: number | null
           planned_activity_allocation?: Json
           pricing_structure?: string
           rate_billed?: number | null
           rate_insight_shown?: boolean
           target_billable_hrs_per_week?: number | null
           target_gross_margin_pct?: number | null
+          target_utilization_pct?: number | null
           updated_at?: string
         }
         Update: {
           accounting_basis?: string
+          accepting_new_clients?: boolean
+          accepting_new_clients_until?: string | null
           actual_billed_rate?: number | null
           aligned_rate_at_signup?: number | null
           available_hrs_per_week?: number | null
           business_structure?: string | null
+          capacity_ceiling_hrs_per_week?: number | null
+          capacity_blocks_onboarded?: boolean
           capacity_constrained_indicator?: string
+          capacity_view_horizon?: string
           comp_distribution_annual?: number | null
           comp_draw_annual?: number | null
           comp_health_annual?: number | null
@@ -442,12 +461,14 @@ export type Database = {
           comp_retire_annual?: number | null
           firm_id?: string
           growth_signals?: Json
+          maternity_leave_savings_per_month?: number | null
           planned_activity_allocation?: Json
           pricing_structure?: string
           rate_billed?: number | null
           rate_insight_shown?: boolean
           target_billable_hrs_per_week?: number | null
           target_gross_margin_pct?: number | null
+          target_utilization_pct?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -456,6 +477,157 @@ export type Database = {
             columns: ["firm_id"]
             isOneToOne: true
             referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      firm_config_team_safe: {
+        Row: {
+          accepting_new_clients: boolean
+          accepting_new_clients_until: string | null
+          capacity_blocks_onboarded: boolean
+          capacity_view_horizon: string
+          firm_id: string
+          target_billable_hrs_per_week: number | null
+        }
+        Insert: {
+          accepting_new_clients?: boolean
+          accepting_new_clients_until?: string | null
+          capacity_blocks_onboarded?: boolean
+          capacity_view_horizon?: string
+          firm_id: string
+          target_billable_hrs_per_week?: number | null
+        }
+        Update: {
+          accepting_new_clients?: boolean
+          accepting_new_clients_until?: string | null
+          capacity_blocks_onboarded?: boolean
+          capacity_view_horizon?: string
+          firm_id?: string
+          target_billable_hrs_per_week?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_config_team_safe_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firm_config"
+            referencedColumns: ["firm_id"]
+          },
+        ]
+      }
+      firm_life_events: {
+        Row: {
+          block_type: string
+          capacity_pct: number
+          created_at: string
+          default_capacity_pct: number | null
+          end_date: string
+          event_type: string
+          firm_id: string
+          firm_member_id: string | null
+          id: string
+          is_recurring: boolean
+          name: string
+          notes: string | null
+          recurs_annually: boolean
+          start_date: string
+          updated_at: string
+          weekly_hours_blocked: number | null
+          scheduling_only: boolean
+        }
+        Insert: {
+          block_type?: string
+          capacity_pct?: number
+          created_at?: string
+          default_capacity_pct?: number | null
+          end_date: string
+          event_type: string
+          firm_id: string
+          firm_member_id?: string | null
+          id?: string
+          is_recurring?: boolean
+          name: string
+          notes?: string | null
+          recurs_annually?: boolean
+          start_date: string
+          updated_at?: string
+          weekly_hours_blocked?: number | null
+          scheduling_only?: boolean
+        }
+        Update: {
+          block_type?: string
+          capacity_pct?: number
+          created_at?: string
+          default_capacity_pct?: number | null
+          end_date?: string
+          event_type?: string
+          firm_id?: string
+          firm_member_id?: string | null
+          id?: string
+          is_recurring?: boolean
+          name?: string
+          notes?: string | null
+          recurs_annually?: boolean
+          start_date?: string
+          updated_at?: string
+          weekly_hours_blocked?: number | null
+          scheduling_only?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_life_events_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_exceptions: {
+        Row: {
+          capacity_pct: number
+          created_at: string
+          firm_id: string
+          id: string
+          label: string | null
+          life_event_id: string
+          notes: string | null
+          week_start: string
+        }
+        Insert: {
+          capacity_pct: number
+          created_at?: string
+          firm_id: string
+          id?: string
+          label?: string | null
+          life_event_id: string
+          notes?: string | null
+          week_start: string
+        }
+        Update: {
+          capacity_pct?: number
+          created_at?: string
+          firm_id?: string
+          id?: string
+          label?: string | null
+          life_event_id?: string
+          notes?: string | null
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_exceptions_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_exceptions_life_event_id_fkey"
+            columns: ["life_event_id"]
+            isOneToOne: false
+            referencedRelation: "firm_life_events"
             referencedColumns: ["id"]
           },
         ]
@@ -484,6 +656,7 @@ export type Database = {
           name: string
           notes: string | null
           other_annual_costs: number | null
+          productive_hrs_per_week: number | null
           profile_id: string | null
           role_type: string
           updated_at: string
@@ -512,6 +685,7 @@ export type Database = {
           name: string
           notes?: string | null
           other_annual_costs?: number | null
+          productive_hrs_per_week?: number | null
           profile_id?: string | null
           role_type: string
           updated_at?: string
@@ -540,6 +714,7 @@ export type Database = {
           name?: string
           notes?: string | null
           other_annual_costs?: number | null
+          productive_hrs_per_week?: number | null
           profile_id?: string | null
           role_type?: string
           updated_at?: string
@@ -562,33 +737,273 @@ export type Database = {
           },
         ]
       }
+      firm_resources: {
+        Row: {
+          content: string | null
+          created_at: string
+          file_name: string | null
+          file_path: string | null
+          firm_id: string
+          id: string
+          is_active: boolean
+          name: string
+          resource_type: string
+          sort_order: number
+          subject_line: string | null
+          tags: string[] | null
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          firm_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          resource_type: string
+          sort_order?: number
+          subject_line?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          firm_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          resource_type?: string
+          sort_order?: number
+          subject_line?: string | null
+          tags?: string[] | null
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_resources_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      firm_goals: {
+        Row: {
+          id: string
+          firm_id: string
+          name: string
+          category: string
+          timeframe: string
+          target_date: string | null
+          target_value: number | null
+          target_unit: string | null
+          status: string
+          linked_metric: string | null
+          sort_order: number
+          notes: string | null
+          achieved_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          firm_id: string
+          name: string
+          category?: string
+          timeframe?: string
+          target_date?: string | null
+          target_value?: number | null
+          target_unit?: string | null
+          status?: string
+          linked_metric?: string | null
+          sort_order?: number
+          notes?: string | null
+          achieved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          firm_id?: string
+          name?: string
+          category?: string
+          timeframe?: string
+          target_date?: string | null
+          target_value?: number | null
+          target_unit?: string | null
+          status?: string
+          linked_metric?: string | null
+          sort_order?: number
+          notes?: string | null
+          achieved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_goals_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      firm_milestones: {
+        Row: {
+          id: string
+          firm_id: string
+          name: string
+          target_date: string | null
+          milestone_type: string
+          status: string
+          detail: string | null
+          linked_goal_id: string | null
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          firm_id: string
+          name: string
+          target_date?: string | null
+          milestone_type?: string
+          status?: string
+          detail?: string | null
+          linked_goal_id?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          firm_id?: string
+          name?: string
+          target_date?: string | null
+          milestone_type?: string
+          status?: string
+          detail?: string | null
+          linked_goal_id?: string | null
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_milestones_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "firm_milestones_linked_goal_id_fkey"
+            columns: ["linked_goal_id"]
+            isOneToOne: false
+            referencedRelation: "firm_goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      firm_vision: {
+        Row: {
+          id: string
+          firm_id: string
+          anchor_statement: string | null
+          quarterly_focus_word: string | null
+          quarterly_focus_quarter: string | null
+          quarterly_review_note: string | null
+          pinterest_access_token: string | null
+          pinterest_refresh_token: string | null
+          pinterest_connected_at: string | null
+          selected_board_ids: string[] | null
+          uploaded_image_urls: string[] | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          firm_id: string
+          anchor_statement?: string | null
+          quarterly_focus_word?: string | null
+          quarterly_focus_quarter?: string | null
+          quarterly_review_note?: string | null
+          pinterest_access_token?: string | null
+          pinterest_refresh_token?: string | null
+          pinterest_connected_at?: string | null
+          selected_board_ids?: string[] | null
+          uploaded_image_urls?: string[] | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          firm_id?: string
+          anchor_statement?: string | null
+          quarterly_focus_word?: string | null
+          quarterly_focus_quarter?: string | null
+          quarterly_review_note?: string | null
+          pinterest_access_token?: string | null
+          pinterest_refresh_token?: string | null
+          pinterest_connected_at?: string | null
+          selected_board_ids?: string[] | null
+          uploaded_image_urls?: string[] | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "firm_vision_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: true
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       firm_preferences: {
         Row: {
+          aligned_rate_at_last_review: number | null
           created_at: string
           firm_id: string
+          last_cost_review_date: string | null
           tour_completed: boolean
           tour_skipped_at: string | null
           tour_step: number
           updated_at: string
           welcome_banner_dismissed: boolean
+          dashboard_primary_view: string
         }
         Insert: {
+          aligned_rate_at_last_review?: number | null
           created_at?: string
           firm_id: string
+          last_cost_review_date?: string | null
           tour_completed?: boolean
           tour_skipped_at?: string | null
           tour_step?: number
           updated_at?: string
           welcome_banner_dismissed?: boolean
+          dashboard_primary_view?: string
         }
         Update: {
+          aligned_rate_at_last_review?: number | null
           created_at?: string
           firm_id?: string
+          last_cost_review_date?: string | null
           tour_completed?: boolean
           tour_skipped_at?: string | null
           tour_step?: number
           updated_at?: string
           welcome_banner_dismissed?: boolean
+          dashboard_primary_view?: string
         }
         Relationships: [
           {
@@ -942,6 +1357,7 @@ export type Database = {
           compensation_notes: string | null
           created_at: string
           distribution_annual: number | null
+          distribution_tax_rate: number | null
           employee_payroll_tax_pct: number | null
           firm_id: string
           health_insurance_annual: number | null
@@ -958,6 +1374,7 @@ export type Database = {
           compensation_notes?: string | null
           created_at?: string
           distribution_annual?: number | null
+          distribution_tax_rate?: number | null
           employee_payroll_tax_pct?: number | null
           firm_id: string
           health_insurance_annual?: number | null
@@ -974,6 +1391,7 @@ export type Database = {
           compensation_notes?: string | null
           created_at?: string
           distribution_annual?: number | null
+          distribution_tax_rate?: number | null
           employee_payroll_tax_pct?: number | null
           firm_id?: string
           health_insurance_annual?: number | null
@@ -1192,16 +1610,31 @@ export type Database = {
       }
       project_assignments: {
         Row: {
+          id: string
           project_id: string
-          user_id: string
+          firm_id: string
+          assignee_id: string
+          assigned_by: string | null
+          assigned_at: string
+          role_on_project: string | null
         }
         Insert: {
+          id?: string
           project_id: string
-          user_id: string
+          firm_id: string
+          assignee_id: string
+          assigned_by?: string | null
+          assigned_at?: string
+          role_on_project?: string | null
         }
         Update: {
+          id?: string
           project_id?: string
-          user_id?: string
+          firm_id?: string
+          assignee_id?: string
+          assigned_by?: string | null
+          assigned_at?: string
+          role_on_project?: string | null
         }
         Relationships: [
           {
@@ -1212,8 +1645,22 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "project_assignments_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "project_assignments_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_assignments_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "firm_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1229,6 +1676,8 @@ export type Database = {
           comp_per_hour: number
           cost_basis_method: string
           created_at: string
+          distribution_tax_rate: number | null
+          distribution_tax_reserve: number
           firm_id: string
           id: string
           is_retroactive: boolean
@@ -1253,6 +1702,8 @@ export type Database = {
           comp_per_hour: number
           cost_basis_method?: string
           created_at?: string
+          distribution_tax_rate?: number | null
+          distribution_tax_reserve?: number
           firm_id: string
           id?: string
           is_retroactive?: boolean
@@ -1277,6 +1728,8 @@ export type Database = {
           comp_per_hour?: number
           cost_basis_method?: string
           created_at?: string
+          distribution_tax_rate?: number | null
+          distribution_tax_reserve?: number
           firm_id?: string
           id?: string
           is_retroactive?: boolean
@@ -1398,18 +1851,25 @@ export type Database = {
         Row: {
           actual_hrs: number
           billable: boolean
+          description: string | null
+          estimated_hrs: number | null
           expected_hrs: number
+          firm_id: string | null
           id: string
           name: string
           phase_over_scope: boolean
           project_id: string
+          project_workflow_attachment_id: string | null
           sop_phase_id: string | null
           sort_order: number
         }
         Insert: {
           actual_hrs?: number
           billable?: boolean
+          description?: string | null
+          estimated_hrs?: number | null
           expected_hrs?: number
+          firm_id?: string | null
           id?: string
           name: string
           phase_over_scope?: boolean
@@ -1420,7 +1880,10 @@ export type Database = {
         Update: {
           actual_hrs?: number
           billable?: boolean
+          description?: string | null
+          estimated_hrs?: number | null
           expected_hrs?: number
+          firm_id?: string | null
           id?: string
           name?: string
           phase_over_scope?: boolean
@@ -1448,39 +1911,78 @@ export type Database = {
       project_steps: {
         Row: {
           actual_hrs: number
+          assigned_role: string | null
+          assigned_role_label: string | null
+          completed_at: string | null
+          completed_by: string | null
+          completion_criteria: string | null
           created_at: string
           description: string
           estimated_hrs: number
+          firm_id: string | null
           id: string
+          is_billable: boolean | null
           is_custom: boolean
+          name: string | null
+          notes: string | null
+          project_id: string | null
           project_phase_id: string
           sop_step_id: string | null
           sort_order: number
+          steps: Json | null
           template_estimated_hrs: number | null
+          trigger_description: string | null
+          updated_at: string | null
         }
         Insert: {
           actual_hrs?: number
+          assigned_role?: string | null
+          assigned_role_label?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          completion_criteria?: string | null
           created_at?: string
           description: string
           estimated_hrs?: number
+          firm_id?: string | null
           id?: string
+          is_billable?: boolean | null
           is_custom?: boolean
+          name?: string | null
+          notes?: string | null
+          project_id?: string | null
           project_phase_id: string
           sop_step_id?: string | null
           sort_order?: number
+          steps?: Json | null
           template_estimated_hrs?: number | null
+          trigger_description?: string | null
+          updated_at?: string | null
         }
         Update: {
           actual_hrs?: number
+          assigned_role?: string | null
+          assigned_role_label?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          completion_criteria?: string | null
           created_at?: string
           description?: string
           estimated_hrs?: number
+          firm_id?: string | null
           id?: string
+          is_billable?: boolean | null
           is_custom?: boolean
+          name?: string | null
+          notes?: string | null
+          project_id?: string | null
           project_phase_id?: string
           sop_step_id?: string | null
           sort_order?: number
+          steps?: Json | null
           template_estimated_hrs?: number | null
+          trigger_description?: string | null
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -1547,10 +2049,54 @@ export type Database = {
           },
         ]
       }
+      project_step_resources: {
+        Row: {
+          created_at: string
+          firm_id: string
+          id: string
+          project_step_id: string
+          resource_id: string
+        }
+        Insert: {
+          created_at?: string
+          firm_id: string
+          id?: string
+          project_step_id: string
+          resource_id: string
+        }
+        Update: {
+          created_at?: string
+          firm_id?: string
+          id?: string
+          project_step_id?: string
+          resource_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_step_resources_project_step_id_fkey"
+            columns: ["project_step_id"]
+            isOneToOne: false
+            referencedRelation: "project_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_step_resources_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "firm_resources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
+          archived_at: string | null
+          client_email: string | null
           client_name: string | null
+          client_phone: string | null
+          client_preferred_communication: string | null
           created_at: string
+          deleted_at: string | null
           end_date: string | null
           est_weekly_hrs: number | null
           firm_id: string
@@ -1560,7 +2106,15 @@ export type Database = {
           id: string
           last_confirmed_at: string | null
           name: string
+          payment_collected: number | null
+          payment_collected_date: string | null
+          payment_notes: string | null
+          payment_status: string
           pricing_method: string
+          retainer_duration_months: number | null
+          retainer_monthly_amount: number | null
+          monthly_retainer_fee: number | null
+          retainer_start_date: string | null
           scoped_hrs: number | null
           scoped_rate: number | null
           sop_template_id: string | null
@@ -1568,8 +2122,13 @@ export type Database = {
           status: Database["public"]["Enums"]["project_status"]
         }
         Insert: {
+          archived_at?: string | null
+          client_email?: string | null
           client_name?: string | null
+          client_phone?: string | null
+          client_preferred_communication?: string | null
           created_at?: string
+          deleted_at?: string | null
           end_date?: string | null
           est_weekly_hrs?: number | null
           firm_id: string
@@ -1579,7 +2138,15 @@ export type Database = {
           id?: string
           last_confirmed_at?: string | null
           name: string
+          payment_collected?: number | null
+          payment_collected_date?: string | null
+          payment_notes?: string | null
+          payment_status?: string
           pricing_method?: string
+          retainer_duration_months?: number | null
+          retainer_monthly_amount?: number | null
+          monthly_retainer_fee?: number | null
+          retainer_start_date?: string | null
           scoped_hrs?: number | null
           scoped_rate?: number | null
           sop_template_id?: string | null
@@ -1587,8 +2154,13 @@ export type Database = {
           status?: Database["public"]["Enums"]["project_status"]
         }
         Update: {
+          archived_at?: string | null
+          client_email?: string | null
           client_name?: string | null
+          client_phone?: string | null
+          client_preferred_communication?: string | null
           created_at?: string
+          deleted_at?: string | null
           end_date?: string | null
           est_weekly_hrs?: number | null
           firm_id?: string
@@ -1598,7 +2170,15 @@ export type Database = {
           id?: string
           last_confirmed_at?: string | null
           name?: string
+          payment_collected?: number | null
+          payment_collected_date?: string | null
+          payment_notes?: string | null
+          payment_status?: string
           pricing_method?: string
+          retainer_duration_months?: number | null
+          retainer_monthly_amount?: number | null
+          monthly_retainer_fee?: number | null
+          retainer_start_date?: string | null
           scoped_hrs?: number | null
           scoped_rate?: number | null
           sop_template_id?: string | null
@@ -1656,6 +2236,7 @@ export type Database = {
         Row: {
           billable: boolean
           description: string | null
+          estimated_hrs: number | null
           expected_hrs: number
           firm_id: string
           id: string
@@ -1667,6 +2248,7 @@ export type Database = {
         Insert: {
           billable?: boolean
           description?: string | null
+          estimated_hrs?: number | null
           expected_hrs?: number
           firm_id: string
           id?: string
@@ -1678,6 +2260,7 @@ export type Database = {
         Update: {
           billable?: boolean
           description?: string | null
+          estimated_hrs?: number | null
           expected_hrs?: number
           firm_id?: string
           id?: string
@@ -1705,25 +2288,55 @@ export type Database = {
       }
       sop_steps: {
         Row: {
+          assigned_role: string
+          assigned_role_label: string | null
+          completion_criteria: string | null
+          created_at: string
           description: string
           estimated_hrs: number
           id: string
+          is_billable: boolean
+          name: string | null
+          notes: string | null
           phase_id: string
           sort_order: number
+          steps: Json | null
+          trigger_description: string | null
+          updated_at: string
         }
         Insert: {
+          assigned_role?: string
+          assigned_role_label?: string | null
+          completion_criteria?: string | null
+          created_at?: string
           description: string
           estimated_hrs?: number
           id?: string
+          is_billable?: boolean
+          name?: string | null
+          notes?: string | null
           phase_id: string
           sort_order?: number
+          steps?: Json | null
+          trigger_description?: string | null
+          updated_at?: string
         }
         Update: {
+          assigned_role?: string
+          assigned_role_label?: string | null
+          completion_criteria?: string | null
+          created_at?: string
           description?: string
           estimated_hrs?: number
           id?: string
+          is_billable?: boolean
+          name?: string | null
+          notes?: string | null
           phase_id?: string
           sort_order?: number
+          steps?: Json | null
+          trigger_description?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -1783,6 +2396,45 @@ export type Database = {
           },
         ]
       }
+      sop_step_resources: {
+        Row: {
+          created_at: string
+          firm_id: string
+          id: string
+          resource_id: string
+          sop_step_id: string
+        }
+        Insert: {
+          created_at?: string
+          firm_id: string
+          id?: string
+          resource_id: string
+          sop_step_id: string
+        }
+        Update: {
+          created_at?: string
+          firm_id?: string
+          id?: string
+          resource_id?: string
+          sop_step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sop_step_resources_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "firm_resources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sop_step_resources_sop_step_id_fkey"
+            columns: ["sop_step_id"]
+            isOneToOne: false
+            referencedRelation: "sop_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sop_templates: {
         Row: {
           category: string | null
@@ -1792,13 +2444,18 @@ export type Database = {
           department: string | null
           description: string | null
           done_when: string | null
+          estimated_total_hrs: number | null
           firm_id: string
+          icon: string | null
           id: string
+          is_active: boolean
           is_default: boolean
           name: string
           scope_risk_level: Database["public"]["Enums"]["scope_risk"] | null
           tags: string[] | null
           triggered_by: string | null
+          updated_at: string
+          workflow_type: string
         }
         Insert: {
           category?: string | null
@@ -1808,13 +2465,18 @@ export type Database = {
           department?: string | null
           description?: string | null
           done_when?: string | null
+          estimated_total_hrs?: number | null
           firm_id: string
+          icon?: string | null
           id?: string
+          is_active?: boolean
           is_default?: boolean
           name: string
           scope_risk_level?: Database["public"]["Enums"]["scope_risk"] | null
           tags?: string[] | null
           triggered_by?: string | null
+          updated_at?: string
+          workflow_type?: string
         }
         Update: {
           category?: string | null
@@ -1824,13 +2486,18 @@ export type Database = {
           department?: string | null
           description?: string | null
           done_when?: string | null
+          estimated_total_hrs?: number | null
           firm_id?: string
+          icon?: string | null
           id?: string
+          is_active?: boolean
           is_default?: boolean
           name?: string
           scope_risk_level?: Database["public"]["Enums"]["scope_risk"] | null
           tags?: string[] | null
           triggered_by?: string | null
+          updated_at?: string
+          workflow_type?: string
         }
         Relationships: [
           {
@@ -1946,6 +2613,156 @@ export type Database = {
           },
         ]
       }
+      calendar_connections: {
+        Row: {
+          access_token: string
+          account_email: string | null
+          calendar_id: string
+          created_at: string
+          firm_id: string
+          id: string
+          last_synced_at: string | null
+          provider: string
+          refresh_token: string | null
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          account_email?: string | null
+          calendar_id?: string
+          created_at?: string
+          firm_id: string
+          id?: string
+          last_synced_at?: string | null
+          provider: string
+          refresh_token?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          account_email?: string | null
+          calendar_id?: string
+          created_at?: string
+          firm_id?: string
+          id?: string
+          last_synced_at?: string | null
+          provider?: string
+          refresh_token?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_connections_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_events: {
+        Row: {
+          all_day: boolean
+          connection_id: string
+          description: string | null
+          end_at: string
+          external_id: string
+          firm_id: string
+          id: string
+          linked_time_entry_id: string | null
+          location: string | null
+          raw: Json | null
+          start_at: string
+          synced_at: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          all_day?: boolean
+          connection_id: string
+          description?: string | null
+          end_at: string
+          external_id: string
+          firm_id: string
+          id?: string
+          linked_time_entry_id?: string | null
+          location?: string | null
+          raw?: Json | null
+          start_at: string
+          synced_at?: string
+          title?: string
+          user_id: string
+        }
+        Update: {
+          all_day?: boolean
+          connection_id?: string
+          description?: string | null
+          end_at?: string
+          external_id?: string
+          firm_id?: string
+          id?: string
+          linked_time_entry_id?: string | null
+          location?: string | null
+          raw?: Json | null
+          start_at?: string
+          synced_at?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_events_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_firm_id_fkey"
+            columns: ["firm_id"]
+            isOneToOne: false
+            referencedRelation: "firms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_events_linked_time_entry_id_fkey"
+            columns: ["linked_time_entry_id"]
+            isOneToOne: false
+            referencedRelation: "time_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_oauth_states: {
+        Row: {
+          created_at: string
+          expires_at: string
+          provider: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          provider: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          provider?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       time_entries: {
         Row: {
           activity_group_id: string | null
@@ -1960,6 +2777,7 @@ export type Database = {
           description: string | null
           end_time: string | null
           firm_id: string
+          firm_member_id: string | null
           hrs: number
           id: string
           import_log_id: string | null
@@ -1967,8 +2785,9 @@ export type Database = {
           notes: string | null
           project_id: string | null
           project_phase_id: string | null
+          project_step_id: string | null
           start_time: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           activity_group_id?: string | null
@@ -1983,6 +2802,7 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           firm_id: string
+          firm_member_id?: string | null
           hrs?: number
           id?: string
           import_log_id?: string | null
@@ -1990,8 +2810,9 @@ export type Database = {
           notes?: string | null
           project_id?: string | null
           project_phase_id?: string | null
+          project_step_id?: string | null
           start_time?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           activity_group_id?: string | null
@@ -2006,6 +2827,7 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           firm_id?: string
+          firm_member_id?: string | null
           hrs?: number
           id?: string
           import_log_id?: string | null
@@ -2013,8 +2835,9 @@ export type Database = {
           notes?: string | null
           project_id?: string | null
           project_phase_id?: string | null
+          project_step_id?: string | null
           start_time?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {

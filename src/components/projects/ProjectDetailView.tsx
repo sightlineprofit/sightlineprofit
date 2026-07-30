@@ -13,9 +13,22 @@ import {
   type ProjectCostSnapshot,
   type ProjectFinancials,
 } from "@/lib/finance";
+import { ProjectAssignedTeamSection } from "@/components/projects/ProjectAssignedTeamSection";
+import { CLIENT_COMMUNICATION_OPTIONS, clientCommunicationLabel } from "@/lib/client-contact";
+import { describeWorkflowPeriod } from "@/lib/sop-workflow-period";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -30,6 +43,12 @@ import {
   type StepAssigneeRecord,
 } from "@/components/projects/StepAssigneeSection";
 import {
+  TaskRow,
+  ResourcePreviewModal,
+  type TaskRowData,
+  type TaskRowResource,
+} from "@/components/sop/TaskRow";
+import {
   assigneeSegmentColor,
   OPEX_SEGMENT_COLOR,
   PROFIT_SEGMENT_COLOR,
@@ -40,7 +59,28 @@ const SAGE = "#1f6e3a";
 const CHARCOAL = "#2C2C2C";
 const MUTED = "#8A7F75";
 const TERRA = "#C4714A";
+const GOLD = "#B8860B";
 const AMBER = "#c8a45a";
+
+function formatAuditField(field: string): string {
+  const known: Record<string, string> = {
+    hours_logged: "Hours logged",
+    remaining_profit: "Remaining profit",
+    actual_labor_cost: "Labor cost (at logged hours)",
+    hours_over_scope: "Hours over scope",
+    scoped_rate: "Scoped rate",
+    fixed_fee: "Fixed fee",
+    flat_fee_amount: "Flat fee",
+  };
+  if (known[field]) return known[field];
+  if (field.startsWith("phase_expected_hrs:")) {
+    return `Expected hours (${field.slice("phase_expected_hrs:".length)})`;
+  }
+  if (field.startsWith("phase_billable:")) {
+    return `Billable (${field.slice("phase_billable:".length)})`;
+  }
+  return field.replace(/_/g, " ");
+}
 
 export type ProjectSubView = null | "details" | "scope" | "timelog" | "audit";
 
@@ -52,16 +92,26 @@ type Phase = {
   actual_hrs: number;
   billable: boolean;
   sop_phase_id?: string | null;
+  project_workflow_attachment_id?: string | null;
   sort_order: number;
 };
 type Step = {
   id: string;
   project_phase_id: string;
   description: string;
+  name?: string | null;
   estimated_hrs: number;
   sort_order: number;
   sop_step_id?: string | null;
+  assigned_role?: string | null;
+  trigger_description?: string | null;
+  completion_criteria?: string | null;
+  steps?: TaskRowData["steps"];
+  notes?: string | null;
+  completed_at?: string | null;
 };
+type StepResourceLink = { project_step_id: string; resource_id: string };
+type StepResourceMeta = TaskRowResource;
 type Entry = {
   id: string;
   date: string;
@@ -95,10 +145,23 @@ type ImportLog = {
 };
 type SopPhaseMeta = { id: string; description: string | null };
 
+export type ProjectWorkflowAttachmentDisplay = {
+  id: string;
+  sop_template_id: string;
+  period_label: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  sort_order: number;
+  template_name?: string | null;
+};
+
 type ProjectShape = {
   id: string;
   name: string;
   client_name: string | null;
+  client_email?: string | null;
+  client_phone?: string | null;
+  client_preferred_communication?: string | null;
   status: string;
   pricing_method: string;
   flat_fee_amount?: number | null;
@@ -106,20 +169,33 @@ type ProjectShape = {
   scoped_rate?: number | null;
   scoped_hrs?: number | null;
   hourly_scoped_hours?: number | null;
+  retainer_monthly_amount?: number | null;
+  retainer_duration_months?: number | null;
   start_date: string | null;
   end_date: string | null;
   est_weekly_hrs?: number | null;
+  payment_status?: string | null;
+  payment_collected?: number | null;
+  payment_collected_date?: string | null;
+  payment_notes?: string | null;
+  archived_at?: string | null;
+  deleted_at?: string | null;
 };
 
 export type ProjectDetailsPatch = {
   name?: string;
   client_name?: string | null;
+  client_email?: string | null;
+  client_phone?: string | null;
+  client_preferred_communication?: string | null;
   status?: string;
   pricing_method?: string;
   flat_fee_amount?: number | null;
   fixed_fee?: number | null;
   scoped_rate?: number | null;
   hourly_scoped_hours?: number | null;
+  retainer_monthly_amount?: number | null;
+  retainer_duration_months?: number | null;
   scoped_hrs?: number | null;
   start_date?: string | null;
   end_date?: string | null;
@@ -140,6 +216,7 @@ const PRICING_OPTIONS = [
   { value: "flat_fee", label: "Flat fee" },
   { value: "hourly", label: "Hourly" },
   { value: "hybrid", label: "Hybrid" },
+  { value: "retainer", label: "Retainer" },
 ] as const;
 
 function money(n: number) {
@@ -167,6 +244,7 @@ function formatHours(n: number) {
 function pricingLabel(m: string) {
   if (m === "hourly") return "Hourly";
   if (m === "hybrid") return "Hybrid";
+  if (m === "retainer") return "Retainer";
   return "Flat fee";
 }
 function statusLabel(s: string) {
@@ -289,7 +367,7 @@ function HoursScopeBar({
         </div>
       </div>
       <span className="shrink-0 text-[12px] tabular-nums text-ch" style={{ fontFamily: "Jost, sans-serif" }}>
-        {formatHours(logged)} of {formatHours(scoped)} hrs
+        {formatHours(logged)} of {formatHours(scoped)}
       </span>
       {over > 0 && (
         <span
@@ -396,6 +474,15 @@ function CostStructureAtQuote({ snapshot }: { snapshot: ProjectCostSnapshot }) {
         value={`${fmtUsd(ownerComp)}/yr`}
         note={perHrNote(compHr)}
       />
+      {snapshot.distribution_tax_rate != null && Number(snapshot.distribution_tax_reserve) > 0 && (
+        <p
+          className="mb-2 -mt-1 pl-0"
+          style={{ fontFamily: "Jost, sans-serif", fontSize: 12, color: "#8A7F75" }}
+        >
+          Distribution tax reserve: {fmtUsd(Number(snapshot.distribution_tax_reserve))} (at{" "}
+          {Math.round(Number(snapshot.distribution_tax_rate) * 100)}% effective rate)
+        </p>
+      )}
       <DetailRowAnnotated
         label="Operating expenses"
         value={`${fmtUsd(opex)}/yr`}
@@ -449,6 +536,9 @@ function initDetailsDraft(project: ProjectShape) {
   return {
     name: project.name,
     client_name: project.client_name ?? "",
+    client_email: project.client_email ?? "",
+    client_phone: project.client_phone ?? "",
+    client_preferred_communication: project.client_preferred_communication ?? "",
     status: project.status,
     pricing_method: project.pricing_method || "flat_fee",
     flat_fee_amount:
@@ -460,6 +550,10 @@ function initDetailsDraft(project: ProjectShape) {
     scoped_rate: project.scoped_rate != null ? String(project.scoped_rate) : "",
     hourly_scoped_hours:
       project.hourly_scoped_hours != null ? String(project.hourly_scoped_hours) : "",
+    retainer_monthly_amount:
+      project.retainer_monthly_amount != null ? String(project.retainer_monthly_amount) : "",
+    retainer_duration_months:
+      project.retainer_duration_months != null ? String(project.retainer_duration_months) : "",
     scoped_hrs: project.scoped_hrs != null ? String(project.scoped_hrs) : "",
     start_date: project.start_date ?? "",
     end_date: project.end_date ?? "",
@@ -474,6 +568,244 @@ function parseOptionalNumber(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function PaymentStatusSection({
+  project,
+  projectFee,
+  isAdmin,
+  onRecordPayment,
+}: {
+  project: ProjectShape;
+  projectFee: number;
+  isAdmin: boolean;
+  onRecordPayment?: (args: {
+    amount: number;
+    payment_collected_date: string;
+    payment_notes: string | null;
+    project_fee: number;
+  }) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const status = project.payment_status ?? "unpaid";
+  const collected = Number(project.payment_collected) || 0;
+  const balance = Math.max(0, projectFee - collected);
+
+  const openModal = () => {
+    setAmount(String(Math.round(projectFee || collected || 0)));
+    setDate(new Date().toISOString().slice(0, 10));
+    setNotes(project.payment_notes ?? "");
+    setOpen(true);
+  };
+
+  const save = async () => {
+    if (!onRecordPayment) return;
+    const n = Number(amount);
+    if (!n || n <= 0) return;
+    setSaving(true);
+    try {
+      await onRecordPayment({
+        amount: n,
+        payment_collected_date: date,
+        payment_notes: notes.trim() || null,
+        project_fee: projectFee,
+      });
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <SectionHeading>Payment status</SectionHeading>
+      <div className="mb-4">
+        {status === "paid" ? (
+          <div>
+            <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "rgba(92,138,110,0.12)", color: SAGE }}>
+              Paid in full
+            </span>
+            {project.payment_collected_date ? (
+              <p className="mt-1 text-[11px]" style={{ color: MUTED }}>{fmtDateLong(project.payment_collected_date)}</p>
+            ) : null}
+          </div>
+        ) : status === "partially_paid" ? (
+          <div>
+            <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "rgba(184,134,11,0.12)", color: GOLD }}>
+              Partial — {money(collected)} received
+            </span>
+            <p className="mt-1 text-[11px]" style={{ color: MUTED }}>Balance: {money(balance)}</p>
+            {isAdmin && onRecordPayment ? (
+              <button type="button" onClick={openModal} className="mt-2 text-[12px] underline" style={{ color: GOLD }}>
+                Update payment →
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div>
+            <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "rgba(196,113,74,0.12)", color: TERRA }}>
+              Unpaid
+            </span>
+            {isAdmin && onRecordPayment ? (
+              <button type="button" onClick={openModal} className="mt-2 block text-[12px] underline" style={{ color: GOLD }}>
+                Mark as paid →
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {open && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-[440px] rounded-xl bg-white p-7 shadow-lg">
+            <h3 style={{ fontFamily: "var(--font-voice, 'Cormorant Garamond', Georgia, serif)", fontSize: 20, color: CHARCOAL, marginBottom: 16 }}>
+              Record payment
+            </h3>
+            <label className="mb-3 block text-[12px]" style={{ color: MUTED }}>Amount received</label>
+            <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="mb-3" />
+            <label className="mb-3 block text-[12px]" style={{ color: MUTED }}>Date received</label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mb-3" />
+            <label className="mb-3 block text-[12px]" style={{ color: MUTED }}>Notes (optional)</label>
+            <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} className="mb-4 w-full rounded-md border px-3 py-2 text-sm" />
+            <button
+              type="button"
+              disabled={saving}
+              onClick={save}
+              className="w-full rounded-lg py-3 text-[13px] font-medium text-white"
+              style={{ background: CHARCOAL, fontFamily: "Jost, sans-serif" }}
+            >
+              {saving ? "Saving…" : "Save →"}
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className="mt-3 w-full text-center text-[12px] underline" style={{ color: MUTED }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ProjectLifecycleSection({
+  project,
+  onArchive,
+  onUnarchive,
+  onDelete,
+  onRestore,
+  showHeading = true,
+}: {
+  project: ProjectShape;
+  onArchive?: () => Promise<void>;
+  onUnarchive?: () => Promise<void>;
+  onDelete?: () => Promise<void>;
+  onRestore?: () => Promise<void>;
+  showHeading?: boolean;
+}) {
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const isArchived = !!project.archived_at;
+  const isDeleted = !!project.deleted_at;
+
+  const run = async (fn: () => Promise<void>, close: () => void) => {
+    setBusy(true);
+    try {
+      await fn();
+      close();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      {showHeading && <SectionHeading>Archive & delete</SectionHeading>}
+      {isDeleted ? (
+        <div className="rounded-lg border border-border bg-creamd/40 px-4 py-3">
+          <p className="text-[13px] text-ch">
+            This project was deleted on {fmtDateLong(project.deleted_at!)}. Time entries and audit history are preserved.
+          </p>
+          {onRestore && (
+            <Button type="button" variant="outline" className="mt-3" disabled={busy} onClick={() => void run(onRestore, () => {})}>
+              Restore project
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border px-4 py-3">
+          <p className="text-[12px] text-ch/60">
+            Archive hides this project from your main Sightline list. Delete removes it from active views while keeping time and financial history.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isArchived && onUnarchive && (
+              <Button type="button" variant="outline" disabled={busy} onClick={() => void run(onUnarchive, () => {})}>
+                Unarchive
+              </Button>
+            )}
+            {!isArchived && onArchive && (
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setArchiveOpen(true)}>
+                Archive project
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                className="border-terra/40 text-terra hover:bg-terra/5"
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete project
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive “{project.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The project will move to your Archived list. You can unarchive it anytime. Time entries and margin history stay intact.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={busy || !onArchive} onClick={() => onArchive && void run(onArchive, () => setArchiveOpen(false))}>
+              Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{project.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This soft-deletes the project — time entries, cost snapshots, and audit history are kept. You can restore it from Recently deleted on the Sightline page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy || !onDelete}
+              className="bg-terra hover:bg-terra/90"
+              onClick={() => onDelete && void run(onDelete, () => setDeleteOpen(false))}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function ProjectDetailsSubView({
   project,
   snapshot,
@@ -482,6 +814,18 @@ function ProjectDetailsSubView({
   isAdmin,
   onSave,
   onStatusChange,
+  onRecordPayment,
+  onArchive,
+  onUnarchive,
+  onDelete,
+  onRestore,
+  sopTemplateName,
+  workflowAttachments = [],
+  workflowPhaseCount,
+  workflowTaskCount,
+  onAttachWorkflow,
+  onChangeWorkflow,
+  onRemoveWorkflow,
 }: {
   project: ProjectShape;
   snapshot: ProjectCostSnapshot;
@@ -490,6 +834,23 @@ function ProjectDetailsSubView({
   isAdmin?: boolean;
   onSave?: (patch: ProjectDetailsPatch) => Promise<void>;
   onStatusChange?: (status: string) => void;
+  onRecordPayment?: (args: {
+    amount: number;
+    payment_collected_date: string;
+    payment_notes: string | null;
+    project_fee: number;
+  }) => Promise<void>;
+  onArchive?: () => Promise<void>;
+  onUnarchive?: () => Promise<void>;
+  onDelete?: () => Promise<void>;
+  onRestore?: () => Promise<void>;
+  sopTemplateName?: string | null;
+  workflowAttachments?: ProjectWorkflowAttachmentDisplay[];
+  workflowPhaseCount?: number;
+  workflowTaskCount?: number;
+  onAttachWorkflow?: () => void;
+  onChangeWorkflow?: () => void;
+  onRemoveWorkflow?: () => void;
 }) {
   const [draft, setDraft] = useState(() => initDetailsDraft(project));
   const [saving, setSaving] = useState(false);
@@ -519,6 +880,19 @@ function ProjectDetailsSubView({
     if (draft.client_name.trim() !== initial.client_name) {
       patch.client_name = draft.client_name.trim() || null;
     }
+    if (draft.client_email.trim() !== initial.client_email) {
+      patch.client_email = draft.client_email.trim() || null;
+    }
+    if (draft.client_phone.trim() !== initial.client_phone) {
+      patch.client_phone = draft.client_phone.trim() || null;
+    }
+    if (draft.client_preferred_communication !== initial.client_preferred_communication) {
+      patch.client_preferred_communication =
+        draft.client_preferred_communication &&
+        ["email", "phone", "text", "in_person"].includes(draft.client_preferred_communication)
+          ? draft.client_preferred_communication
+          : null;
+    }
     if (draft.status !== initial.status) {
       if (draft.status === "completed" && project.status !== "completed") {
         onStatusChange?.(draft.status);
@@ -542,6 +916,22 @@ function ProjectDetailsSubView({
       patch.hourly_scoped_hours = hourlyHrs;
     }
 
+    const retainerMonthly = parseOptionalNumber(draft.retainer_monthly_amount);
+    if (draft.retainer_monthly_amount !== initial.retainer_monthly_amount) {
+      patch.retainer_monthly_amount = retainerMonthly;
+    }
+
+    const retainerMonths = parseOptionalNumber(draft.retainer_duration_months);
+    if (draft.retainer_duration_months !== initial.retainer_duration_months) {
+      patch.retainer_duration_months = retainerMonths;
+    }
+
+    if (draft.pricing_method === "retainer" && retainerMonthly && retainerMonths) {
+      const total = retainerMonthly * retainerMonths;
+      patch.flat_fee_amount = total;
+      patch.fixed_fee = total;
+    }
+
     const scopedHrs = parseOptionalNumber(draft.scoped_hrs);
     if (draft.scoped_hrs !== initial.scoped_hrs) patch.scoped_hrs = scopedHrs;
 
@@ -561,18 +951,44 @@ function ProjectDetailsSubView({
     }
   };
 
+  const showRetainer = draft.pricing_method === "retainer";
   const showFlatFee = draft.pricing_method === "flat_fee" || draft.pricing_method === "hybrid";
   const showHourlyFields =
     draft.pricing_method === "hourly" || draft.pricing_method === "hybrid";
+  const retainerPreview =
+    (Number(draft.retainer_monthly_amount) || 0) * (Number(draft.retainer_duration_months) || 0);
 
   if (!isAdmin) {
     return (
       <div style={{ fontFamily: "Jost, sans-serif" }}>
         <SectionHeading>Project info</SectionHeading>
         <DetailRow label="Project name" value={project.name} />
-        <DetailRow label="Client name" value={project.client_name ?? "—"} />
+        <DetailRow label="Contact name" value={project.client_name ?? "—"} />
+        <DetailRow label="Email" value={project.client_email ?? "—"} />
+        <DetailRow label="Phone" value={project.client_phone ?? "—"} />
+        <DetailRow
+          label="Preferred communication"
+          value={clientCommunicationLabel(project.client_preferred_communication)}
+        />
         <DetailRow label="Status" value={statusLabel(project.status)} />
         <DetailRow label="Pricing method" value={pricingLabel(project.pricing_method)} />
+        {project.pricing_method === "retainer" && (
+          <>
+            <DetailRow
+              label="Monthly retainer"
+              value={money(Number(project.retainer_monthly_amount) || 0)}
+            />
+            <DetailRow
+              label="Duration"
+              value={
+                project.retainer_duration_months != null
+                  ? `${project.retainer_duration_months} months`
+                  : "—"
+              }
+            />
+            <DetailRow label="Total contract value" value={money(fin.totalRevenue)} />
+          </>
+        )}
         {showFlatFee && (
           <DetailRow
             label="Flat fee amount"
@@ -590,19 +1006,49 @@ function ProjectDetailsSubView({
                 label="Hourly scoped hours"
                 value={
                   project.hourly_scoped_hours != null
-                    ? `${formatHours(Number(project.hourly_scoped_hours))} hrs`
+                    ? formatHours(Number(project.hourly_scoped_hours))
                     : "—"
                 }
               />
             )}
           </>
         )}
-        <DetailRow label="Scoped hours total" value={`${formatHours(fin.scopedHours)} hrs`} />
+        <DetailRow label="Scoped hours total" value={formatHours(fin.scopedHours)} />
         <DetailRow label="Project start date" value={project.start_date ?? "—"} />
         <DetailRow label="Project end date" value={project.end_date ?? "—"} />
         <DetailRow
           label="Est. weekly hours"
           value={project.est_weekly_hrs != null ? formatHours(Number(project.est_weekly_hrs)) : "Auto"}
+        />
+
+        <SectionHeading>Workflow</SectionHeading>
+        {workflowAttachments.length > 0 ? (
+          <>
+            <DetailRow
+              label="Workflow periods"
+              value={`${workflowAttachments.length} on this project — see Scope for tasks`}
+            />
+            <DetailRow
+              label="Scope"
+              value={`${workflowPhaseCount ?? 0} phases · ${workflowTaskCount ?? 0} tasks`}
+            />
+          </>
+        ) : sopTemplateName ? (
+          <>
+            <DetailRow label="Template" value={sopTemplateName} />
+            <DetailRow
+              label="Scope"
+              value={`${workflowPhaseCount ?? 0} phases · ${workflowTaskCount ?? 0} tasks`}
+            />
+          </>
+        ) : (
+          <DetailRow label="Template" value="No workflow template applied" />
+        )}
+
+        <PaymentStatusSection
+          project={project}
+          projectFee={fin.totalRevenue}
+          isAdmin={false}
         />
 
         <SectionHeading>Cost structure at quote</SectionHeading>
@@ -632,11 +1078,48 @@ function ProjectDetailsSubView({
       <DetailField label="Project name">
         <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
       </DetailField>
-      <DetailField label="Client name">
+      <DetailField label="Contact name">
         <Input
           value={draft.client_name}
           onChange={(e) => setDraft({ ...draft, client_name: e.target.value })}
+          placeholder="Jane Smith"
         />
+      </DetailField>
+      <DetailField label="Email">
+        <Input
+          type="email"
+          value={draft.client_email}
+          onChange={(e) => setDraft({ ...draft, client_email: e.target.value })}
+          placeholder="jane@example.com"
+        />
+      </DetailField>
+      <DetailField label="Phone">
+        <Input
+          type="tel"
+          value={draft.client_phone}
+          onChange={(e) => setDraft({ ...draft, client_phone: e.target.value })}
+          placeholder="(555) 555-0100"
+        />
+      </DetailField>
+      <DetailField label="Preferred communication">
+        <Select
+          value={draft.client_preferred_communication || "__none__"}
+          onValueChange={(v) =>
+            setDraft({ ...draft, client_preferred_communication: v === "__none__" ? "" : v })
+          }
+        >
+          <SelectTrigger className="bg-white">
+            <SelectValue placeholder="Select…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">—</SelectItem>
+            {CLIENT_COMMUNICATION_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </DetailField>
       <DetailField label="Status">
         <Select value={draft.status} onValueChange={(v) => setDraft({ ...draft, status: v })}>
@@ -670,7 +1153,47 @@ function ProjectDetailsSubView({
         </Select>
       </DetailField>
 
+      {isAdmin && (onArchive || onUnarchive || onDelete || onRestore) && (
+        <div className="mb-6">
+          <ProjectLifecycleSection
+            project={project}
+            onArchive={onArchive}
+            onUnarchive={onUnarchive}
+            onDelete={onDelete}
+            onRestore={onRestore}
+            showHeading
+          />
+        </div>
+      )}
+
       <SectionHeading>Pricing</SectionHeading>
+      {showRetainer && (
+        <>
+          <DetailField label="Monthly retainer">
+            <Input
+              type="number"
+              min={0}
+              step="any"
+              value={draft.retainer_monthly_amount}
+              onChange={(e) => setDraft({ ...draft, retainer_monthly_amount: e.target.value })}
+            />
+          </DetailField>
+          <DetailField label="Duration (months)">
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={draft.retainer_duration_months}
+              onChange={(e) => setDraft({ ...draft, retainer_duration_months: e.target.value })}
+            />
+          </DetailField>
+          {retainerPreview > 0 && (
+            <p className="mb-4 text-[12px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+              Total contract value: {money(retainerPreview)}
+            </p>
+          )}
+        </>
+      )}
       {showFlatFee && (
         <DetailField label="Flat fee amount">
           <Input
@@ -716,6 +1239,82 @@ function ProjectDetailsSubView({
         />
       </DetailField>
 
+      <SectionHeading>Workflow</SectionHeading>
+      {workflowAttachments.length > 0 ? (
+        <>
+          <p className="mb-2 text-[12px] text-ch/70">
+            {workflowAttachments.length} workflow period{workflowAttachments.length === 1 ? "" : "s"} — manage tasks and
+            periods on the <span className="font-medium text-ch">Scope and milestones</span> tab.
+          </p>
+          <p className="mb-2 text-[11px] text-ch/60">
+            {workflowPhaseCount ?? 0} phases · {workflowTaskCount ?? 0} tasks total
+          </p>
+          <div className="mb-4 flex flex-wrap gap-3">
+            <a href="/sop-library" className="text-[12px] text-gold underline">
+              View in SOP Library →
+            </a>
+            {onAttachWorkflow ? (
+              <button type="button" className="text-[12px] text-gold underline" onClick={onAttachWorkflow}>
+                + Add workflow period
+              </button>
+            ) : null}
+            {onChangeWorkflow ? (
+              <button type="button" className="text-[12px] text-ch/60 underline" onClick={onChangeWorkflow}>
+                Replace all workflows
+              </button>
+            ) : null}
+            {onRemoveWorkflow ? (
+              <button type="button" className="text-[12px] text-terra underline" onClick={onRemoveWorkflow}>
+                Remove all workflows
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : sopTemplateName ? (
+        <div className="mb-4 space-y-1">
+          <p className="text-[13px] font-medium text-ch">{sopTemplateName}</p>
+          <p className="text-[11px] text-ch/60">
+            {workflowPhaseCount ?? 0} phases · {workflowTaskCount ?? 0} tasks
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <a href="/sop-library" className="text-[12px] text-gold underline">
+              View in SOP Library →
+            </a>
+            {onAttachWorkflow ? (
+              <button type="button" className="text-[12px] text-gold underline" onClick={onAttachWorkflow}>
+                + Add workflow period
+              </button>
+            ) : null}
+            {onChangeWorkflow ? (
+              <button type="button" className="text-[12px] text-ch/60 underline" onClick={onChangeWorkflow}>
+                Replace all workflows
+              </button>
+            ) : null}
+            {onRemoveWorkflow ? (
+              <button type="button" className="text-[12px] text-terra underline" onClick={onRemoveWorkflow}>
+                Remove all workflows
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4">
+          <p className="text-[12px] text-ch/60">No workflow template applied.</p>
+          {onAttachWorkflow ? (
+            <button type="button" className="mt-2 text-[13px] text-gold underline" onClick={onAttachWorkflow}>
+              + Attach a workflow →
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      <PaymentStatusSection
+        project={project}
+        projectFee={fin.totalRevenue}
+        isAdmin={!!isAdmin}
+        onRecordPayment={onRecordPayment}
+      />
+
       <SectionHeading>Schedule</SectionHeading>
       <DetailField label="Project start date">
         <Input
@@ -741,6 +1340,8 @@ function ProjectDetailsSubView({
           onChange={(e) => setDraft({ ...draft, est_weekly_hrs: e.target.value })}
         />
       </DetailField>
+
+      {isAdmin && project.id ? <ProjectAssignedTeamSection projectId={project.id} /> : null}
 
       <SectionHeading>Cost structure at quote</SectionHeading>
       <CostStructureAtQuote snapshot={snapshot} />
@@ -775,6 +1376,7 @@ function ProjectDetailsSubView({
           </Button>
         </div>
       )}
+
     </div>
   );
 }
@@ -799,6 +1401,7 @@ export function ProjectDetailView({
   isAdmin,
   onSaveProjectDetails,
   onStatusChange,
+  onRecordPayment,
   financials: financialsProp,
   stepAssignees = [],
   assigneeMembers = [],
@@ -811,6 +1414,19 @@ export function ProjectDetailView({
   onAssignToPhase,
   onCreateProjectStep,
   sopTemplateName,
+  workflowAttachments = [],
+  onChangeWorkflow,
+  onRemoveWorkflow,
+  onRemoveWorkflowAttachment,
+  onToggleStepComplete,
+  onToggleStepItemComplete,
+  stepResources = [],
+  stepResourceMeta = [],
+  initialSubView,
+  onArchive,
+  onUnarchive,
+  onDelete,
+  onRestore,
 }: {
   project: ProjectShape;
   snapshot: ProjectCostSnapshot | null;
@@ -830,6 +1446,12 @@ export function ProjectDetailView({
   isAdmin?: boolean;
   onSaveProjectDetails?: (patch: ProjectDetailsPatch) => Promise<void>;
   onStatusChange?: (status: string) => void;
+  onRecordPayment?: (args: {
+    amount: number;
+    payment_collected_date: string;
+    payment_notes: string | null;
+    project_fee: number;
+  }) => Promise<void>;
   financials?: ProjectFinancials | null;
   stepAssignees?: StepAssigneeRecord[];
   assigneeMembers?: AssigneePickerMember[];
@@ -861,9 +1483,23 @@ export function ProjectDetailView({
     estimatedHrs?: number,
   ) => Promise<void>;
   sopTemplateName?: string | null;
+  workflowAttachments?: ProjectWorkflowAttachmentDisplay[];
+  onChangeWorkflow?: () => void;
+  onRemoveWorkflow?: () => void;
+  onRemoveWorkflowAttachment?: (attachmentId: string, label: string) => void;
+  onToggleStepComplete?: (stepId: string, completed: boolean) => Promise<void>;
+  onToggleStepItemComplete?: (stepId: string, order: number, completed: boolean) => Promise<void>;
+  stepResources?: StepResourceLink[];
+  stepResourceMeta?: StepResourceMeta[];
+  initialSubView?: ProjectSubView;
+  onArchive?: () => Promise<void>;
+  onUnarchive?: () => Promise<void>;
+  onDelete?: () => Promise<void>;
+  onRestore?: () => Promise<void>;
 }) {
-  const [activeSubView, setActiveSubView] = useState<ProjectSubView>(null);
+  const [activeSubView, setActiveSubView] = useState<ProjectSubView>(initialSubView ?? null);
   const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set());
+  const [previewResource, setPreviewResource] = useState<TaskRowResource | null>(null);
   const [msLabel, setMsLabel] = useState("");
   const [msDate, setMsDate] = useState("");
   const [personFilters, setPersonFilters] = useState<Set<string>>(new Set());
@@ -871,6 +1507,46 @@ export function ProjectDetailView({
   const [nonBillableFilter, setNonBillableFilter] = useState(false);
 
   const sopPhaseMap = useMemo(() => new Map(sopPhases.map((p) => [p.id, p])), [sopPhases]);
+
+  const scopeGroups = useMemo(() => {
+    const sortedPhases = [...phases].sort((a, b) => a.sort_order - b.sort_order);
+    const groups: {
+      key: string;
+      title: string;
+      periodLabel: string | null;
+      dateRange: string | null;
+      phases: Phase[];
+      attachmentId?: string;
+    }[] = [];
+
+    for (const att of workflowAttachments) {
+      const attPhases = sortedPhases.filter((p) => p.project_workflow_attachment_id === att.id);
+      if (!attPhases.length) continue;
+      const title = att.template_name ?? sopTemplateName ?? "Workflow";
+      const { label, dateRange } = describeWorkflowPeriod(att);
+      groups.push({
+        key: att.id,
+        attachmentId: att.id,
+        title,
+        periodLabel: label,
+        dateRange,
+        phases: attPhases,
+      });
+    }
+
+    const covered = new Set(groups.flatMap((g) => g.phases.map((p) => p.id)));
+    const other = sortedPhases.filter((p) => !covered.has(p.id));
+    if (other.length) {
+      groups.push({
+        key: "other-phases",
+        title: workflowAttachments.length ? "Other phases" : "Phases",
+        periodLabel: null,
+        dateRange: null,
+        phases: other,
+      });
+    }
+    return groups;
+  }, [phases, workflowAttachments, sopTemplateName]);
 
   const projectTeamIds = useMemo(() => {
     const ids = new Set(entries.map((e) => e.user_id));
@@ -906,6 +1582,15 @@ export function ProjectDetailView({
     return [...groups.entries()];
   }, [audit]);
 
+  const hoursLoggedThisMonth = useMemo(() => {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    const monthStartIso = monthStart.toISOString().slice(0, 10);
+    return entries
+      .filter((e) => (e.date as string) >= monthStartIso)
+      .reduce((s, e) => s + Number(e.hrs || 0), 0);
+  }, [entries]);
+
   const projectForCalc = {
     ...project,
     flat_fee_amount:
@@ -923,6 +1608,7 @@ export function ProjectDetailView({
           project: projectForCalc,
           snapshot,
           hoursLogged,
+          hoursLoggedThisMonth,
           lastEntryDate,
         })
       : null);
@@ -941,6 +1627,24 @@ export function ProjectDetailView({
     }
     return m;
   }, [stepAssignees]);
+
+  const resourcesById = useMemo(() => {
+    const map = new Map<string, TaskRowResource>();
+    for (const r of stepResourceMeta) map.set(r.id, r);
+    return map;
+  }, [stepResourceMeta]);
+
+  const resourcesByStep = useMemo(() => {
+    const map = new Map<string, TaskRowResource[]>();
+    for (const link of stepResources) {
+      const resource = resourcesById.get(link.resource_id);
+      if (!resource) continue;
+      const list = map.get(link.project_step_id) ?? [];
+      list.push(resource);
+      map.set(link.project_step_id, list);
+    }
+    return map;
+  }, [stepResources, resourcesById]);
 
   const phaseBillableScoped =
     fin?.billableScopedFromAssignees != null
@@ -969,6 +1673,16 @@ export function ProjectDetailView({
   const rev = Math.max(fin?.totalRevenue ?? 1, 1);
   const segPct = (v: number) => (v / rev) * 100;
 
+  const showActualCosts = !!fin && fin.overHours > 0 && hoursLogged > 0;
+  const displayComp = showActualCosts ? fin!.actualCompAllocation : fin?.compAllocation ?? 0;
+  const displayOpex = showActualCosts ? fin!.actualOpexAllocation : fin?.opexAllocation ?? 0;
+  const displayTeam = showActualCosts ? fin!.actualTeamAllocation : fin?.teamAllocation ?? 0;
+  const displayTax = showActualCosts ? fin!.actualTaxReserve : fin?.taxReserve ?? 0;
+  const displayProfit = showActualCosts ? fin!.marginRemaining : fin?.netProfit ?? 0;
+  const displayAssignees = showActualCosts
+    ? fin!.actualAssigneeAllocations
+    : fin?.assigneeAllocations ?? [];
+
   const transitionClass = "transition-opacity duration-150 ease-out";
 
   if (!snapshot || !fin) {
@@ -977,6 +1691,18 @@ export function ProjectDetailView({
         Cost snapshot not yet captured for this project.
       </div>
     );
+  }
+
+  const isRetainerProject = project.pricing_method === "retainer";
+  const retainerMetrics = fin.retainerMetrics;
+  const snapshotAligned = Number(snapshot.aligned_rate) || 0;
+  const snapshotBreakEven = Number(snapshot.break_even_rate) || 0;
+
+  function retainerRateColor(rate: number | null): string {
+    if (rate == null) return MUTED;
+    if (rate >= snapshotAligned) return SAGE;
+    if (rate >= snapshotBreakEven) return GOLD;
+    return TERRA;
   }
 
   const tiles = [
@@ -1001,6 +1727,16 @@ export function ProjectDetailView({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {isAdmin && (onArchive || onUnarchive || onDelete || onRestore) && (
+              <button
+                type="button"
+                onClick={() => setActiveSubView("details")}
+                className="rounded-full px-2.5 py-0.5 text-[11px] font-medium text-ch/60 underline-offset-2 hover:text-ch hover:underline"
+                style={{ fontFamily: "Jost, sans-serif" }}
+              >
+                Archive or delete
+              </button>
+            )}
             <span
               className="rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide"
               style={{ background: "rgba(44,44,44,0.06)", color: MUTED, fontFamily: "Jost, sans-serif" }}
@@ -1020,7 +1756,87 @@ export function ProjectDetailView({
         </p>
       </div>
 
-      {/* Section 1 — Profit pool */}
+      {/* Section 1 — Profit pool or retainer performance */}
+      {isRetainerProject && retainerMetrics ? (
+        <>
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+                This month
+              </p>
+              <div className="font-display text-[32px] leading-none text-ch">{money(retainerMetrics.monthlyFee)}</div>
+              <p className="mt-2 text-[12px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+                Monthly fee
+              </p>
+              <p className="mt-3 text-[12px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+                Hours logged this month: {retainerMetrics.currentMonthHours.toFixed(1)}
+              </p>
+              <div
+                className="mt-2 font-display text-[24px]"
+                style={{ color: retainerRateColor(retainerMetrics.currentMonthRealizedRate) }}
+              >
+                {retainerMetrics.currentMonthRealizedRate != null
+                  ? `${money(retainerMetrics.currentMonthRealizedRate)}/hr`
+                  : "—"}
+              </div>
+              <p className="text-[11px] text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+                What each hour of work earned this month
+              </p>
+              {retainerMetrics.currentMonthRealizedRate != null && (
+                <p
+                  className="mt-2 flex items-center gap-1.5 text-[12px]"
+                  style={{
+                    fontFamily: "Jost, sans-serif",
+                    color: retainerRateColor(retainerMetrics.currentMonthRealizedRate),
+                  }}
+                >
+                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} />
+                  {retainerMetrics.currentMonthRealizedRate >= snapshotAligned
+                    ? "Healthy this month"
+                    : retainerMetrics.currentMonthRealizedRate >= snapshotBreakEven
+                      ? "Covering costs — below target"
+                      : "Below your cost floor this month"}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+                {retainerMetrics.monthsActive} months active
+              </p>
+              <div className="font-display text-[22px] text-ch">{money(retainerMetrics.totalRevenue)}</div>
+              <p className="mt-1 text-[12px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+                Total revenue since engagement began
+              </p>
+              <p className="mt-3 text-[12px] text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+                {formatHours(hoursLogged)} total
+              </p>
+              <div
+                className="mt-1 font-display text-[20px]"
+                style={{ color: retainerRateColor(retainerMetrics.cumulativeRealizedRate) }}
+              >
+                {retainerMetrics.cumulativeRealizedRate != null
+                  ? `${money(retainerMetrics.cumulativeRealizedRate)}/hr`
+                  : "—"}
+              </div>
+              <p className="text-[11px] text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+                Average revenue per hour since start
+              </p>
+            </div>
+          </div>
+          <div className="mt-6">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
+              Where this month&apos;s fee goes
+            </p>
+            <p className="text-[12px] leading-relaxed text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+              {retainerMetrics.currentMonthHours <= 0
+                ? `Your ${money(retainerMetrics.monthlyFee)} monthly fee is waiting on time entries. Log hours to see how labor costs compare.`
+                : retainerMetrics.monthlyMargin >= 0
+                  ? `Of your ${money(retainerMetrics.monthlyFee)} this month, ${formatHours(retainerMetrics.currentMonthHours)} of work consumed ${money(retainerMetrics.monthlyCostAllocation)}. Your firm kept ${money(retainerMetrics.monthlyMargin)}.`
+                  : `Of your ${money(retainerMetrics.monthlyFee)} this month, ${formatHours(retainerMetrics.currentMonthHours)} of work consumed more than the fee covers. This month eroded ${money(Math.abs(retainerMetrics.monthlyMargin))} in firm reserves.`}
+            </p>
+          </div>
+        </>
+      ) : (
       <div className="flex flex-wrap items-center gap-6">
         <ProfitRing
           profitPct={fin.netProfitPct}
@@ -1054,17 +1870,37 @@ export function ProjectDetailView({
           )}
         </div>
       </div>
+      )}
+
+      {/* Payment — visible on main project view */}
+      <div
+        className="rounded-lg border px-4 py-3.5"
+        style={{ borderColor: "rgba(44,44,44,0.10)", background: "#FAF7F2" }}
+      >
+        <PaymentStatusSection
+          project={project}
+          projectFee={fin.totalRevenue}
+          isAdmin={!!isAdmin}
+          onRecordPayment={onRecordPayment}
+        />
+      </div>
 
       {/* Section 2 — Where the fee goes */}
       <div>
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
-          Where the fee goes
+          {showActualCosts ? "Where the fee goes at logged hours" : "Where the fee goes"}
         </p>
+        {showActualCosts && (
+          <p className="mb-2 text-[11px] leading-relaxed text-ch/55" style={{ fontFamily: "Jost, sans-serif" }}>
+            {formatHours(fin.overHours)} over scope — your pay, team labor, and running costs scale with every
+            hour worked. Tax reserve adjusts on the reduced margin.
+          </p>
+        )}
         <div className="relative h-2 overflow-hidden rounded-full">
           <div className="flex h-full w-full">
             {fin.costBasisMethod === "task_assignee" ? (
               <>
-                {fin.assigneeAllocations.map((a, i) =>
+                {displayAssignees.map((a, i) =>
                   a.costContribution > 0 ? (
                     <div
                       key={`${a.memberName}-${i}`}
@@ -1075,43 +1911,43 @@ export function ProjectDetailView({
                     />
                   ) : null,
                 )}
-                {fin.opexAllocation > 0 && (
-                  <div style={{ width: `${segPct(fin.opexAllocation)}%`, background: OPEX_SEGMENT_COLOR }} />
+                {displayOpex > 0 && (
+                  <div style={{ width: `${segPct(displayOpex)}%`, background: OPEX_SEGMENT_COLOR }} />
                 )}
               </>
             ) : (
               <>
-                {fin.compAllocation > 0 && (
-                  <div style={{ width: `${segPct(fin.compAllocation)}%`, background: "#3d3c3a" }} />
+                {displayComp > 0 && (
+                  <div style={{ width: `${segPct(displayComp)}%`, background: "#3d3c3a" }} />
                 )}
-                {fin.opexAllocation > 0 && (
-                  <div style={{ width: `${segPct(fin.opexAllocation)}%`, background: "#7a7874" }} />
+                {displayOpex > 0 && (
+                  <div style={{ width: `${segPct(displayOpex)}%`, background: "#7a7874" }} />
                 )}
-                {fin.teamAllocation > 0 && (
-                  <div style={{ width: `${segPct(fin.teamAllocation)}%`, background: "#aeacaa" }} />
+                {displayTeam > 0 && (
+                  <div style={{ width: `${segPct(displayTeam)}%`, background: "#aeacaa" }} />
                 )}
               </>
             )}
-            {fin.taxReserve > 0 && (
+            {displayTax > 0 && (
               <div
                 className="relative"
                 style={{
-                  width: `${segPct(fin.taxReserve)}%`,
+                  width: `${segPct(displayTax)}%`,
                   background: "#d4d2d0",
                   backgroundImage:
                     "repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.5) 3px, rgba(255,255,255,0.5) 6px)",
                 }}
               />
             )}
-            {fin.netProfit > 0 && (
-              <div style={{ width: `${segPct(fin.netProfit)}%`, background: PROFIT_SEGMENT_COLOR }} />
+            {displayProfit > 0 && (
+              <div style={{ width: `${segPct(displayProfit)}%`, background: PROFIT_SEGMENT_COLOR }} />
             )}
           </div>
         </div>
         <div className="mt-3 space-y-1.5 text-[12px] text-ch/70" style={{ fontFamily: "Jost, sans-serif" }}>
           {fin.costBasisMethod === "task_assignee" ? (
             <>
-              {fin.assigneeAllocations.map((a, i) => (
+              {displayAssignees.map((a, i) => (
                 <div key={`${a.memberName}-${i}`} className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5">
                     <span
@@ -1120,7 +1956,7 @@ export function ProjectDetailView({
                     />
                     {a.memberName}
                     <span className="text-[10px] text-ch/45">
-                      {formatHours(a.totalHrs)} hrs @ ${a.burdenedRatePerHour.toFixed(2)}/hr
+                      {formatHours(a.totalHrs)} @ ${a.burdenedRatePerHour.toFixed(2)}/hr
                     </span>
                   </span>
                   <span>
@@ -1134,18 +1970,18 @@ export function ProjectDetailView({
                   Running costs (OpEx)
                 </span>
                 <span>
-                  {money(fin.opexAllocation)} ({pct1(segPct(fin.opexAllocation))})
+                  {money(displayOpex)} ({pct1(segPct(displayOpex))})
                 </span>
               </div>
             </>
           ) : (
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               {[
-                { label: "Your pay", amt: fin.compAllocation, color: "#3d3c3a" },
-                { label: "Running costs", amt: fin.opexAllocation, color: "#7a7874" },
-                ...(fin.teamAllocation > 0 ? [{ label: "Team", amt: fin.teamAllocation, color: "#aeacaa" }] : []),
-                { label: "Tax reserve", amt: fin.taxReserve, color: "#d4d2d0" },
-                { label: "Profit", amt: fin.netProfit, color: SAGE },
+                { label: "Your pay", amt: displayComp, color: "#3d3c3a" },
+                { label: "Running costs", amt: displayOpex, color: "#7a7874" },
+                ...(displayTeam > 0 ? [{ label: "Team", amt: displayTeam, color: "#aeacaa" }] : []),
+                { label: "Tax reserve", amt: displayTax, color: "#d4d2d0" },
+                { label: showActualCosts ? "Remaining profit" : "Profit", amt: displayProfit, color: SAGE },
               ].map((s) => (
                 <span key={s.label} className="inline-flex items-center gap-1.5">
                   <span className="inline-block h-2 w-2 rounded-sm" style={{ background: s.color }} />
@@ -1156,7 +1992,13 @@ export function ProjectDetailView({
           )}
         </div>
         <p className="mt-3 font-display text-[13px] italic text-ch/70">
-          {fin.costBasisMethod === "task_assignee" && fin.assigneeAllocations.length > 0 ? (
+          {showActualCosts ? (
+            <>
+              At {formatHours(hoursLogged)} logged ({formatHours(fin.overHours)} over scope), labor and overhead
+              total {money(fin.actualCostAllocation)} — leaving {money(fin.marginRemaining)} in remaining profit
+              from the {money(fin.totalRevenue)} fee.
+            </>
+          ) : fin.costBasisMethod === "task_assignee" && fin.assigneeAllocations.length > 0 ? (
             <>
               Of your {money(fin.totalRevenue)} fee,{" "}
               {fin.assigneeAllocations
@@ -1246,6 +2088,18 @@ export function ProjectDetailView({
       isAdmin={isAdmin}
       onSave={isAdmin ? onSaveProjectDetails : undefined}
       onStatusChange={onStatusChange}
+      onRecordPayment={onRecordPayment}
+      onArchive={isAdmin ? onArchive : undefined}
+      onUnarchive={isAdmin ? onUnarchive : undefined}
+      onDelete={isAdmin ? onDelete : undefined}
+      onRestore={isAdmin ? onRestore : undefined}
+      sopTemplateName={sopTemplateName}
+      workflowAttachments={workflowAttachments}
+      workflowPhaseCount={phases.length}
+      workflowTaskCount={steps.length}
+      onAttachWorkflow={isAdmin ? onAttachSopTemplate : undefined}
+      onChangeWorkflow={isAdmin ? onChangeWorkflow : undefined}
+      onRemoveWorkflow={isAdmin ? onRemoveWorkflow : undefined}
     />
   );
 
@@ -1255,9 +2109,11 @@ export function ProjectDetailView({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[13px] text-ch/60">
-            {sopTemplateName
-              ? `Scope from template: ${sopTemplateName}`
-              : "Define phases, tasks, and who does the work."}
+            {workflowAttachments.length > 0
+              ? `${workflowAttachments.length} workflow period${workflowAttachments.length === 1 ? "" : "s"} on this project`
+              : sopTemplateName
+                ? `Scope from template: ${sopTemplateName}`
+                : "Define phases, tasks, and who does the work."}
           </p>
         </div>
         {isAdmin && onAttachSopTemplate && (
@@ -1266,7 +2122,9 @@ export function ProjectDetailView({
             onClick={onAttachSopTemplate}
             className="shrink-0 rounded-md border border-gold/40 bg-goldp/30 px-3 py-1.5 text-[12px] font-medium text-ch hover:bg-goldp/50"
           >
-            + Attach SOP template
+            {workflowAttachments.length > 0 || phases.some((p) => p.sop_phase_id)
+              ? "+ Add workflow period"
+              : "+ Attach SOP template"}
           </button>
         )}
       </div>
@@ -1288,7 +2146,42 @@ export function ProjectDetailView({
           )}
         </div>
       ) : (
-        phases.map((phase) => {
+        scopeGroups.map((group) => {
+          const showGroupHeader =
+            Boolean(group.attachmentId) ||
+            group.key === "other-phases" ||
+            scopeGroups.length > 1;
+
+          return (
+          <div key={group.key} className="mb-8 last:mb-0">
+            {showGroupHeader ? (
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2 rounded-lg bg-cream/50 px-3 py-2">
+                <div>
+                  <p className="text-[13px] font-semibold text-ch">{group.title}</p>
+                  {group.periodLabel ? (
+                    <p className="text-[12px] font-medium text-ch/70">{group.periodLabel}</p>
+                  ) : null}
+                  {group.dateRange ? (
+                    <p className="text-[12px] text-ch/55">{group.dateRange}</p>
+                  ) : null}
+                </div>
+                {group.attachmentId && onRemoveWorkflowAttachment ? (
+                  <button
+                    type="button"
+                    className="text-[12px] font-medium text-terra underline hover:no-underline"
+                    onClick={() => {
+                      const label = [group.title, group.periodLabel, group.dateRange]
+                        .filter(Boolean)
+                        .join(" — ");
+                      onRemoveWorkflowAttachment(group.attachmentId!, label);
+                    }}
+                  >
+                    Remove workflow
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {group.phases.map((phase) => {
           const phaseSteps = steps.filter((s) => s.project_phase_id === phase.id).sort((a, b) => a.sort_order - b.sort_order);
           const logged = phaseLogged.get(phase.id) ?? Number(phase.actual_hrs || 0);
           const scoped = Number(phase.expected_hrs || 0);
@@ -1327,9 +2220,9 @@ export function ProjectDetailView({
                 </div>
                 <div className="flex shrink-0 items-center gap-2 text-[12px] text-ch/60">
                   <span className="tabular-nums">
-                    {formatHours(logged)} / {formatHours(scoped)} hrs
+                    {formatHours(logged)} / {formatHours(scoped)}
                   </span>
-                  {over > 0 && <span style={{ color: TERRA }}>+{formatHours(over)} hrs</span>}
+                  {over > 0 && <span style={{ color: TERRA }}>+{formatHours(over)}</span>}
                 </div>
               </button>
               {!collapsed && (
@@ -1372,43 +2265,52 @@ export function ProjectDetailView({
                     </div>
                   ) : (
                     phaseSteps.map((step) => {
+                      const task: TaskRowData = {
+                        id: step.id,
+                        name: step.name?.trim() || step.description,
+                        estimated_hrs: Number(step.estimated_hrs) || 0,
+                        assigned_role: step.assigned_role ?? "principal",
+                        trigger_description: step.trigger_description,
+                        completion_criteria: step.completion_criteria,
+                        steps: step.steps,
+                        notes: step.notes,
+                        completed_at: step.completed_at,
+                        resources: resourcesByStep.get(step.id) ?? [],
+                      };
                       const stepAssigneeList = assigneesByStep.get(step.id) ?? [];
-                      const stepTotalHrs =
-                        stepAssigneeList.length > 0
-                          ? stepAssigneeList.reduce((s, a) => s + Number(a.estimated_hrs || 0), 0)
-                          : Number(step.estimated_hrs || 0);
                       return (
-                      <div
-                        key={step.id}
-                        className="border-b border-[rgba(44,44,44,0.05)] py-2 pl-4"
-                      >
-                        <div className="flex items-start gap-2.5">
-                        <span
-                          className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[rgba(44,44,44,0.2)]"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-[13px] text-ch">{step.description}</div>
-                          {onUpsertStepAssignee && (
-                            <StepAssigneeSection
-                              stepId={step.id}
-                              assignees={stepAssigneeList}
-                              members={assigneeMembers}
-                              principalName={assigneePrincipalName}
-                              principalBurdenedRate={principalBurdenedRate}
-                              isAdmin={isAdmin}
-                              onUpsert={(payload) => onUpsertStepAssignee(step.id, payload)}
-                              onDelete={(aid) => onDeleteStepAssignee?.(aid) ?? Promise.resolve()}
-                            />
-                          )}
+                        <div key={step.id} className="pl-2">
+                          <TaskRow
+                            task={task}
+                            mode="project"
+                            onToggleComplete={
+                              onToggleStepComplete
+                                ? (completed) => onToggleStepComplete(step.id, completed)
+                                : undefined
+                            }
+                            onToggleStepItem={
+                              onToggleStepItemComplete
+                                ? (order, completed) => onToggleStepItemComplete(step.id, order, completed)
+                                : undefined
+                            }
+                            onOpenResource={setPreviewResource}
+                          />
+                          {onUpsertStepAssignee && stepAssigneeList.length > 0 ? (
+                            <div className="pb-2 pl-6">
+                              <StepAssigneeSection
+                                stepId={step.id}
+                                assignees={stepAssigneeList}
+                                members={assigneeMembers}
+                                principalName={assigneePrincipalName}
+                                principalBurdenedRate={principalBurdenedRate}
+                                isAdmin={isAdmin}
+                                onUpsert={(payload) => onUpsertStepAssignee(step.id, payload)}
+                                onDelete={(aid) => onDeleteStepAssignee?.(aid) ?? Promise.resolve()}
+                              />
+                            </div>
+                          ) : null}
                         </div>
-                        {stepTotalHrs > 0 && (
-                          <span className="shrink-0 text-[12px] text-ch/50 tabular-nums">
-                            {formatHours(stepTotalHrs)} hrs
-                          </span>
-                        )}
-                        </div>
-                      </div>
-                    );
+                      );
                     })
                   )}
                   {isAdmin && onCreateProjectStep && phaseSteps.length > 0 && (
@@ -1463,6 +2365,9 @@ export function ProjectDetailView({
               )}
             </div>
           );
+        })}
+          </div>
+        );
         })
       )}
 
@@ -1716,7 +2621,8 @@ export function ProjectDetailView({
                 <ul className="mt-2 space-y-1">
                   {rows.map((r) => (
                     <li key={r.id} className="text-[11px] text-ch/50">
-                      {r.field_changed} changed from {r.old_value ?? "—"} to {r.new_value ?? "—"}
+                      {formatAuditField(r.field_changed)} changed from {r.old_value ?? "—"} to{" "}
+                      {r.new_value ?? "—"}
                     </li>
                   ))}
                 </ul>
@@ -1725,7 +2631,7 @@ export function ProjectDetailView({
           })}
         </div>
       ) : (
-        <p className="mt-3 text-[13px] text-ch/50">No changes to cost snapshot.</p>
+        <p className="mt-3 text-[13px] text-ch/50">No financial changes recorded yet.</p>
       )}
 
       {importLogs.length > 0 && (
@@ -1759,12 +2665,15 @@ export function ProjectDetailView({
   };
 
   return activeSubView !== null ? (
-    <SubViewShell title={subTitles[activeSubView]} onBack={() => setActiveSubView(null)}>
-      {activeSubView === "details" && detailsView}
-      {activeSubView === "scope" && scopeView}
-      {activeSubView === "timelog" && timelogView}
-      {activeSubView === "audit" && auditView}
-    </SubViewShell>
+    <>
+      <SubViewShell title={subTitles[activeSubView]} onBack={() => setActiveSubView(null)}>
+        {activeSubView === "details" && detailsView}
+        {activeSubView === "scope" && scopeView}
+        {activeSubView === "timelog" && timelogView}
+        {activeSubView === "audit" && auditView}
+      </SubViewShell>
+      <ResourcePreviewModal resource={previewResource} onClose={() => setPreviewResource(null)} />
+    </>
   ) : (
     <div className={cn("rounded-lg border border-border bg-white p-[22px]", transitionClass)}>
       {primaryView}

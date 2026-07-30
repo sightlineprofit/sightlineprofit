@@ -1,8 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { getDashboardData, updateMetricPrefs, listKnowledge } from "@/lib/dashboard.functions";
 import { addExpense, upsertFirmConfig } from "@/lib/firm.functions";
 import {
@@ -13,6 +13,7 @@ import {
   cashRecovery,
   oneTimePerHr,
   marginBreakdown,
+  firmHasProductiveCapacity,
   type RateOverrides,
 } from "@/lib/finance";
 import { Tile } from "@/components/dashboard/Tile";
@@ -43,15 +44,16 @@ import { RateInsightCard } from "@/components/dashboard/RateInsightCard";
 import { NarrativeStrip } from "@/components/dashboard/NarrativeStrip";
 import { RateBreakdownSlideOver, CapacitySlideOver, type PanelKind } from "@/components/dashboard/DashboardSlideOvers";
 import {
-  RateArchitecturePanel,
-  WeeklyPulse,
-  PricingStrip,
   useHealthChangeToast,
 } from "@/components/dashboard/RateArchitectureHeader";
-import { UtilizationRealityCheck } from "@/components/dashboard/UtilizationRealityCheck";
+import { DashboardArchitectureRow } from "@/components/dashboard/DashboardArchitectureRow";
+import { understandPropsFromCalc } from "@/components/dashboard/UnderstandYourNumbers";
+import type { YearToDateRevenueProps } from "@/components/dashboard/YearToDateRevenue";
+import { ytdAnnualPaceTarget } from "@/lib/revenue-framing";
 
-import { TeamHoursTile } from "@/components/dashboard/TeamHoursTile";
 import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
+import { CostReviewBanner } from "@/components/dashboard/CostReviewBanner";
+import { showCostReviewNotifications, registerCostReviewNavigate } from "@/lib/cost-review-notifications";
 import { useTour } from "@/components/tour/TourProvider";
 import { normalizePricingStructure, requiresBilledRate } from "@/lib/pricing-structure";
 
@@ -78,9 +80,14 @@ function greeting() {
 }
 
 function Dashboard() {
+  const navigate = useNavigate();
   const fetch = useServerFn(getDashboardData);
   const { data, isLoading } = useQuery({ queryKey: ["dashboard"], queryFn: () => fetch() });
   const firmId = data?.firm?.id as string | undefined;
+
+  useEffect(() => {
+    registerCostReviewNavigate(navigate);
+  }, [navigate]);
   useRealtimeInvalidate(
     `dashboard-${firmId ?? "none"}`,
     [
@@ -89,8 +96,11 @@ function Dashboard() {
       { table: "time_entries", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "manual_hour_logs", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "owner_compensation", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "owner_draws", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "projects", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "firm_members", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
       { table: "aligned_rate_history", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
+      { table: "firm_preferences", filter: firmId ? `firm_id=eq.${firmId}` : undefined },
     ],
     [["dashboard"], ["rate-history"]],
     !!firmId,
@@ -141,7 +151,8 @@ function Dashboard() {
   const rateBilled = Number(data?.config?.rate_billed ?? 0);
   const pricingStructure = normalizePricingStructure((data?.config as { pricing_structure?: string } | null)?.pricing_structure);
   const setupIncomplete =
-    !targetHrs || (requiresBilledRate(pricingStructure) && !rateBilled);
+    !firmHasProductiveCapacity(c.annualBillableHrs) ||
+    (requiresBilledRate(pricingStructure) && !rateBilled);
 
   const projectScopedHours = useMemo(() => {
     const cap: any = (data as any)?.capacity;
@@ -203,6 +214,49 @@ function Dashboard() {
   const targetMarginPct = Number(data?.config?.target_gross_margin_pct ?? 0);
 
   const [openPanel, setOpenPanel] = useState<PanelKind>(null);
+
+  const ytdRevenue = useMemo((): YearToDateRevenueProps => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const monthsRemaining = Math.max(1, 12 - month);
+    const monthLabel = now.toLocaleDateString("en-US", { month: "long" });
+    let ytdCollected = 0;
+    for (const p of ((data as any)?.paymentProjects ?? []) as Array<{
+      payment_collected?: number | null;
+      payment_collected_date?: string | null;
+    }>) {
+      const amt = Number(p.payment_collected) || 0;
+      if (!amt || !p.payment_collected_date) continue;
+      const d = new Date(`${p.payment_collected_date}T12:00:00`);
+      if (d.getFullYear() === year) ytdCollected += amt;
+    }
+    const pricingStructure = (data?.config as { pricing_structure?: string } | null)?.pricing_structure;
+    const annualTarget = ytdAnnualPaceTarget(c, pricingStructure);
+    const ytdTarget = annualTarget * (month / 12);
+    const committedRevenue = Number((data as any)?.committedRevenue) || 0;
+    const projectedRevenue = Math.max(0, committedRevenue - ytdCollected);
+    const totalRevenue = ytdCollected + projectedRevenue;
+    return {
+      ytdCollected,
+      ytdTarget,
+      annualTarget,
+      monthLabel,
+      monthIndex: month,
+      monthsRemaining,
+      totalRevenue,
+      projectedRevenue,
+      designFeesAnnualTarget: annualTarget,
+      markupCollected: 0,
+      markupAnnualTarget: 0,
+    };
+  }, [
+    data,
+    c.alignedRate,
+    c.annualBillableHrs,
+    c.annualRevenue,
+    c.revenueCapacityAtUtilization,
+  ]);
 
   // Build data for the CapacityTile and CapacitySlideOver
   const capacityData = useMemo(() => {
@@ -329,49 +383,50 @@ function Dashboard() {
       ) : (
         <>
           <WelcomeBanner firm={data?.firm as any} firstName={firstName} />
-          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4">
-            <div className="flex flex-col">
-              <RateArchitecturePanel
-                c={c}
-                cfg={data?.config}
-                members={(data as any)?.capacity?.team ?? []}
-                expenses={data?.expenses ?? []}
-                targetMarginPct={targetMarginPct}
-                configUpdatedAt={(data?.config as any)?.updated_at}
-                projectScopedHours={projectScopedHours}
+          <CostReviewBanner firmPreferences={data?.firmPreferences as any} />
+
+          <DashboardArchitectureRow
+            c={c}
+            cfg={data?.config}
+            members={(data as any)?.capacity?.team ?? []}
+            expenses={data?.expenses ?? []}
+            targetMarginPct={targetMarginPct}
+            configUpdatedAt={(data?.config as any)?.updated_at}
+            projectScopedHours={projectScopedHours}
+            firmId={data?.firm?.id as string | undefined}
+            ytd={ytdRevenue}
+            weekBillable={weekMetrics.billable}
+            targetHrs={targetHrs}
+            trend={trend}
+            understandProps={understandPropsFromCalc(
+              c,
+              (data as any)?.capacity?.team ?? [],
+              targetMarginPct,
+            )}
+            teamMembers={((data as any)?.capacity?.team ?? []).filter((m: any) => m.is_active !== false)}
+            trailingEntries={trailingEntries}
+            weekStartIso={weekStartIso}
+            weekEndIso={weekEndIso}
+            firmName={(data?.firm as any)?.name ?? "your firm"}
+            principalName={(data?.profile?.name || data?.profile?.email || "Your principal") as string}
+            targetUtilizationPct={
+              (data?.config as { target_utilization_pct?: number | null } | null)?.target_utilization_pct ??
+              c.targetUtilizationPct
+            }
+            actualWeekUtilizationPct={
+              availableHrsPerWeek > 0 ? (weekMetrics.billable / availableHrsPerWeek) * 100 : null
+            }
+            fullWidthSection={
+              <FirmCapacitySection
+                data={capacityData}
+                onOpen={() => setOpenPanel("capacity")}
+                firmId={data?.firm?.id as string}
+                className="mt-0"
               />
-              {data?.firm?.id && (
-                <UtilizationRealityCheck firmId={data.firm.id as string} />
-              )}
-            </div>
-            <div className="flex flex-col gap-3">
-              <WeeklyPulse
-                weekBillable={weekMetrics.billable}
-                targetHrs={targetHrs}
-                activeProjects={activeProjects}
-                trend={trend}
-              />
-              <TeamHoursTile
-                members={((data as any)?.capacity?.team ?? []).filter((m: any) => m.is_active !== false)}
-                trailingEntries={trailingEntries}
-                weekStartIso={weekStartIso}
-                weekEndIso={weekEndIso}
-                firmName={(data?.firm as any)?.name ?? "your firm"}
-                principalName={(data?.profile?.name || data?.profile?.email || "Your principal") as string}
-              />
-            </div>
-          </div>
+            }
+          />
         </>
       )}
-
-      {/* Firm Capacity — full section below Rate Architecture */}
-      {!setupIncomplete && (
-        <FirmCapacitySection
-          data={capacityData}
-          onOpen={() => setOpenPanel("capacity")}
-        />
-      )}
-
 
       {/* Quick log */}
       <div className="mt-3">
@@ -733,7 +788,8 @@ function GrowthSignalsStrip({ active }: { active: number }) {
   }
   return (
     <Link
-      to="/growth-roadmap"
+      to="/future"
+      search={{ tab: "roadmap" }}
       className="flex items-center justify-between rounded-[6px] bg-cream px-[18px] py-[14px] transition-colors hover:border-gold"
       style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
     >
@@ -766,7 +822,7 @@ function SetupPrompt() {
         <path d="M9 21v-6h6v6" />
       </svg>
       <p className="mx-auto mt-3 max-w-sm text-[13px] font-normal text-ch/60">
-        Your aligned rate will appear here once you complete setup.
+        Your aligned rate and dashboard will appear once productive hours are configured — start the guided setup or enter capacity in Settings.
       </p>
       <div className="mt-3 flex justify-center gap-2">
         <button
@@ -774,7 +830,7 @@ function SetupPrompt() {
           onClick={startTour}
           className="rounded-[6px] bg-ch px-5 py-2.5 text-[12px] font-medium text-cream hover:opacity-90"
         >
-          Start setup →
+          Start guided setup →
         </button>
         <Link
           to={"/settings?panel=rate" as any}
@@ -1882,7 +1938,12 @@ export function ScenarioFull({ baseConfig, expenses }: { baseConfig: any; expens
         const nextDraw = Number(baseConfig.comp_draw_annual || 0) + ov.payIncrease;
         tasks.push(saveCfg({ data: { comp_draw_annual: nextDraw } as any }));
       }
-      await Promise.all(tasks);
+      const results = await Promise.all(tasks);
+      for (const result of results) {
+        if (result && typeof result === "object" && "costReview" in result) {
+          showCostReviewNotifications((result as { costReview?: unknown }).costReview as any);
+        }
+      }
       toast.success("Added to your cost architecture");
       setOv({ oneTime: 0, oneTimeMonths: 12, monthly: 0, quarterly: 0, annual: 0, rateOverride: "", hrsOverride: "", payIncrease: 0, name: "" });
       qc.invalidateQueries({ queryKey: ["dashboard"] });

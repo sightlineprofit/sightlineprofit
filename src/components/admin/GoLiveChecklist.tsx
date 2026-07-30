@@ -9,40 +9,39 @@ type Step = {
   status: StepStatus;
 };
 
-// Reflects the current known Stripe go-live state for this project.
-// Update statuses here (or reload) after completing steps in the Payments dashboard.
+// Update statuses after completing steps (see deploy/launch-runbook.md).
 const STEPS: Step[] = [
   {
     n: 1,
-    title: "Claim your Stripe sandbox",
-    detail: "Sandbox linked to your Stripe account.",
-    status: "completed",
+    title: "Verify domain email (Resend)",
+    detail:
+      "Verify sightlineprofit.com in Resend; set RESEND_API_KEY + TRANSACTIONAL_EMAIL_FROM on the Cloudflare Worker.",
+    status: "not_started",
   },
   {
     n: 2,
-    title: "Complete Stripe activation form",
-    detail:
-      "Business details, personal details, bank account, 2FA, and review & submit — done inside the Stripe dashboard.",
+    title: "Complete Stripe activation (live)",
+    detail: "Business details, bank account, and live mode enabled in the Stripe Dashboard.",
     status: "in_progress",
   },
   {
     n: 3,
-    title: "Install the Lovable app on your LIVE Stripe account",
+    title: "Configure live Stripe keys + webhook",
     detail:
-      "Unlocks after activation is submitted. Lets Lovable manage checkout on the live account.",
-    status: "locked",
+      "STRIPE_LIVE_API_KEY and PAYMENTS_LIVE_WEBHOOK_SECRET on Cloudflare; webhook URL on sightlineprofit.com.",
+    status: "not_started",
   },
   {
     n: 4,
-    title: "Provision live API keys",
-    detail: "Runs automatically once the Lovable app is installed on live.",
-    status: "locked",
+    title: "Production release script",
+    detail: "Use npm run release:prod (migrations + schema verify + deploy) for every production push.",
+    status: "not_started",
   },
   {
     n: 5,
-    title: "Readiness check",
-    detail: "Validates live products, prices, and webhooks are configured.",
-    status: "locked",
+    title: "Production smoke test",
+    detail: "Auth, checkout, invite email, Sightline workflow + time log — deploy/launch-runbook.md §4.",
+    status: "not_started",
   },
 ];
 
@@ -84,16 +83,16 @@ export function GoLiveChecklist() {
             className="text-ch"
             style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22 }}
           >
-            Live payments readiness
+            Public launch readiness
           </h3>
           <p className="mt-1 text-xs text-ch/60">
             {allDone
-              ? "All steps complete — live checkout is available."
-              : `${completedCount} of ${STEPS.length} complete. Live checkout is not yet available.`}
+              ? "All steps complete — ready for public launch."
+              : `${completedCount} of ${STEPS.length} complete. See deploy/launch-runbook.md.`}
           </p>
         </div>
         <a
-          href="https://dashboard.stripe.com/onboard_sandbox"
+          href="https://dashboard.stripe.com"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 rounded-md border border-border bg-creamd/50 px-3 py-1.5 text-xs hover:bg-creamd"
@@ -130,8 +129,10 @@ export function GoLiveChecklist() {
       </ol>
 
       <div className="mt-4 flex items-center justify-between text-[11px] text-ch/50">
-        <span>Sandbox account: <code className="font-mono">{SANDBOX_ACCOUNT_ID}</code></span>
-        <span>Statuses reflect the last known state; check the Payments dashboard for live status.</span>
+        <span>
+          Sandbox account: <code className="font-mono">{SANDBOX_ACCOUNT_ID}</code>
+        </span>
+        <span>Update step statuses in GoLiveChecklist.tsx as you complete launch-runbook items.</span>
       </div>
     </section>
   );

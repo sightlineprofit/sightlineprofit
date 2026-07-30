@@ -9,6 +9,7 @@ import {
   type CapacityExpandedData,
 } from "@/components/capacity/CapacityExpanded";
 import { Link } from "@tanstack/react-router";
+import { CapacityDashboardSummary } from "@/components/capacity/CapacityDashboardSummary";
 
 /**
  * Dashboard-level Firm Capacity section. Reuses the same components/data as
@@ -18,9 +19,13 @@ import { Link } from "@tanstack/react-router";
 export function FirmCapacitySection({
   data,
   onOpen,
+  firmId,
+  className,
 }: {
   data: CapacityExpandedData;
   onOpen: () => void;
+  firmId?: string;
+  className?: string;
 }) {
   const summary = useMemo(() => computeCapacity(data.inputs), [data.inputs]);
   const meta = statusMeta(summary.status);
@@ -28,7 +33,7 @@ export function FirmCapacitySection({
   if (!data.configSetup) {
     return (
       <section
-        className="mt-3 rounded-[6px] bg-white p-6"
+        className={`rounded-[6px] bg-white p-6 ${className ?? "mt-3"}`}
         style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
       >
         <p className="text-[13px] font-light text-ch/70">
@@ -70,7 +75,7 @@ export function FirmCapacitySection({
 
   return (
     <section
-      className="mt-3 rounded-[6px] bg-white p-6"
+      className={`rounded-[6px] bg-white p-6 ${className ?? "mt-3"}`}
       style={{ borderWidth: "0.5px", borderColor: "var(--border)", borderStyle: "solid" }}
     >
       {/* Header */}
@@ -177,6 +182,14 @@ export function FirmCapacitySection({
           <Legend color="#B8860B" label="Approaching limit" />
           <Legend color="#C4714A" label="Over committed" />
         </div>
+        <Link
+          to="/capacity"
+          className="mt-3 inline-block text-[12px] text-gold underline"
+          style={{ fontFamily: "Jost, sans-serif" }}
+        >
+          View full planner →
+        </Link>
+        {firmId && <CapacityDashboardSummary firmId={firmId} />}
       </div>
 
       {/* Active projects timeline */}

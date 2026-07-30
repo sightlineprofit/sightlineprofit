@@ -37,18 +37,49 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   });
 }
 
+import { mirrorWorkerEnvToProcessEnv } from "@/lib/worker-env-mirror.server";
+
+/**
+ * Copy Worker bindings into process.env so server code can read secrets via
+ * getRuntimeEnv() even when only the fetch `env` argument is populated.
+ */
+function mirrorBindingsToProcessEnv(env: unknown): void {
+  mirrorWorkerEnvToProcessEnv(env);
+}
+
+function applyWorkerEnv(request: Request, env: unknown): void {
+  if (env == null || typeof env !== "object") return;
+  (globalThis as { __env__?: unknown }).__env__ = env;
+  mirrorBindingsToProcessEnv(env);
+  (request as { __sightlineWorkerEnv?: unknown }).__sightlineWorkerEnv = env;
+}
+
+type WorkerEnvStore = { run: <T>(store: unknown, fn: () => T) => T };
+
+async function runServerFetch(request: Request, env: unknown, ctx: unknown): Promise<Response> {
+  try {
+    const handler = await getServerEntry();
+    const response = await handler.fetch(request, env, ctx);
+    return await normalizeCatastrophicSsrResponse(response);
+  } catch (error) {
+    console.error(error);
+    return new Response(renderErrorPage(), {
+      status: 500,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    try {
-      const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
-    } catch (error) {
-      console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
+    // Nitro SSR service calls `fetch(request, workerEnv)` after patch-wrangler-production.
+    if (env != null && typeof env === "object") {
+      applyWorkerEnv(request, env);
+      const store = (globalThis as { __workerEnvStore__?: WorkerEnvStore }).__workerEnvStore__;
+      if (store?.run) {
+        return await store.run(env, () => runServerFetch(request, env, ctx));
+      }
     }
+    return runServerFetch(request, env, ctx);
   },
 };

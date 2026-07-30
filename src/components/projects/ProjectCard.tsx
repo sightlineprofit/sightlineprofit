@@ -30,15 +30,34 @@ type CardProject = {
   scoped_rate?: number | null;
   scoped_hrs?: number | null;
   hourly_scoped_hours?: number | null;
+  monthly_retainer_fee?: number | null;
+  retainer_monthly_amount?: number | null;
+  retainer_start_date?: string | null;
+  start_date?: string | null;
 };
 
 export type ProjectCardProps = {
   project: CardProject;
   snapshot: ProjectCostSnapshot | null;
   hoursLogged: number;
+  hoursLoggedThisMonth?: number;
   lastEntryDate: Date | string | null;
   onClick: () => void;
 };
+
+function rateHealthColor(rate: number | null, aligned: number, breakEven: number): string {
+  if (rate == null) return MUTED;
+  if (rate >= aligned) return SAGE;
+  if (rate >= breakEven) return GOLD;
+  return TERRA;
+}
+
+function fmtMonthYear(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
 
 function healthColorFor(
   marginRemainingPct: number,
@@ -53,7 +72,14 @@ function healthColorFor(
   return SAGE;
 }
 
-export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onClick }: ProjectCardProps) {
+export function ProjectCard({
+  project,
+  snapshot,
+  hoursLogged,
+  hoursLoggedThisMonth = 0,
+  lastEntryDate,
+  onClick,
+}: ProjectCardProps) {
   // ─── Missing snapshot: minimal card ────────────────────────────────────
   if (!snapshot) {
     return (
@@ -95,17 +121,31 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
     project: project_for_calc,
     snapshot,
     hoursLogged,
+    hoursLoggedThisMonth,
     lastEntryDate: lastEntryDate ?? null,
   });
 
-  const health = healthColorFor(fin.marginRemainingPct, fin.marginRemaining, fin.targetMarginPct, hoursLogged);
+  const isRetainer = fin.pricingMethod === "retainer";
+  const retainer = fin.retainerMetrics;
+  const aligned = Number(snapshot.aligned_rate) || 0;
+  const breakEven = Number(snapshot.break_even_rate) || 0;
+
+  const health = isRetainer
+    ? rateHealthColor(retainer?.currentMonthRealizedRate ?? null, aligned, breakEven)
+    : healthColorFor(fin.marginRemainingPct, fin.marginRemaining, fin.targetMarginPct, hoursLogged);
   const isCritical = fin.freshnessState === "critical" && hoursLogged > 0;
 
   // ─── Empty scope card ──────────────────────────────────────────────────
   const noScope = fin.scopedHours === 0;
 
   const pricingLabel =
-    fin.pricingMethod === "hourly" ? "Hourly" : fin.pricingMethod === "hybrid" ? "Hybrid" : "Flat fee";
+    fin.pricingMethod === "hourly"
+      ? "Hourly"
+      : fin.pricingMethod === "hybrid"
+        ? "Hybrid"
+        : fin.pricingMethod === "retainer"
+          ? "Retainer"
+          : "Flat fee";
 
   const stripeStyle: React.CSSProperties = {
     position: "absolute",
@@ -114,7 +154,7 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
     bottom: 0,
     width: 4,
     borderRadius: "8px 0 0 8px",
-    background: health,
+    background: isRetainer ? GOLD : health,
   };
   if (isCritical) {
     stripeStyle.backgroundImage = `repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.3) 4px, rgba(255,255,255,0.3) 8px)`;
@@ -198,8 +238,8 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
               letterSpacing: "0.10em",
               padding: "2px 7px",
               borderRadius: 3,
-              background: "rgba(44,44,44,0.06)",
-              color: MUTED,
+              background: isRetainer ? "rgba(184,134,11,0.12)" : "rgba(44,44,44,0.06)",
+              color: isRetainer ? GOLD : MUTED,
             }}
           >
             {pricingLabel}
@@ -267,7 +307,98 @@ export function ProjectCard({ project, snapshot, hoursLogged, lastEntryDate, onC
         </div>
       )}
 
-      {noScope ? (
+      {isRetainer && retainer ? (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+              paddingBottom: 14,
+              borderBottom: "0.5px solid rgba(44,44,44,0.07)",
+              marginBottom: 10,
+            }}
+          >
+            <MetricCol
+              label="Monthly fee"
+              value={`${fmtMoney(retainer.monthlyFee)}/mo`}
+              valueColor={CHARCOAL}
+              valueSize={28}
+            />
+            {retainer.hasEnoughData ? (
+              <MetricCol
+                label="This month"
+                value={
+                  retainer.currentMonthRealizedRate != null
+                    ? `${fmtMoney(retainer.currentMonthRealizedRate)}/hr`
+                    : "—"
+                }
+                sub="revenue each hour produced"
+                valueColor={rateHealthColor(retainer.currentMonthRealizedRate, aligned, breakEven)}
+                valueSize={28}
+              />
+            ) : (
+              <div>
+                <div
+                  style={{
+                    fontFamily: "'Jost', sans-serif",
+                    fontSize: 10,
+                    fontWeight: 500,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: MUTED,
+                    marginBottom: 4,
+                  }}
+                >
+                  This month
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Jost', sans-serif",
+                    fontSize: 12,
+                    fontStyle: "italic",
+                    color: MUTED,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Log time this month to see what each hour of work is earning.
+                </div>
+              </div>
+            )}
+          </div>
+          {retainer.hasEnoughData && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "8px 0",
+                borderTop: "0.5px solid rgba(44,44,44,0.10)",
+                borderBottom: "0.5px solid rgba(44,44,44,0.10)",
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: MUTED }}>
+                Since {fmtMonthYear(retainer.retainerStartDate)}
+              </span>
+              <span
+                style={{
+                  fontFamily: "'Jost', sans-serif",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: rateHealthColor(retainer.cumulativeRealizedRate, aligned, breakEven),
+                }}
+              >
+                {retainer.cumulativeRealizedRate != null
+                  ? `${fmtMoney(retainer.cumulativeRealizedRate)}/hr avg`
+                  : "—"}
+              </span>
+            </div>
+          )}
+          <div style={{ fontFamily: "'Jost', sans-serif", fontSize: 11, color: MUTED }}>
+            {retainer.monthsActive} months active · {formatHoursShort(hoursLogged)} total hrs logged
+          </div>
+        </>
+      ) : noScope ? (
         <div
           style={{
             background: "rgba(44,44,44,0.03)",
@@ -423,6 +554,7 @@ function MetricCol({
   valueColor,
   strike,
   faded,
+  valueSize = 22,
 }: {
   label: string;
   value: string;
@@ -430,6 +562,7 @@ function MetricCol({
   valueColor: string;
   strike?: boolean;
   faded?: boolean;
+  valueSize?: number;
 }) {
   return (
     <div style={{ minWidth: 0 }}>
@@ -439,7 +572,7 @@ function MetricCol({
       <div
         style={{
           fontFamily: "'Cormorant Garamond', serif",
-          fontSize: 22,
+          fontSize: valueSize,
           fontWeight: 300,
           color: valueColor,
           lineHeight: 1.05,

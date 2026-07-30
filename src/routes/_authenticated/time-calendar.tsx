@@ -1,9 +1,17 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Lock, Plus, Trash2, Pencil, Copy } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Lock, Plus, Trash2, Pencil, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { getTimeLogFraming, getBillableToggleLabel } from "@/lib/time-framing";
+import { TimeCalendarEmptyState } from "@/components/time/TimeCalendarEmptyState";
+import {
+  TimeLogTaskPicker,
+  type TimeLogPhase,
+  type TimeLogProjectStep,
+  type TimeLogWorkflowAttachment,
+} from "@/components/time/TimeLogTaskPicker";
 import { ModulePage } from "@/components/shell/ModulePage";
 import { UpgradeModal } from "@/components/shell/UpgradeModal";
 import { Button } from "@/components/ui/button";
@@ -19,24 +27,44 @@ import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
-import { getMyContext } from "@/lib/firm.functions";
-import { effectiveTier } from "@/lib/role";
-import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets } from "@/lib/time.functions";
+import { getCalendarData, saveTimeEntry, deleteTimeEntry, updateTargets, listTimeAssignees } from "@/lib/time.functions";
+import {
+  beginGoogleCalendarConnect,
+  disconnectGoogleCalendar,
+  getCalendarIntegrationStatus,
+  getCalendarOverlay,
+  resyncCalendarOverlay,
+  linkCalendarEventToEntry,
+} from "@/lib/calendar-sync.functions";
+import {
+  overlayOccursOnDate,
+  overlayToLocalDisplay,
+  localIsoDate,
+  type OverlayEventDisplay,
+} from "@/lib/calendar-display";
 import { fmtUsd } from "@/lib/finance";
+import { useMe } from "@/lib/role";
+import { canAssignTimeEntries } from "@/lib/time-entry-permissions";
 import { cn } from "@/lib/utils";
 import { useRealtimeInvalidate } from "@/hooks/use-realtime-invalidate";
 
 export const Route = createFileRoute("/_authenticated/time-calendar")({
   head: () => ({ meta: [{ title: "Time Calendar — Sightline" }] }),
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { calendar?: "connected" | "error"; reason?: string } => ({
+    calendar: s.calendar === "connected" ? "connected" : s.calendar === "error" ? "error" : undefined,
+    reason: typeof s.reason === "string" ? s.reason : undefined,
+  }),
   component: TimeCalendarPage,
 });
 
 // ───────── helpers ─────────
-const HOUR_START = 7;
-const HOUR_END = 20;
+const HOUR_START = 0;
+const HOUR_END = 24;
 const HOURS = HOUR_END - HOUR_START;
-const ROW_H = 44;
-const ROW_H_DAY = 56;
+const ROW_H = 36;
+const ROW_H_DAY = 48;
 
 function startOfWeek(d: Date) {
   const day = d.getDay(); // 0 = Sun
@@ -47,7 +75,7 @@ function startOfWeek(d: Date) {
   return r;
 }
 function isoDate(d: Date) {
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 }
 function addDays(d: Date, n: number) {
   const r = new Date(d);
@@ -60,7 +88,7 @@ function toHourFloat(t: string | null): number {
   return h + m / 60;
 }
 
-/** Map a time entry to pixel top/height within the 7am–8pm calendar grid. */
+/** Map a time entry to pixel top/height within the midnight–midnight calendar grid. */
 function calendarEntryLayout(
   entry: { start_time: string | null; end_time: string | null; hrs: number },
   rowH: number,
@@ -94,16 +122,35 @@ function formatHour(h: number) {
   const mm = Math.round((h - hh) * 60);
   const ampm = hh >= 12 ? "PM" : "AM";
   const d = hh % 12 || 12;
+  if (hh === 0 && mm === 0) return "12 AM";
+  if (hh === 12 && mm === 0) return "12 PM";
   return mm === 0 ? `${d} ${ampm}` : `${d}:${String(mm).padStart(2, "0")} ${ampm}`;
 }
 function hourToTime(h: number) {
-  const hh = String(Math.floor(h)).padStart(2, "0");
-  const mm = String(Math.round((h - Math.floor(h)) * 60)).padStart(2, "0");
-  return `${hh}:${mm}`;
+  const capped = Math.min(Math.max(h, 0), 23 + 59 / 60);
+  const hh = Math.floor(capped);
+  const mm = Math.round((capped - hh) * 60);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 function snap15(h: number) {
   return Math.round(h * 4) / 4;
 }
+function externalEventToModal(ev: OverlayEventDisplay) {
+  const googleNotes = [ev.description, ev.location].filter(Boolean).join("\n") || null;
+  return {
+    date: ev.date,
+    start_time: ev.start_time || "09:00",
+    end_time: ev.end_time || hourToTime(toHourFloat(ev.start_time || "09:00") + ev.hrs),
+    description: ev.title,
+    notes: googleNotes,
+    billable: false,
+    _calendarEventId: ev.id,
+    _fromGoogleCalendar: true,
+    _googleTitle: ev.title,
+    _googleNotes: googleNotes,
+  };
+}
+
 function addHoursToTime(t: string, deltaHrs: number): string {
   const h = toHourFloat(t) + deltaHrs;
   return hourToTime(Math.max(0, Math.min(24, h)));
@@ -121,53 +168,141 @@ type Entry = {
   description: string | null;
   project_id: string | null;
   project_phase_id: string | null;
+  project_step_id?: string | null;
   activity_group_id: string | null;
   activity_type_id: string | null;
   user_id: string;
+  firm_member_id?: string | null;
 };
 type Project = { id: string; name: string; client_name: string | null; scoped_rate: number | null };
-type Phase = { id: string; project_id: string; name: string; expected_hrs: number; actual_hrs: number };
+type Phase = TimeLogPhase;
 type Ag = { id: string; name: string; color: string };
 type ActivityType = { id: string; name: string; is_billable: boolean; color: string; sort_order: number | null };
 type Member = {
   id: string; name: string | null; email: string; role: string;
   billable_rate: number | null; expected_hrs_per_week: number | null; billable_pct: number | null;
   color?: string | null;
+  assigneeKey?: string;
+  profileId?: string | null;
+  firmMemberId?: string | null;
 };
 
 type View = "week" | "day" | "team";
 
 // ───────── page ─────────
 function TimeCalendarPage() {
-  const getCtx = useServerFn(getMyContext);
-  const { data: ctx } = useQuery({ queryKey: ["me"], queryFn: () => getCtx() });
-  // Time calendar is available at all paid tiers (Studio is the base).
-  return <Calendar isAdmin={["principal", "admin"].includes((ctx?.profile?.role as string) || "")} />;
+  const { data: ctx, realIsSuper, realProfile } = useMe();
+  const profile = realProfile ?? ctx?.profile ?? null;
+  const myUserId = (profile?.id as string) || "";
+  return <Calendar myUserId={myUserId} meProfile={profile} realIsSuper={realIsSuper} />;
 }
 
 // ───────── calendar shell ─────────
-function Calendar({ isAdmin }: { isAdmin: boolean }) {
+function Calendar({
+  myUserId,
+  meProfile,
+  realIsSuper,
+}: {
+  myUserId: string;
+  meProfile: { role?: string | null; is_super_admin?: boolean | null } | null;
+  realIsSuper: boolean;
+}) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { calendar: calendarParam, reason: calendarReason } = Route.useSearch();
   const [view, setView] = useState<View>("week");
   const [weekDate, setWeekDate] = useState(() => startOfWeek(new Date()));
   const [activeDay, setActiveDay] = useState(() => new Date());
-  const [modal, setModal] = useState<null | (Partial<Entry> & { _duplicate?: boolean })>(null);
+  const [modal, setModal] = useState<null | (Partial<Entry> & {
+    _duplicate?: boolean;
+    _calendarEventId?: string;
+    _fromGoogleCalendar?: boolean;
+    _googleTitle?: string;
+    _googleNotes?: string | null;
+  })>(null);
 
   const weekStart = isoDate(weekDate);
   const fetchData = useServerFn(getCalendarData);
+  const listAssigneesFn = useServerFn(listTimeAssignees);
+  const fetchOverlay = useServerFn(getCalendarOverlay);
+  const fetchIntegration = useServerFn(getCalendarIntegrationStatus);
   const { data, isLoading } = useQuery({
     queryKey: ["calendar", weekStart],
     queryFn: () => fetchData({ data: { weekStart } }),
   });
+  const { data: overlayData } = useQuery({
+    queryKey: ["calendar-overlay", weekStart],
+    queryFn: () => fetchOverlay({ data: { weekStart } }),
+    staleTime: 3 * 60_000,
+  });
+  const { data: integration } = useQuery({
+    queryKey: ["calendar-integration"],
+    queryFn: () => fetchIntegration(),
+  });
+
+  useEffect(() => {
+    if (calendarParam === "connected") {
+      toast.success("Google Calendar connected");
+      qc.invalidateQueries({ queryKey: ["calendar-overlay"] });
+      qc.invalidateQueries({ queryKey: ["calendar-integration"] });
+      navigate({ to: "/time-calendar", search: {}, replace: true });
+    } else if (calendarParam === "error") {
+      toast.error(calendarReason || "Could not connect Google Calendar");
+      navigate({ to: "/time-calendar", search: {}, replace: true });
+    }
+  }, [calendarParam, calendarReason, navigate, qc]);
 
   const entries: Entry[] = (data?.entries ?? []) as Entry[];
+  const externalEventsLocal = useMemo(
+    () => (overlayData?.events ?? []).map(overlayToLocalDisplay),
+    [overlayData?.events],
+  );
   const projects: Project[] = (data?.projects ?? []) as Project[];
   const phases: Phase[] = (data?.phases ?? []) as Phase[];
+  const workflowAttachments = (data?.workflowAttachments ?? []) as TimeLogWorkflowAttachment[];
+  const projectSteps = (data?.projectSteps ?? []) as TimeLogProjectStep[];
   const ags: Ag[] = (data?.activityGroups ?? []) as Ag[];
   const activityTypes: ActivityType[] = (data?.activityTypes ?? []) as ActivityType[];
   const team: Member[] = (data?.team ?? []) as Member[];
   const config = data?.config ?? null;
   const me = data?.profile ?? null;
+  const isAdmin =
+    canAssignTimeEntries(meProfile, realIsSuper) ||
+    canAssignTimeEntries(me as typeof meProfile, false) ||
+    data?.canAssignTimeEntries === true;
+  const effectiveFirmId =
+    (me?.impersonated_firm_id as string | null | undefined) ??
+    (me?.firm_id as string | null | undefined) ??
+    undefined;
+  const { data: assigneeData, isError: assigneesError } = useQuery({
+    queryKey: ["time-assignees", effectiveFirmId],
+    queryFn: () => listAssigneesFn(),
+    enabled: isAdmin && !!effectiveFirmId,
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const assigneesForForm: Member[] = useMemo(() => {
+    const fromApi = assigneeData?.assignees ?? [];
+    if (fromApi.length) {
+      return fromApi.map((a) => ({
+        id: a.id,
+        name: a.name,
+        email: a.email ?? "",
+        role: "team",
+        billable_rate: null,
+        expected_hrs_per_week: null,
+        billable_pct: null,
+        assigneeKey: a.key,
+        profileId: a.profileId ?? null,
+        firmMemberId: a.firmMemberId ?? null,
+      }));
+    }
+    return team;
+  }, [assigneeData?.assignees, team]);
+  const entryMeId = myUserId || (me?.id as string) || "";
+  const pricingStructure = (config as { pricing_structure?: string | null } | null)?.pricing_structure ?? null;
+  const framing = getTimeLogFraming(pricingStructure);
+  const billableToggleLabel = getBillableToggleLabel(pricingStructure);
 
   const firmId = (me?.firm_id as string | null | undefined) ?? undefined;
   const teamOnly = !isAdmin && me?.id ? `user_id=eq.${me.id}` : undefined;
@@ -208,7 +343,8 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
           <div>
             <p className="text-[11px] uppercase tracking-[0.25em] text-gold">Studio</p>
-            <h1 className="mt-1 font-display text-4xl tracking-tight text-ch">Time Calendar</h1>
+            <h1 className="mt-1 font-display text-4xl tracking-tight text-ch">{framing.pageTitle}</h1>
+            <p className="mt-1 font-sans text-sm text-muted-foreground">{framing.pageSubtitle}</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-border bg-white p-0.5">
@@ -242,17 +378,32 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
           {days[6].toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
         </p>
 
+        <CalendarConnectBanner integration={integration} weekStart={weekStart} isAdmin={isAdmin} />
+
         <div className="mt-5">
           {isLoading ? (
             <p className="text-ch/55">Loading…</p>
+          ) : entries.length === 0 ? (
+            <TimeCalendarEmptyState
+              framing={framing}
+              onLogFirst={() =>
+                setModal({
+                  date: isoDate(new Date()),
+                  start_time: "09:00",
+                  end_time: "10:00",
+                  billable: true,
+                })
+              }
+            />
           ) : view === "week" ? (
             <WeekView
-              days={days} entries={entries} myId={me?.id || ""} projects={projects} ags={ags} activityTypes={activityTypes}
+              days={days} entries={entries} externalEvents={externalEventsLocal} myId={me?.id || ""} projects={projects} ags={ags} activityTypes={activityTypes}
               onCellClick={(date, hour) => setModal({
                 date: isoDate(date), start_time: hourToTime(hour), end_time: hourToTime(hour + 1),
                 billable: true,
               })}
               onEntryClick={(e) => setModal(e)}
+              onExternalClick={(ev) => setModal(externalEventToModal(ev))}
               onDuplicate={(e) => setModal({
                 _duplicate: true,
                 date: e.date,
@@ -269,14 +420,16 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
             />
           ) : view === "day" ? (
             <DayView
-              day={activeDay} weekDays={days} setDay={setActiveDay}
+              day={activeDay} weekDays={days} setDay={setActiveDay} myId={me?.id || ""}
               entries={entries.filter((e) => e.date === isoDate(activeDay))}
+              externalEvents={externalEventsLocal.filter((e) => overlayOccursOnDate(e, isoDate(activeDay)))}
               projects={projects} ags={ags} activityTypes={activityTypes}
               onCellClick={(hour) => setModal({
                 date: isoDate(activeDay), start_time: hourToTime(hour), end_time: hourToTime(hour + 1),
                 billable: true,
               })}
               onEntryClick={(e) => setModal(e)}
+              onExternalClick={(ev) => setModal(externalEventToModal(ev))}
               onDuplicate={(e) => setModal({
                 _duplicate: true,
                 date: e.date,
@@ -323,11 +476,17 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
             compact
             projects={projects}
             phases={phases}
+            workflowAttachments={workflowAttachments}
+            projectSteps={projectSteps}
             ags={ags}
             activityTypes={activityTypes}
             team={team}
+            assignees={assigneesForForm}
             isAdmin={isAdmin}
-            meId={me?.id || ""}
+            meId={entryMeId}
+            assigneesLoading={isAdmin && !assigneeData && !assigneesError}
+            entryFormSubtitle={framing.entryFormSubtitle}
+            billableToggleLabel={billableToggleLabel}
             initial={{
               date: isoDate(new Date()),
               start_time: "09:00",
@@ -344,20 +503,38 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
         <DialogContent className="max-w-md bg-white">
           <DialogHeader>
             <DialogTitle className="font-display text-2xl text-ch">
-              {modal?.id ? "Edit time entry" : "Log time"}
+              {modal?.id ? "Edit time entry" : framing.entryFormHeading}
             </DialogTitle>
+            {!modal?.id && (
+              <p className="font-sans text-xs italic text-muted-lt">{framing.entryFormSubtitle}</p>
+            )}
           </DialogHeader>
           {modal && (
             <EntryForm
               projects={projects}
               phases={phases}
+              workflowAttachments={workflowAttachments}
+              projectSteps={projectSteps}
               ags={ags}
               activityTypes={activityTypes}
               team={team}
+              assignees={assigneesForForm}
               isAdmin={isAdmin}
-              meId={me?.id || ""}
+              meId={entryMeId}
+              assigneesLoading={isAdmin && !assigneeData && !assigneesError}
+              entryFormSubtitle={modal.id ? undefined : framing.entryFormSubtitle}
+              billableToggleLabel={billableToggleLabel}
               initial={modal._duplicate ? { ...modal, id: undefined } : modal}
-              onSaved={() => { setModal(null); refresh(); toast.success(modal._duplicate ? "New entry logged" : modal.id ? "Updated" : "Logged"); }}
+              calendarEventId={modal._calendarEventId}
+              fromGoogleCalendar={modal._fromGoogleCalendar}
+              googleTitle={modal._googleTitle}
+              googleNotes={modal._googleNotes}
+              onSaved={() => {
+                setModal(null);
+                refresh();
+                qc.invalidateQueries({ queryKey: ["calendar-overlay"] });
+                toast.success(modal._duplicate ? "New entry logged" : modal.id ? "Updated" : "Logged");
+              }}
               onDeleted={() => { setModal(null); refresh(); toast.success("Deleted"); }}
             />
           )}
@@ -369,12 +546,13 @@ function Calendar({ isAdmin }: { isAdmin: boolean }) {
 
 // ───────── week view ─────────
 function WeekView({
-  days, entries, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
+  days, entries, externalEvents, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onExternalClick, onDuplicate,
 }: {
-  days: Date[]; entries: Entry[]; myId: string;
+  days: Date[]; entries: Entry[]; externalEvents: OverlayEventDisplay[]; myId: string;
   projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onExternalClick: (e: OverlayEventDisplay) => void;
   onDuplicate: (e: Entry) => void;
 }) {
   return (
@@ -390,30 +568,147 @@ function WeekView({
           </div>
         ))}
       </div>
-      <Grid
-        days={days}
-        entries={entries}
-        rowH={ROW_H}
-        myId={myId}
-        projects={projects}
-        ags={ags}
-        activityTypes={activityTypes}
-        onCellClick={onCellClick}
-        onEntryClick={onEntryClick}
-        onDuplicate={onDuplicate}
-      />
+      <div className="max-h-[min(780px,72vh)] overflow-y-auto">
+        <Grid
+          days={days}
+          entries={entries}
+          externalEvents={externalEvents}
+          rowH={ROW_H}
+          myId={myId}
+          projects={projects}
+          ags={ags}
+          activityTypes={activityTypes}
+          onCellClick={onCellClick}
+          onEntryClick={onEntryClick}
+          onExternalClick={onExternalClick}
+          onDuplicate={onDuplicate}
+        />
+      </div>
       <DayFooters days={days} entries={entries} myId={myId} />
     </div>
   );
 }
 
-function Grid({
-  days, entries, rowH, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
+function CalendarConnectBanner({
+  integration,
+  weekStart,
+  isAdmin,
 }: {
-  days: Date[]; entries: Entry[]; rowH: number; myId: string;
+  integration?: {
+    configured: boolean;
+    connected: boolean;
+    accountEmail: string | null;
+    lastSyncedAt: string | null;
+  };
+  weekStart: string;
+  isAdmin: boolean;
+}) {
+  const qc = useQueryClient();
+  const connectFn = useServerFn(beginGoogleCalendarConnect);
+  const disconnectFn = useServerFn(disconnectGoogleCalendar);
+  const resyncFn = useServerFn(resyncCalendarOverlay);
+  const connectMut = useMutation({
+    mutationFn: () => connectFn(),
+    onSuccess: ({ authUrl }) => {
+      window.location.href = authUrl;
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const disconnectMut = useMutation({
+    mutationFn: () => disconnectFn(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["calendar-integration"] });
+      qc.invalidateQueries({ queryKey: ["calendar-overlay"] });
+      toast.success("Google Calendar disconnected");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const resyncMut = useMutation({
+    mutationFn: () => resyncFn({ data: { weekStart } }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["calendar-overlay"] });
+      qc.invalidateQueries({ queryKey: ["calendar-integration"] });
+      toast.success(`Calendar synced (${result.count} events updated)`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (integration?.connected) {
+    const synced = integration.lastSyncedAt
+      ? new Date(integration.lastSyncedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
+      : "Not yet synced";
+    return (
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-ch/20 bg-cream/40 px-4 py-3">
+        <div className="flex items-start gap-2 text-sm text-ch/75">
+          <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-ch/50" />
+          <div>
+            <div className="font-medium text-ch">Google Calendar overlay</div>
+            <div className="text-xs text-ch/55">
+              {integration.accountEmail ? `${integration.accountEmail} · ` : ""}
+              Last synced {synced}. Shows this week when you navigate; Sync now pulls ±2 past / 12 future weeks.
+              Dashed blocks are read-only — click to log time.
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={resyncMut.isPending}
+            onClick={() => resyncMut.mutate()}
+          >
+            {resyncMut.isPending ? "Syncing…" : "Sync now"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disconnectMut.isPending}
+            onClick={() => disconnectMut.mutate()}
+          >
+            Disconnect
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const configured = integration?.configured ?? false;
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-gold/40 bg-goldp/20 px-4 py-3">
+      <div className="flex items-start gap-2 text-sm text-ch/75">
+        <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+        <div>
+          <div className="font-medium text-ch">Connect Google Calendar</div>
+          <div className="text-xs text-ch/55">
+            {configured
+              ? "Show your meetings as a read-only overlay. Click an event to prefill a time entry — nothing syncs automatically."
+              : isAdmin
+                ? "Server setup needed: add GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET to Cloudflare Worker secrets (see deploy/google-calendar-setup.md), then refresh."
+                : "Calendar connect is not enabled on this server yet. Ask your firm admin to finish setup."}
+          </div>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        className="bg-gold text-white hover:bg-goldl"
+        disabled={!configured || connectMut.isPending}
+        onClick={() => connectMut.mutate()}
+      >
+        Connect Google
+      </Button>
+    </div>
+  );
+}
+
+function Grid({
+  days, entries, externalEvents, rowH, myId, projects, ags, activityTypes, onCellClick, onEntryClick, onExternalClick, onDuplicate,
+}: {
+  days: Date[]; entries: Entry[]; externalEvents: OverlayEventDisplay[]; rowH: number; myId: string;
   projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (date: Date, hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onExternalClick: (e: OverlayEventDisplay) => void;
   onDuplicate: (e: Entry) => void;
 }) {
   const project = (id: string | null) => projects.find((p) => p.id === id);
@@ -427,6 +722,17 @@ function Grid({
     }
     return null;
   };
+  const entryBlockLabel = (e: Entry) => {
+    const proj = project(e.project_id);
+    const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
+    const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
+    const googleTitle = e.description?.trim();
+    const headline = googleTitle || clientPart;
+    const subline = googleTitle
+      ? [activity, clientPart !== "Firm" ? clientPart : null].filter(Boolean).join(" · ") || activity || "—"
+      : activity || "—";
+    return { headline, subline, clientPart, activity };
+  };
   return (
     <div className="relative grid border-t border-border" style={{ gridTemplateColumns: `60px repeat(${days.length}, minmax(0, 1fr))` }}>
       {/* time labels */}
@@ -438,17 +744,41 @@ function Grid({
         ))}
       </div>
       {days.map((d) => {
-        const dayEntries = entries.filter((e) => e.date === isoDate(d));
-        const iso = isoDate(d);
+        const dayIso = isoDate(d);
+        const dayEntries = entries.filter((e) => e.date === dayIso);
+        const dayExternal = externalEvents.filter((e) => overlayOccursOnDate(e, dayIso));
+        const allDayExternal = dayExternal.filter((e) => e.all_day);
+        const timedExternal = dayExternal.filter((e) => !e.all_day);
+        const iso = dayIso;
         return (
           <div
             key={d.toISOString()}
-            ref={(el) => {
-              if (el) dayRefs.current.set(iso, el);
-              else dayRefs.current.delete(iso);
-            }}
-            className="relative border-l border-border overflow-hidden"
+            className="relative border-l border-border"
           >
+            {allDayExternal.length > 0 && (
+              <div className="space-y-0.5 border-b border-border bg-[#E8EEF5]/50 px-1 py-1">
+                {allDayExternal.map((ev) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onExternalClick(ev); }}
+                    className="block w-full truncate rounded border border-dashed px-1.5 py-0.5 text-left text-[10px] text-[#2F4563]"
+                    style={{ borderColor: "#7A93B8" }}
+                    title={`${ev.title}\nAll day · Google Calendar`}
+                  >
+                    {ev.title}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div
+              className="relative overflow-hidden"
+              style={{ height: HOURS * rowH }}
+              ref={(el) => {
+                if (el) dayRefs.current.set(iso, el);
+                else dayRefs.current.delete(iso);
+              }}
+            >
             {Array.from({ length: HOURS }).map((_, i) => (
               <button
                 key={i}
@@ -458,14 +788,32 @@ function Grid({
                 style={{ height: rowH }}
               />
             ))}
+            {timedExternal.map((ev) => {
+              const layoutEntry = {
+                start_time: ev.start_time,
+                end_time: ev.end_time,
+                hrs: ev.hrs,
+              };
+              const { top, height: h } = calendarEntryLayout(layoutEntry, rowH);
+              const timeLabel = ev.start_time && ev.end_time ? `${ev.start_time}–${ev.end_time}` : `${ev.hrs}h`;
+              const tooltip = [ev.title, ev.location, timeLabel, "Google Calendar · click to log"].filter(Boolean).join("\n");
+              return (
+                <ExternalEventBlock
+                  key={ev.id}
+                  event={ev}
+                  top={top}
+                  height={h}
+                  tooltip={tooltip}
+                  onClick={() => onExternalClick(ev)}
+                />
+              );
+            })}
             {dayEntries.map((e) => {
               const { top, height: h } = calendarEntryLayout(e, rowH);
               const isMine = e.user_id === myId;
-              const proj = project(e.project_id);
-              const activity = atName(e.activity_type_id) ?? agName(e.activity_group_id);
-              const clientPart = proj?.client_name ? `${proj.client_name} · ${proj.name}` : (proj?.name ?? "Firm");
+              const { headline, subline, clientPart, activity } = entryBlockLabel(e);
               const dur = Number(e.hrs || 0).toFixed(2).replace(/\.?0+$/, "") + "h";
-              const tooltip = [clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
+              const tooltip = [headline, subline, clientPart, activity, `${dur} · ${e.billable ? "Billable" : "Non-Bill"}`, e.notes].filter(Boolean).join("\n");
               const lineCount = h >= 56 ? 3 : h >= 36 ? 2 : 1;
               return (
                 <EntryBlock
@@ -479,8 +827,8 @@ function Grid({
                   borderColor={e.billable ? "#4A7158" : "#A85F3D"}
                   tooltip={tooltip}
                   lineCount={lineCount}
-                  clientPart={clientPart}
-                  activity={activity}
+                  headline={headline}
+                  subline={subline}
                   durLabel={dur}
                   getDayDateAt={getDayDateAt}
                   onOpen={() => onEntryClick(e)}
@@ -488,6 +836,7 @@ function Grid({
                 />
               );
             })}
+            </div>
           </div>
         );
       })}
@@ -498,7 +847,7 @@ function Grid({
 // ───────── interactive entry block (resize / move / duplicate / undo) ─────────
 function EntryBlock({
   entry, top, height, rowH, isMine, bg, borderColor, tooltip, lineCount,
-  clientPart, activity, durLabel, getDayDateAt, onOpen, onDuplicate,
+  headline, subline, durLabel, getDayDateAt, onOpen, onDuplicate,
 }: {
   entry: Entry;
   top: number;
@@ -509,8 +858,8 @@ function EntryBlock({
   borderColor: string;
   tooltip: string;
   lineCount: number;
-  clientPart: string;
-  activity: string | undefined;
+  headline: string;
+  subline: string;
   durLabel: string;
   getDayDateAt: (x: number, y: number) => string | null;
   onOpen: () => void;
@@ -518,16 +867,38 @@ function EntryBlock({
 }) {
   const qc = useQueryClient();
   const saveFn = useServerFn(saveTimeEntry);
-  const [mode, setMode] = useState<"idle" | "resize" | "move">("idle");
-  const [previewTop, setPreviewTop] = useState(top);
+  const [mode, setModeState] = useState<"idle" | "resize" | "move">("idle");
+  const modeRef = useRef<"idle" | "resize" | "move">("idle");
+  const setMode = (next: "idle" | "resize" | "move") => {
+    modeRef.current = next;
+    setModeState(next);
+  };
   const [previewH, setPreviewH] = useState(height);
   const [previewLeftPx, setPreviewLeftPx] = useState<number | null>(null);
   const [hoverDay, setHoverDay] = useState<string | null>(null);
   const startState = useRef({ pointerY: 0, pointerX: 0, top, height, moved: false });
   const armedRef = useRef(false);
   const pointerIdRef = useRef<number | null>(null);
+  const captureRef = useRef<Element | null>(null);
+  const previewHRef = useRef(height);
+  const hoverDayRef = useRef<string | null>(null);
 
   const editable = isMine;
+
+  function releaseCapture() {
+    if (captureRef.current != null && pointerIdRef.current != null) {
+      try {
+        captureRef.current.releasePointerCapture(pointerIdRef.current);
+      } catch { /* noop */ }
+    }
+    captureRef.current = null;
+  }
+
+  function armCapture(el: Element, pointerId: number) {
+    el.setPointerCapture(pointerId);
+    captureRef.current = el;
+    pointerIdRef.current = pointerId;
+  }
 
   function showUndoToast(label: string, prev: Entry) {
     const t = toast.success(label, {
@@ -565,8 +936,10 @@ function EntryBlock({
 
   async function commitResize(newHeightPx: number) {
     const durHrs = Math.max(0.25, snap15(newHeightPx / rowH));
-    const startHrs = toHourFloat(entry.start_time);
-    const newEnd = hourToTime(startHrs + durHrs);
+    const startHrs = entry.start_time
+      ? toHourFloat(entry.start_time)
+      : HOUR_START + top / rowH;
+    const newEnd = hourToTime(Math.min(startHrs + durHrs, 24));
     if (newEnd === (entry.end_time || "").slice(0, 5)) return;
     const prev = { ...entry };
     try {
@@ -627,64 +1000,65 @@ function EntryBlock({
     if (!editable) return;
     ev.preventDefault();
     ev.stopPropagation();
-    (ev.target as Element).setPointerCapture(ev.pointerId);
+    armCapture(ev.target as Element, ev.pointerId);
     setMode("resize");
     armedRef.current = true;
-    pointerIdRef.current = ev.pointerId;
     startState.current = { pointerY: ev.clientY, pointerX: ev.clientX, top, height, moved: false };
+    previewHRef.current = height;
     setPreviewH(height);
   }
 
   function onBodyDown(ev: React.PointerEvent) {
     if (!editable) return;
-    // Ignore clicks on the resize handle or controls (they stop propagation).
-    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+    armCapture(ev.currentTarget, ev.pointerId);
     armedRef.current = true;
-    pointerIdRef.current = ev.pointerId;
     startState.current = { pointerY: ev.clientY, pointerX: ev.clientX, top, height, moved: false };
-    setMode("idle"); // becomes "move" after threshold
+    setMode("idle");
   }
 
   function onPointerMove(ev: React.PointerEvent) {
     if (!editable) return;
-    // Only react when a pointerdown has armed this block. Without this guard
-    // a bare hover would trip the drag threshold and shift the block.
     if (!armedRef.current) return;
     const dx = ev.clientX - startState.current.pointerX;
     const dy = ev.clientY - startState.current.pointerY;
+    const currentMode = modeRef.current;
 
-    if (mode === "resize") {
+    if (currentMode === "resize") {
       const raw = startState.current.height + dy;
       const snapped = Math.max(rowH * 0.25, snap15(raw / rowH) * rowH);
+      previewHRef.current = snapped;
       setPreviewH(snapped);
       startState.current.moved = true;
       return;
     }
 
-    // Begin move once user crosses a small drag threshold (4px).
-    if (mode === "idle" && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+    if (currentMode === "idle" && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
       setMode("move");
     }
-    if (mode === "move" || (mode === "idle" && (Math.abs(dx) > 4 || Math.abs(dy) > 4))) {
+    if (modeRef.current === "move") {
       startState.current.moved = true;
       setPreviewLeftPx(dx);
-      setHoverDay(getDayDateAt(ev.clientX, ev.clientY));
+      const day = getDayDateAt(ev.clientX, ev.clientY);
+      hoverDayRef.current = day;
+      setHoverDay(day);
     }
   }
 
   function onPointerUp(ev: React.PointerEvent) {
-    try { (ev.target as Element).releasePointerCapture(ev.pointerId); } catch { /* noop */ }
-    const wasMode = mode;
+    releaseCapture();
+    const wasMode = modeRef.current;
     const moved = startState.current.moved;
     setMode("idle");
     armedRef.current = false;
     pointerIdRef.current = null;
     setPreviewLeftPx(null);
-    const dropDay = hoverDay;
+    const dropDay = hoverDayRef.current;
+    hoverDayRef.current = null;
     setHoverDay(null);
 
     if (wasMode === "resize" && moved) {
-      commitResize(previewH);
+      commitResize(previewHRef.current);
       return;
     }
     if (wasMode === "move" && moved) {
@@ -723,10 +1097,11 @@ function EntryBlock({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         className={cn(
-          "group absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden",
+          "group absolute left-1 right-1 z-10 rounded px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden",
           "border shadow-sm select-none touch-none",
           !isMine && "opacity-70",
           editable && "cursor-grab active:cursor-grabbing",
+          mode === "move" && "z-30",
         )}
         style={{
           top: mode === "resize" ? top : top,
@@ -749,8 +1124,8 @@ function EntryBlock({
             <Copy className="h-2.5 w-2.5" />
           </button>
         )}
-        <div className="font-medium truncate pr-5">{clientPart}</div>
-        {lineCount >= 2 && <div className="opacity-90 truncate">{activity || "—"}</div>}
+        <div className="font-medium truncate pr-5">{headline}</div>
+        {lineCount >= 2 && <div className="opacity-90 truncate">{subline}</div>}
         {lineCount >= 3 && (
           <div className="opacity-80 truncate">{durLabel} · {entry.billable ? "Billable" : "Non-Bill"}</div>
         )}
@@ -768,6 +1143,36 @@ function EntryBlock({
         )}
       </div>
     </>
+  );
+}
+
+function ExternalEventBlock({
+  event, top, height, tooltip, onClick,
+}: {
+  event: OverlayEventDisplay;
+  top: number;
+  height: number;
+  tooltip: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(ev) => { ev.stopPropagation(); onClick(); }}
+      className="absolute left-1 right-1 z-[1] rounded border border-dashed px-1.5 py-0.5 text-left text-[11px] leading-tight overflow-hidden bg-[#E8EEF5]/90 hover:bg-[#DCE6F2] transition-colors"
+      style={{
+        top,
+        height: Math.max(height, 18),
+        borderColor: "#7A93B8",
+        color: "#2F4563",
+      }}
+      title={tooltip}
+    >
+      <div className="font-medium truncate">{event.title}</div>
+      {height >= 36 && event.start_time && (
+        <div className="opacity-80 truncate text-[10px]">{event.start_time}–{event.end_time}</div>
+      )}
+    </button>
   );
 }
 
@@ -799,12 +1204,14 @@ function DayFooters({ days, entries, myId }: { days: Date[]; entries: Entry[]; m
 
 // ───────── day view ─────────
 function DayView({
-  day, weekDays, setDay, entries, projects, ags, activityTypes, onCellClick, onEntryClick, onDuplicate,
+  day, weekDays, setDay, myId, entries, externalEvents, projects, ags, activityTypes, onCellClick, onEntryClick, onExternalClick, onDuplicate,
 }: {
-  day: Date; weekDays: Date[]; setDay: (d: Date) => void;
-  entries: Entry[]; projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
+  day: Date; weekDays: Date[]; setDay: (d: Date) => void; myId: string;
+  entries: Entry[]; externalEvents: OverlayEventDisplay[];
+  projects: Project[]; ags: Ag[]; activityTypes: ActivityType[];
   onCellClick: (hour: number) => void;
   onEntryClick: (e: Entry) => void;
+  onExternalClick: (e: OverlayEventDisplay) => void;
   onDuplicate: (e: Entry) => void;
 }) {
   const activeIso = isoDate(day);
@@ -829,18 +1236,22 @@ function DayView({
         })}
       </div>
       <div className="rounded-lg border border-border bg-white">
+        <div className="max-h-[min(780px,72vh)] overflow-y-auto">
         <Grid
           days={[day]}
           entries={entries}
+          externalEvents={externalEvents}
           rowH={ROW_H_DAY}
-          myId={entries[0]?.user_id || ""}
+          myId={myId}
           projects={projects}
           ags={ags}
           activityTypes={activityTypes}
           onCellClick={(_d, h) => onCellClick(h)}
           onEntryClick={onEntryClick}
+          onExternalClick={onExternalClick}
           onDuplicate={onDuplicate}
         />
+        </div>
       </div>
     </div>
   );
@@ -862,12 +1273,22 @@ function TeamView({
   const dayMemberHrs = (d: Date, m: Member) => {
     const iso = isoDate(d);
     return entries
-      .filter((e) => e.date === iso && e.user_id === m.id)
+      .filter((e) => {
+        if (e.date !== iso) return false;
+        if (m.firmMemberId && e.firm_member_id === m.firmMemberId) return true;
+        if (m.profileId && e.user_id === m.profileId) return true;
+        return e.user_id === m.id || e.firm_member_id === m.id;
+      })
       .reduce((s, e) => s + Number(e.hrs || 0), 0);
   };
   const weekMemberTotal = (m: Member, billable?: boolean) =>
     entries
-      .filter((e) => e.user_id === m.id && (billable === undefined || e.billable === billable))
+      .filter((e) => {
+        if (billable !== undefined && e.billable !== billable) return false;
+        if (m.firmMemberId && e.firm_member_id === m.firmMemberId) return true;
+        if (m.profileId && e.user_id === m.profileId) return true;
+        return e.user_id === m.id || e.firm_member_id === m.id;
+      })
       .reduce((s, e) => s + Number(e.hrs || 0), 0);
 
   return (
@@ -1200,67 +1621,26 @@ function Row({ label, value, accent }: { label: string; value: string; accent?: 
   );
 }
 
-function ProjectTaskPicker({
-  phases, phaseId, onChange,
-}: { phases: Phase[]; phaseId: string; onChange: (id: string) => void }) {
-  const [open, setOpen] = useState(!!phaseId);
-  const [q, setQ] = useState("");
-  const selected = phases.find((p) => p.id === phaseId);
-  const filtered = q
-    ? phases.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))
-    : phases;
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <button type="button" className="flex w-full items-center justify-between rounded-md border border-border bg-white px-3 py-2 text-left text-xs text-ch/70 hover:bg-creamd">
-          <span className="flex items-center gap-2">
-            <ChevronDown className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")} />
-            Link to project task (optional)
-          </span>
-          {selected && <span className="rounded bg-goldp/40 px-2 py-0.5 text-[11px] text-ch">Linked: {selected.name}</span>}
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 rounded-md border border-border bg-cream/40 p-2">
-        {phases.length > 8 && (
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search tasks…"
-            className="mb-2 h-8 text-xs"
-          />
-        )}
-        <div className="max-h-48 overflow-y-auto space-y-0.5">
-          <button type="button" onClick={() => onChange("")} className={cn("block w-full rounded px-2 py-1 text-left text-xs hover:bg-white", !phaseId && "bg-white font-medium")}>— None —</button>
-          {filtered.map((p) => {
-            const over = p.actual_hrs > p.expected_hrs && p.expected_hrs > 0;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onChange(p.id)}
-                className={cn(
-                  "block w-full rounded px-2 py-1 text-left text-xs hover:bg-white",
-                  phaseId === p.id && "bg-white font-medium text-gold",
-                )}
-              >
-                {p.name} <span className="text-ch/50">({p.actual_hrs.toFixed(1)}/{p.expected_hrs.toFixed(0)}h){over ? " ⚠" : ""}</span>
-              </button>
-            );
-          })}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-// ───────── entry form ─────────
 function EntryForm({
-  compact = false, projects, phases, ags, activityTypes, team, isAdmin, meId, initial, onSaved, onDeleted,
+  compact = false, projects, phases, workflowAttachments, projectSteps, ags, activityTypes, team, assignees, isAdmin, meId, initial,
+  entryFormSubtitle, billableToggleLabel = "Billable", assigneesLoading = false,
+  calendarEventId, fromGoogleCalendar, googleTitle, googleNotes, onSaved, onDeleted,
 }: {
   compact?: boolean;
-  projects: Project[]; phases: Phase[]; ags: Ag[]; activityTypes: ActivityType[]; team: Member[];
+  projects: Project[]; phases: Phase[];
+  workflowAttachments: TimeLogWorkflowAttachment[];
+  projectSteps: TimeLogProjectStep[];
+  ags: Ag[]; activityTypes: ActivityType[]; team: Member[]; team: Member[];
+  assignees?: Member[];
   isAdmin: boolean; meId: string;
+  assigneesLoading?: boolean;
   initial: Partial<Entry>;
+  entryFormSubtitle?: string;
+  billableToggleLabel?: string;
+  calendarEventId?: string;
+  fromGoogleCalendar?: boolean;
+  googleTitle?: string;
+  googleNotes?: string | null;
   onSaved: () => void;
   onDeleted?: () => void;
 }) {
@@ -1269,17 +1649,49 @@ function EntryForm({
   const [endTime, setEndTime] = useState((initial.end_time || "10:00").slice(0, 5));
   const [projectId, setProjectId] = useState<string>(initial.project_id || "");
   const [phaseId, setPhaseId] = useState<string>(initial.project_phase_id || "");
+  const [stepId, setStepId] = useState<string>(initial.project_step_id || "");
   const [atId, setAtId] = useState<string>(initial.activity_type_id || "");
   const [agId] = useState<string>(initial.activity_group_id || "");
   const [billable, setBillable] = useState(initial.billable ?? true);
   const [description, setDescription] = useState(initial.description || "");
   const [notes, setNotes] = useState(initial.notes || "");
-  const [userId, setUserId] = useState(initial.user_id || meId);
+  const initialAssigneeKey = useMemo(() => {
+    if (initial.firm_member_id) return `m:${initial.firm_member_id}`;
+    if (initial.user_id) return `p:${initial.user_id}`;
+    return meId ? `p:${meId}` : "";
+  }, [initial.firm_member_id, initial.user_id, meId]);
+
+  const [assigneeKey, setAssigneeKey] = useState(initialAssigneeKey);
+
+  const assigneeOptions = useMemo(() => {
+    const source = assignees?.length ? assignees : team.length ? team : [];
+    const raw =
+      source.length > 0
+        ? source
+        : meId
+          ? [{ id: meId, assigneeKey: `p:${meId}`, name: "You", email: "" } as Member]
+          : [];
+    return raw.filter((m) => {
+      const key = m.assigneeKey ?? (m.id ? `p:${m.id}` : "");
+      return key.length > 2;
+    });
+  }, [assignees, team, meId]);
+
+  useEffect(() => {
+    if (initial.firm_member_id || initial.user_id) return;
+    if (!assigneeOptions.length) return;
+    const keys = assigneeOptions.map((m) => m.assigneeKey ?? `p:${m.id}`);
+    if (!keys.includes(assigneeKey)) setAssigneeKey(keys[0] ?? initialAssigneeKey);
+    else if (!assigneeKey && meId) setAssigneeKey(`p:${meId}`);
+  }, [assigneeOptions, assigneeKey, initial.firm_member_id, initial.user_id, initialAssigneeKey, meId]);
 
   const saveFn = useServerFn(saveTimeEntry);
   const delFn = useServerFn(deleteTimeEntry);
+  const linkFn = useServerFn(linkCalendarEventToEntry);
 
   const projectPhases = phases.filter((p) => p.project_id === projectId);
+  const projectWorkflowAttachments = workflowAttachments.filter((a) => a.project_id === projectId);
+  const stepsForProject = projectSteps.filter((s) => s.project_id === projectId);
 
   const save = useMutation({
     mutationFn: () =>
@@ -1287,19 +1699,26 @@ function EntryForm({
         data: {
           id: initial.id,
           date, start_time: startTime, end_time: endTime, billable,
-          description: description || null,
-          notes: notes || null,
+          description: (fromGoogleCalendar ? (googleTitle || description) : description) || null,
+          notes: (fromGoogleCalendar ? (googleNotes ?? notes) : notes) || null,
           project_id: projectId || null,
           project_phase_id: phaseId || null,
+          project_step_id: stepId || null,
           activity_group_id: agId || null,
           activity_type_id: atId || null,
-          user_id: isAdmin ? userId : undefined,
+          assignee_key: isAdmin && assigneeKey ? assigneeKey : undefined,
         },
       }),
-    onSuccess: () => {
+    onSuccess: async (result) => {
+      if (calendarEventId && result?.id && !initial.id) {
+        try {
+          await linkFn({ data: { calendarEventId, timeEntryId: result.id } });
+        } catch (e) {
+          console.warn("[EntryForm] calendar link failed", e);
+        }
+      }
       onSaved();
-      if (compact) {
-        // reset partial state for quick log convenience
+      if (compact && !fromGoogleCalendar) {
         setDescription("");
         setNotes("");
       }
@@ -1313,6 +1732,9 @@ function EntryForm({
 
   return (
     <div className={cn("space-y-3", compact ? "mt-3" : "mt-2")}>
+      {compact && entryFormSubtitle ? (
+        <p className="font-sans text-xs italic text-muted-lt">{entryFormSubtitle}</p>
+      ) : null}
       <div className="grid grid-cols-3 gap-2">
         <div className="col-span-3">
           <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Date</Label>
@@ -1329,18 +1751,50 @@ function EntryForm({
         <div className="flex items-end justify-end gap-2">
           <div className="flex items-center gap-1.5">
             <Switch checked={billable} onCheckedChange={setBillable} />
-            <span className="text-xs text-ch/70">Billable</span>
+            <span className="text-xs text-ch/70">{billableToggleLabel}</span>
           </div>
         </div>
       </div>
+
+      {isAdmin && (
+        <div>
+          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Team member</Label>
+          {assigneeOptions.length > 0 ? (
+            <Select
+              value={
+                assigneeOptions.some((m) => (m.assigneeKey ?? `p:${m.id}`) === assigneeKey)
+                  ? assigneeKey
+                  : (assigneeOptions[0].assigneeKey ?? `p:${assigneeOptions[0].id}`)
+              }
+              onValueChange={setAssigneeKey}
+            >
+              <SelectTrigger className="h-9"><SelectValue placeholder="Who spent this time?" /></SelectTrigger>
+              <SelectContent position="popper" className="z-[200]">
+                {assigneeOptions.map((m) => {
+                  const key = m.assigneeKey ?? `p:${m.id}`;
+                  return (
+                    <SelectItem key={key} value={key}>{m.name || m.email || "Team member"}</SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          ) : assigneesLoading ? (
+            <p className="mt-1 text-xs text-ch/55">Loading team…</p>
+          ) : (
+            <p className="mt-1 text-xs text-ch/55">
+              No Sightline logins on this firm yet. Active users appear here after they accept a team invite.
+            </p>
+          )}
+        </div>
+      )}
 
       <div>
         <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Project</Label>
         <Select
           value={projectId || "_none"}
           onValueChange={(v) => {
-            if (v === "_none") { setProjectId(""); setPhaseId(""); return; }
-            setProjectId(v); setPhaseId("");
+            if (v === "_none") { setProjectId(""); setPhaseId(""); setStepId(""); return; }
+            setProjectId(v); setPhaseId(""); setStepId("");
           }}
         >
           <SelectTrigger className="h-9"><SelectValue placeholder="Choose project" /></SelectTrigger>
@@ -1381,39 +1835,46 @@ function EntryForm({
       </div>
 
       <div>
-        <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Description</Label>
-        <Input
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          maxLength={500}
-          placeholder="What did you work on?"
-          className="h-9"
-        />
+        {fromGoogleCalendar ? (
+          <div className="rounded-md border border-dashed border-[#7A93B8] bg-[#E8EEF5]/40 px-3 py-2.5">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-ch/50">From Google Calendar</p>
+            <p className="mt-1 text-sm font-medium text-ch">{googleTitle || description}</p>
+            {(googleNotes || notes) && (
+              <p className="mt-1 text-xs text-ch/65 whitespace-pre-wrap">{googleNotes || notes}</p>
+            )}
+            <p className="mt-2 text-[11px] text-ch/50">
+              Pick project and activity below — the calendar title and notes are saved unchanged.
+            </p>
+          </div>
+        ) : (
+          <>
+            <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Description</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={500}
+              placeholder="What did you work on?"
+              className="h-9"
+            />
+          </>
+        )}
       </div>
 
       {projectId && projectPhases.length > 0 && (
-        <ProjectTaskPicker
+        <TimeLogTaskPicker
           phases={projectPhases}
+          workflowAttachments={projectWorkflowAttachments}
+          projectSteps={stepsForProject}
           phaseId={phaseId}
-          onChange={setPhaseId}
+          stepId={stepId}
+          onChange={({ phaseId: p, stepId: s }) => {
+            setPhaseId(p);
+            setStepId(s);
+          }}
         />
       )}
 
-      {isAdmin && team.length > 1 && (
-        <div>
-          <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Team member</Label>
-          <Select value={userId} onValueChange={setUserId}>
-            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {team.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name || m.email}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {!compact && (
+      {!compact && !fromGoogleCalendar && (
         <div>
           <Label className="text-[11px] uppercase tracking-[0.16em] text-ch/60">Notes</Label>
           <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />

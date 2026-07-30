@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { calc } from "@/lib/finance";
 import { fmtUsd } from "@/lib/finance";
 import { AlignedRateBreakdown } from "./AlignedRateBreakdown";
 import { MetricBreakdown } from "./MetricBreakdown";
-import { listRateHistory } from "@/lib/rate-history.functions";
+import { UnderstandYourNumbers, type UnderstandYourNumbersProps } from "./UnderstandYourNumbers";
 import {
   normalizePricingStructure,
   referenceProjectHours,
+  isRetainerFirm,
 } from "@/lib/pricing-structure";
+import { RetainerBenchmarkCard } from "./RetainerBenchmarkCard";
+import type { RetainerPortfolioMetrics } from "@/lib/retainer-metrics";
 
 type Calc = ReturnType<typeof calc>;
 
@@ -59,6 +60,9 @@ export function RateArchitecturePanel({
   targetMarginPct,
   configUpdatedAt,
   projectScopedHours = [],
+  understandProps,
+  className,
+  retainerMetrics,
 }: {
   c: Calc;
   cfg: any;
@@ -67,9 +71,13 @@ export function RateArchitecturePanel({
   targetMarginPct: number;
   configUpdatedAt?: string | null;
   projectScopedHours?: number[];
+  understandProps?: UnderstandYourNumbersProps;
+  className?: string;
+  retainerMetrics?: RetainerPortfolioMetrics | null;
 }) {
   const pricingStructure = normalizePricingStructure(cfg?.pricing_structure);
   const isFlatFeePricing = pricingStructure === "flat_fee";
+  const isRetainerPricing = isRetainerFirm(pricingStructure);
   const pill = pillFor(c.rateHealth);
   const aligned = c.alignedRate || 0;
   const billed = c.billedRate || 0;
@@ -81,69 +89,13 @@ export function RateArchitecturePanel({
 
   // Annual figures
   const costFloor = c.totalCost || 0;
-  const budgetRevenue = c.annualRevenue || 0;
-  const alignedRevenue = aligned * c.annualBillableHrs;
-  const revShortfall = Math.max(0, costFloor - budgetRevenue);
-  const revSurplusOverCost = Math.max(0, budgetRevenue - costFloor);
-  const revGapToAligned = Math.max(0, alignedRevenue - budgetRevenue);
-  const revSurplusOverAligned = Math.max(0, budgetRevenue - alignedRevenue);
-
-  // Per-contributor revenue breakdown for popover + subline count.
-  const weeksYr = c.weeksPerYear || WEEKS_PER_YEAR;
-  const firmRate = Number(cfg?.rate_billed) || billed || 0;
-  const principalHrs = c.principalBillableHrsWeek || Number(cfg?.target_billable_hrs_per_week) || 0;
-  const principalMember = (members ?? []).find(
-    (m: any) => m?.role_type === "principal",
-  ) as any | undefined;
-  const teamMembers = (members ?? []).filter(
-    (m: any) => m?.role_type !== "principal" && Number(m?.expected_hrs_per_week) > 0,
-  );
-  const contributors: Array<{
-    label: string;
-    role: string;
-    rate: number;
-    hrs: number;
-    weeks: number;
-    revenue: number;
-  }> = [];
-  if (principalHrs > 0 && firmRate > 0) {
-    contributors.push({
-      label: (principalMember?.name as string) || "Principal",
-      role: "PRINCIPAL",
-      rate: firmRate,
-      hrs: principalHrs,
-      weeks: weeksYr,
-      revenue: firmRate * principalHrs * weeksYr,
-    });
-  }
-  for (const m of teamMembers as any[]) {
-    const rRaw = Number(m.billed_rate);
-    const rate = Number.isFinite(rRaw) && rRaw > 0 ? rRaw : firmRate;
-    const hrs = Number(m.expected_hrs_per_week) || 0;
-    const roleTag = String(m.role_type || "team").replace(/_/g, " ").toUpperCase();
-    contributors.push({
-      label: (m.name as string) || "Team member",
-      role: `TEAM — ${roleTag}`,
-      rate,
-      hrs,
-      weeks: weeksYr,
-      revenue: rate * hrs * weeksYr,
-    });
-  }
-  const contributorCount = contributors.length;
 
   // Position of billed indicator on bar (relative to aligned as 100%)
   const barMax = aligned > 0 ? aligned : 1;
   const bePct = Math.min(100, (be / barMax) * 100);
   const billedPct = Math.min(100, Math.max(0, (billed / barMax) * 100));
 
-  // Rate history
-  const fetchHistory = useServerFn(listRateHistory);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const { data: history = [] } = useQuery({
-    queryKey: ["rate-history"],
-    queryFn: () => fetchHistory(),
-  });
+  const [understandOpen, setUnderstandOpen] = useState(false);
 
   // Annual gap for below_floor decision prompt
   const annualGap = gap * c.annualBillableHrs;
@@ -154,6 +106,7 @@ export function RateArchitecturePanel({
   return (
     <div
       data-tour="rate-panel"
+      className={className}
       style={{
         background: "white",
         border: `0.5px solid ${BORDER}`,
@@ -290,19 +243,21 @@ export function RateArchitecturePanel({
                 {fmtUsd(aligned, { decimals: 0 })}
               </span>
               <span style={{ fontSize: 14, color: MUTED }}>/hr</span>
-              <span
-                style={{
-                  marginLeft: 10,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  padding: "3px 8px",
-                  borderRadius: 3,
-                  background: pill.bg,
-                  color: pill.color,
-                }}
-              >
-                {pill.label}
-              </span>
+              {!isRetainerPricing ? (
+                <span
+                  style={{
+                    marginLeft: 10,
+                    fontSize: 11,
+                    fontWeight: 500,
+                    padding: "3px 8px",
+                    borderRadius: 3,
+                    background: pill.bg,
+                    color: pill.color,
+                  }}
+                >
+                  {pill.label}
+                </span>
+              ) : null}
               <AlignedRateBreakdown c={c} targetMarginPct={targetMarginPct} side="bottom" />
             </div>
             <div
@@ -319,7 +274,7 @@ export function RateArchitecturePanel({
         )}
       </div>
 
-      {!isFlatFeePricing ? (
+      {!isFlatFeePricing && !isRetainerPricing ? (
         <>
           {/* Three-number row */}
           <div
@@ -463,6 +418,10 @@ export function RateArchitecturePanel({
         </>
       ) : null}
 
+      {isRetainerPricing && retainerMetrics ? (
+        <RetainerBenchmarkCard metrics={retainerMetrics} />
+      ) : null}
+
       {/* Annual impact row */}
       <div
         className="grid grid-cols-2 gap-6"
@@ -492,120 +451,61 @@ export function RateArchitecturePanel({
           </div>
           <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>What the firm must earn</div>
         </div>
-        <div>
-          <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}>
-            Budget revenue (annual)
+        <div
+          style={{
+            background: CREAM,
+            borderRadius: 6,
+            padding: "10px 12px",
+            border: `1px solid ${BORDER}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: MUTED,
+              fontWeight: 600,
+            }}
+          >
+            Revenue capacity (planning)
           </div>
-          <div className="flex items-baseline gap-1" style={{ marginTop: 4 }}>
-            <span
-              style={{
-                fontFamily: "'Cormorant Garamond', serif",
-                fontSize: 22,
-                color:
-                  budgetRevenue < costFloor ? TERRA : budgetRevenue < alignedRevenue ? GOLD : SAGE,
-              }}
+          <p style={{ fontSize: 11, color: MUTED, marginTop: 6, lineHeight: 1.55 }}>
+            Scenario math from rates and hours — not what you&apos;ve collected. YTD and realized rate are on the
+            revenue tile.
+          </p>
+          <Link
+            to="/settings"
+            search={{ panel: "rate" }}
+            style={{ fontSize: 11, color: GOLD, marginTop: 8, display: "inline-block" }}
+            className="hover:underline"
+          >
+            Model capacity & utilization →
+          </Link>
+        </div>
+      </div>
+
+      {/* Understand your numbers (collapsible) */}
+      {understandProps && (
+        <>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
+            <button
+              type="button"
+              onClick={() => setUnderstandOpen((v) => !v)}
+              className="flex items-center gap-1 hover:opacity-80"
+              style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}
             >
-              {fmtUsd(budgetRevenue, { decimals: 0 })}
-            </span>
-            <span data-tour="budget-revenue-icon" style={{ display: "inline-flex" }}>
-              <MetricBreakdown
-                metric="budget_revenue"
-                c={c}
-                cfg={cfg}
-                contributors={contributors}
-                side="bottom"
-                iconSize={12}
-              />
-            </span>
+              {understandOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Understand your numbers
+            </button>
           </div>
-          {contributorCount > 0 && (
-            <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
-              {contributorCount} billable contributor{contributorCount === 1 ? "" : "s"} · see breakdown
+
+          {understandOpen && (
+            <div style={{ marginTop: 10 }}>
+              <UnderstandYourNumbers {...understandProps} variant="embedded" />
             </div>
           )}
-          <div style={{ fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>
-            {budgetRevenue < costFloor ? (
-              <>
-                <span style={{ color: TERRA }}>-{fmtUsd(revShortfall, { decimals: 0 })}/yr shortfall vs cost floor</span>
-              </>
-            ) : budgetRevenue < alignedRevenue ? (
-              <>
-                <span style={{ color: SAGE }}>+{fmtUsd(revSurplusOverCost, { decimals: 0 })}/yr above cost floor</span>
-                <br />
-                <span style={{ color: GOLD }}>{fmtUsd(revGapToAligned, { decimals: 0 })}/yr below target revenue</span>
-              </>
-            ) : (
-              <span style={{ color: SAGE }}>+{fmtUsd(revSurplusOverAligned, { decimals: 0 })}/yr above target</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Rate history + "How is this built" */}
-      <div className="flex items-center justify-between" style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${BORDER}` }}>
-        <button
-          type="button"
-          onClick={() => setHistoryOpen((v) => !v)}
-          className="flex items-center gap-1 hover:opacity-80"
-          style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: MUTED, fontWeight: 600 }}
-        >
-          {historyOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          Rate history
-        </button>
-        <Link
-          to="/knowledge-base/rate-architecture"
-          style={{ fontSize: 11, color: GOLD }}
-          className="hover:underline"
-        >
-          How is this built? →
-        </Link>
-      </div>
-
-      <div className="flex items-center gap-4" style={{ marginTop: 8 }}>
-        <Link
-          to="/rate-architecture"
-          style={{ fontSize: 11, color: GOLD, letterSpacing: "0.02em" }}
-          className="hover:underline"
-        >
-          Understand my numbers →
-        </Link>
-        <Link
-          to="/rate-architecture"
-          search={{ tab: "model" } as any}
-          style={{ fontSize: 11, color: GOLD, letterSpacing: "0.02em" }}
-          className="hover:underline"
-        >
-          Model a change →
-        </Link>
-      </div>
-
-      {historyOpen && (
-        <div style={{ marginTop: 10, fontSize: 11, color: MUTED }}>
-          {history.length === 0 ? (
-            <div style={{ fontStyle: "italic" }}>No changes recorded yet.</div>
-          ) : (
-            <div className="space-y-1.5">
-              {history.map((r) => (
-                <div key={r.id} className="flex items-center justify-between gap-3">
-                  <span style={{ minWidth: 70 }}>
-                    {new Date(r.changed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
-                  <span style={{ flex: 1 }}>
-                    {r.previous_rate != null ? (
-                      <>
-                        {fmtUsd(Number(r.previous_rate), { decimals: 0 })} →{" "}
-                        <strong style={{ color: CHARCOAL }}>{fmtUsd(Number(r.rate), { decimals: 0 })}</strong>
-                      </>
-                    ) : (
-                      <strong style={{ color: CHARCOAL }}>{fmtUsd(Number(r.rate), { decimals: 0 })}</strong>
-                    )}
-                  </span>
-                  <span style={{ opacity: 0.8 }}>{r.change_reason ?? "Updated"}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -648,94 +548,116 @@ function NumCell({
 
 /* ─────────────────────────── Zone B ─────────────────────────── */
 
-export function WeeklyPulse({
+export function HoursThisWeekTile({
   weekBillable,
   targetHrs,
-  activeProjects,
-  trend,
+  className,
 }: {
   weekBillable: number;
   targetHrs: number;
-  activeProjects: Array<{ health: "healthy" | "watch" | "at_risk" }>;
-  trend: Array<{ billable: number; total: number }>;
+  className?: string;
 }) {
   const remaining = Math.max(0, targetHrs - weekBillable);
   const hoursPct = targetHrs > 0 ? (weekBillable / targetHrs) * 100 : 0;
-  const healthy = activeProjects.filter((p) => p.health === "healthy").length;
-  const watch = activeProjects.filter((p) => p.health === "watch").length;
-  const atRisk = activeProjects.filter((p) => p.health === "at_risk").length;
-
-  const trendAvg =
-    trend.length > 0 ? trend.reduce((s, w) => s + w.billable, 0) / trend.length : 0;
-  const trendUtil = targetHrs > 0 ? (trendAvg / targetHrs) * 100 : 0;
-  const weeksOnTarget = trend.filter((w) => targetHrs > 0 && w.billable >= targetHrs).length;
-  const trendColor =
-    weeksOnTarget >= 3 ? SAGE : weeksOnTarget === 2 ? GOLD : TERRA;
 
   return (
-    <div className="flex flex-col" style={{ gap: 10 }}>
-      <PulseCard label="Hours this week">
-        <div className="flex items-baseline justify-between">
-          <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: CHARCOAL }}>
-            {weekBillable.toFixed(1)}/{targetHrs} hrs
-          </span>
-          <Link to="/time-calendar" style={{ fontSize: 11, color: GOLD }} className="hover:underline">
-            Enter hours →
-          </Link>
-        </div>
+    <PulseCard label="Hours this week" className={className}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: CHARCOAL, lineHeight: 1.1 }}>
+          {weekBillable.toFixed(1)}/{targetHrs} hrs
+        </span>
+        <Link to="/time-calendar" style={{ fontSize: 11, color: GOLD, flexShrink: 0 }} className="hover:underline">
+          Enter hours →
+        </Link>
+      </div>
+      <div className="pt-2">
         <MiniBar pct={hoursPct} />
         <div style={{ fontSize: 11, color: remaining <= 0 ? SAGE : MUTED, marginTop: 4 }}>
           {remaining <= 0 ? "Target reached" : `${remaining.toFixed(1)} hrs to target`}
         </div>
-      </PulseCard>
+      </div>
+    </PulseCard>
+  );
+}
 
-      <PulseCard label="4-week trend">
-        <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: CHARCOAL }}>
-          {trendAvg.toFixed(1)}/{targetHrs} hrs/wk
-        </div>
+export function FourWeekTrendTile({
+  trend,
+  targetHrs,
+  className,
+}: {
+  trend: Array<{ billable: number; total: number }>;
+  targetHrs: number;
+  className?: string;
+}) {
+  const trendAvg = trend.length > 0 ? trend.reduce((s, w) => s + w.billable, 0) / trend.length : 0;
+  const trendUtil = targetHrs > 0 ? (trendAvg / targetHrs) * 100 : 0;
+  const weeksOnTarget = trend.filter((w) => targetHrs > 0 && w.billable >= targetHrs).length;
+  const trendColor = weeksOnTarget >= 3 ? SAGE : weeksOnTarget === 2 ? GOLD : TERRA;
+
+  return (
+    <PulseCard label="4-week trend" className={className}>
+      <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, color: CHARCOAL, lineHeight: 1.1 }}>
+        {trendAvg.toFixed(1)}/{targetHrs} hrs/wk
+      </div>
+      <div className="pt-2">
         <MiniBar pct={trendUtil} />
         <div className="mt-1 flex items-center justify-between" style={{ fontSize: 11, color: MUTED }}>
           <span>Utilization {Math.round(trendUtil)}%</span>
           <span style={{ color: trendColor }}>{weeksOnTarget} of 4 on target</span>
         </div>
-      </PulseCard>
+      </div>
+    </PulseCard>
+  );
+}
 
-      <PulseCard label="Active projects">
-        <div className="flex items-baseline justify-between">
-          <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 24, color: CHARCOAL }}>
-            {activeProjects.length} projects
-          </span>
-          <Link to="/projects" style={{ fontSize: 11, color: GOLD }} className="hover:underline">
-            See all →
-          </Link>
-        </div>
-        <div className="flex items-center gap-3" style={{ fontSize: 11, color: MUTED, marginTop: 8 }}>
-          <span className="flex items-center gap-1">
-            <Dot color={SAGE} /> {healthy} healthy
-          </span>
-          <span className="flex items-center gap-1">
-            <Dot color={GOLD} /> {watch} watch
-          </span>
-          <span className="flex items-center gap-1">
-            <Dot color={TERRA} /> {atRisk} at risk
-          </span>
-        </div>
-      </PulseCard>
+/** @deprecated Use HoursThisWeekTile + FourWeekTrendTile in the architecture row grid. */
+export function WeeklyPulse({
+  weekBillable,
+  targetHrs,
+  trend,
+}: {
+  weekBillable: number;
+  targetHrs: number;
+  trend: Array<{ billable: number; total: number }>;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <HoursThisWeekTile weekBillable={weekBillable} targetHrs={targetHrs} />
+      <FourWeekTrendTile trend={trend} targetHrs={targetHrs} />
     </div>
   );
 }
 
-function PulseCard({ label, children }: { label: string; children: React.ReactNode }) {
+function PulseCard({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <div
+      className={className ?? ""}
       style={{
         background: "white",
         border: `0.5px solid ${BORDER}`,
         borderRadius: 6,
-        padding: "14px 18px",
+        padding: "12px 16px",
       }}
     >
-      <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: MUTED, fontWeight: 600, marginBottom: 6 }}>
+      <div
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: MUTED,
+          fontWeight: 500,
+          marginBottom: 6,
+          flexShrink: 0,
+        }}
+      >
         {label}
       </div>
       {children}
@@ -751,10 +673,6 @@ function MiniBar({ pct }: { pct: number }) {
       <div style={{ width: `${p}%`, height: "100%", background: fill, transition: "width 400ms ease" }} />
     </div>
   );
-}
-
-function Dot({ color }: { color: string }) {
-  return <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: 999, background: color }} />;
 }
 
 /* ─────────────────────────── Part C — Pricing Strip ─────────────────────────── */

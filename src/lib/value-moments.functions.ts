@@ -2,12 +2,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { calc } from "@/lib/finance";
+import { requirePrincipalOrAdmin } from "@/lib/auth-guards.server";
 
 /** Moment 1 — flip rate_insight_shown to true. */
 export const dismissRateInsight = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("firm_id")
@@ -28,6 +30,7 @@ export const getProjectCloseSummary = createServerFn({ method: "GET" })
   .inputValidator((d) => z.object({ projectId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("firm_id")
@@ -95,6 +98,7 @@ export const getAnnualSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    await requirePrincipalOrAdmin(supabase, userId);
     const { data: profile } = await supabase
       .from("profiles")
       .select("firm_id")

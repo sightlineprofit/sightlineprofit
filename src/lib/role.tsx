@@ -41,25 +41,30 @@ export function useMe() {
   const realIsSuper = !!realProfile?.is_super_admin;
 
   let data = query.data;
-  // Only super admins can drive view-as overrides. For non-supers (or while
-  // they're impersonating a real firm) the overrides are inert.
-  const overrideActive =
-    realIsSuper && !realProfile?.impersonated_firm_id && (va.role || va.tier);
+  const viewAsRoleActive =
+    realIsSuper && !realProfile?.impersonated_firm_id && !!va.role;
+  const viewAsTierActive =
+    realIsSuper && !realProfile?.impersonated_firm_id && !!va.tier;
 
-  if (data && overrideActive) {
+  // Role simulation drops the super flag so nav/guards match the chosen role.
+  // Tier-only overrides keep super-admin access (nav + /admin).
+  if (data && viewAsRoleActive) {
     data = {
       ...data,
       profile: {
         ...data.profile,
-        // Swap the role so RoleGuard / role-conditional UI behaves like the
-        // selected role. Drop the super flag so tier gates apply naturally.
-        role: (va.role ?? data.profile?.role) as any,
+        role: va.role as AppRole,
         is_super_admin: false,
       } as any,
       firm:
         data.firm && va.tier
           ? { ...data.firm, subscription_tier: va.tier as any }
           : data.firm,
+    };
+  } else if (data && viewAsTierActive && data.firm) {
+    data = {
+      ...data,
+      firm: { ...data.firm, subscription_tier: va.tier as any },
     };
   }
 
@@ -68,10 +73,14 @@ export function useMe() {
     realIsSuper,
     realProfile,
     realFirm,
+    viewAsRoleActive,
+    viewAsTierActive,
   }) as typeof query & {
     realIsSuper: boolean;
     realProfile: typeof realProfile;
     realFirm: typeof realFirm;
+    viewAsRoleActive: boolean;
+    viewAsTierActive: boolean;
   };
 }
 
@@ -110,12 +119,11 @@ export function landingPathFor(
     return LANDING_PAGE_MAP[key] ?? "/dashboard";
   }
   if (role === "view_only") return "/sightline";
-  return profile.welcomed_at ? "/time-calendar" : "/welcome";
+  return profile.welcomed_at ? "/my-work" : "/welcome";
 }
 
 export function fallbackForRole(role: AppRole | null): string {
-  if (role === "team") return "/time-calendar";
-  if (role === "view_only") return "/sightline";
+  if (role === "team" || role === "view_only") return "/my-work";
   return "/dashboard";
 }
 
@@ -243,15 +251,15 @@ export function RoleGuard({
 }
 
 export function SuperAdminGuard({ children }: { children: React.ReactNode }) {
-  const { data, isLoading } = useMe();
-  if (isLoading || !data?.profile) {
+  const { realIsSuper, isLoading, realProfile } = useMe();
+  if (isLoading || !realProfile) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-sm text-ch/50">Checking access…</div>
       </div>
     );
   }
-  if (!data.profile.is_super_admin) {
+  if (!realIsSuper) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;

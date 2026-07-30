@@ -1,41 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { createFirmForCurrentUser, getMyContext } from "@/lib/firm.functions";
+import { createFirmForCurrentUser, getAuthBootstrapState, getMyContext } from "@/lib/firm.functions";
 import { syncFirmFromStripeSession } from "@/lib/billing.functions";
-import { getPreferredCheckoutEnvironment, getStripeEnvironment, type StripeEnv } from "@/lib/stripe";
+import { resolveCheckoutEnvironment, type StripeEnv } from "@/lib/stripe";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { landingPathFor } from "@/lib/role";
-
-const CHECKOUT_ENV_STORAGE_KEY = "sightline_checkout_environment";
-
-function isStripeEnv(value: unknown): value is StripeEnv {
-  return value === "sandbox" || value === "live";
-}
-
-function readSavedCheckoutEnvironment(): StripeEnv | null {
-  if (typeof window === "undefined") return null;
-  const saved = window.localStorage.getItem(CHECKOUT_ENV_STORAGE_KEY);
-  return isStripeEnv(saved) ? saved : null;
-}
-
-function checkoutEnvironmentFromPending(): StripeEnv | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem("sightline_pending_firm") ?? window.sessionStorage.getItem("sightline_pending_firm");
-  if (!raw) return null;
-  try {
-    const pending = JSON.parse(raw) as { checkoutEnvironment?: unknown };
-    return isStripeEnv(pending.checkoutEnvironment) ? pending.checkoutEnvironment : null;
-  } catch {
-    return null;
-  }
-}
-
-function resolveCheckoutEnvironment(searchEnv?: StripeEnv): StripeEnv {
-  const explicitEnv = searchEnv ?? readSavedCheckoutEnvironment() ?? checkoutEnvironmentFromPending();
-  return explicitEnv ? getStripeEnvironment(explicitEnv) : getPreferredCheckoutEnvironment();
-}
+import { firmHasAppAccess } from "@/lib/firm-access";
 
 /** Complete the Supabase OAuth PKCE redirect before post-auth routing runs. */
 async function ensureOAuthSession(): Promise<void> {
@@ -76,6 +48,7 @@ function PostAuth() {
   const search = Route.useSearch();
   const createFirm = useServerFn(createFirmForCurrentUser);
   const getCtx = useServerFn(getMyContext);
+  const getBootstrap = useServerFn(getAuthBootstrapState);
   const syncFromSession = useServerFn(syncFirmFromStripeSession);
   const [status, setStatus] = useState<
     | { kind: "working"; message: string }
@@ -85,6 +58,18 @@ function PostAuth() {
 
   const fromStripe = !!search.session_id;
 
+  const goToApp = useCallback(
+    (ctx: Awaited<ReturnType<typeof getCtx>>) => {
+      if (!ctx?.profile) {
+        nav({ to: "/login" });
+        return;
+      }
+      const target = landingPathFor(ctx.profile, ctx.firm as any);
+      nav({ to: target as any });
+    },
+    [nav],
+  );
+
   const run = useCallback(async (): Promise<void> => {
     await ensureOAuthSession();
     const { data } = await supabase.auth.getUser();
@@ -92,25 +77,33 @@ function PostAuth() {
       nav({ to: "/login" });
       return;
     }
-    const ctx = await getCtx();
-    const isSuper = !!ctx?.profile?.is_super_admin;
+    let bootstrap = await getBootstrap();
+    let ctx = await getCtx();
+    const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
+    const isSuper = bootstrap.isSuperAdmin || !!ctx?.profile?.is_super_admin;
     if (isSuper) {
-      if (!ctx?.profile?.firm_id) {
-        const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
+      try {
+        sessionStorage.removeItem("sightline.viewAs.v1");
+      } catch {
+        /* ignore */
+      }
+      if (!bootstrap.firmId && !ctx?.profile?.firm_id) {
         const ownerName = meta.name || meta.full_name || data.user.email!.split("@")[0];
         await createFirm({ data: { firmName: "Sightline Studio", ownerName } });
         sessionStorage.removeItem("sightline_pending_firm");
+        bootstrap = await getBootstrap();
+        ctx = await getCtx();
       }
       nav({ to: "/admin" as any });
       return;
     }
 
-    if (!ctx?.profile?.firm_id) {
+    const hasFirm = !!(bootstrap.firmId ?? ctx?.profile?.firm_id);
+    if (!hasFirm) {
       const pendingRaw =
         localStorage.getItem("sightline_pending_firm") ??
         sessionStorage.getItem("sightline_pending_firm");
       const pending = pendingRaw ? JSON.parse(pendingRaw) : null;
-      const meta = (data.user.user_metadata ?? {}) as Record<string, string>;
       const firmName = pending?.firmName || meta.firm_name || (meta.name ? `${meta.name}'s Studio` : "My Studio");
       const ownerName = pending?.ownerName || meta.name || meta.full_name || data.user.email!.split("@")[0];
       const billingFrequency: "monthly" | "annual" =
@@ -121,21 +114,29 @@ function PostAuth() {
       });
       localStorage.removeItem("sightline_pending_firm");
       sessionStorage.removeItem("sightline_pending_firm");
+      ctx = await getCtx();
+    }
+
+    const firmId = bootstrap.firmId ?? ctx?.profile?.firm_id;
+    let firm = ctx?.firm as any;
+
+    if (firmId && !firm) {
+      ctx = await getCtx();
+      firm = ctx?.firm as any;
+    }
+
+    if (firmId && firmHasAppAccess(firm)) {
+      goToApp(ctx);
+      return;
+    }
+
+    if (!firmId) {
       nav({ to: "/register", search: { step: "payment", env: resolveCheckoutEnvironment(search.env) } as any });
       return;
     }
 
-    const firm = ctx.firm as any;
-    const hasSub = !!firm?.stripe_subscription_id;
-    if (hasSub) {
-      const target = landingPathFor(ctx.profile, firm);
-      nav({ to: target as any });
-      return;
-    }
-
-    // No subscription on the firm yet.
+    // Firm exists but billing is not active yet.
     if (fromStripe) {
-      // Poll for the webhook to land — up to ~15s.
       const maxAttempts = 10;
       const intervalMs = 1500;
       for (let i = 0; i < maxAttempts; i++) {
@@ -151,14 +152,11 @@ function PostAuth() {
         await new Promise((r) => setTimeout(r, intervalMs));
         const next = await getCtx();
         const nextFirm = next?.firm as any;
-        if (nextFirm?.stripe_subscription_id && next?.profile) {
-          const target = landingPathFor(next.profile, nextFirm);
-          nav({ to: target as any });
+        if (next?.profile && firmHasAppAccess(nextFirm)) {
+          goToApp(next);
           return;
         }
       }
-      // Webhook didn't land in time — try a direct server-side sync from
-      // the Stripe session as a fallback before showing the timeout screen.
       if (search.session_id) {
         setStatus({ kind: "working", message: "Finalizing your account…" });
         try {
@@ -167,9 +165,8 @@ function PostAuth() {
           if ("ok" in res && res.ok) {
             const refreshed = await getCtx();
             const refFirm = refreshed?.firm as any;
-            if (refFirm?.stripe_subscription_id && refreshed?.profile) {
-              const target = landingPathFor(refreshed.profile, refFirm);
-              nav({ to: target as any });
+            if (refreshed?.profile && firmHasAppAccess(refFirm)) {
+              goToApp(refreshed);
               return;
             }
           } else if ("error" in res) {
@@ -183,10 +180,8 @@ function PostAuth() {
       return;
     }
 
-    // Not from Stripe (e.g. user hit /post-auth directly or reopened after
-    // signing in) — send them to complete payment.
     nav({ to: "/register", search: { step: "payment", env: resolveCheckoutEnvironment(search.env) } as any });
-  }, [nav, createFirm, getCtx, syncFromSession, fromStripe, search.session_id, search.env]);
+  }, [nav, createFirm, getCtx, getBootstrap, syncFromSession, fromStripe, search.session_id, search.env, goToApp]);
 
   useEffect(() => {
     let cancelled = false;

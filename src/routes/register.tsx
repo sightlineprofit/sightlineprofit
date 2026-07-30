@@ -11,9 +11,9 @@ import { getBillingSummary } from "@/lib/billing.functions";
 import type { CheckoutPriceKey } from "@/lib/stripe.server";
 import {
   canUseStripeEnvironment,
-  getPreferredCheckoutEnvironment,
-  getStripeEnvironment,
   isStripeCheckoutTestingHost,
+  resolveCheckoutEnvironment,
+  writeSavedCheckoutEnvironment,
   type StripeEnv,
 } from "@/lib/stripe";
 
@@ -34,39 +34,6 @@ export const Route = createFileRoute("/register")({
 // ────────────────────────────────────────────── shared bits ──
 
 const PAGE_BG = "#FAF7F2";
-const CHECKOUT_ENV_STORAGE_KEY = "sightline_checkout_environment";
-
-function isStripeEnv(value: unknown): value is StripeEnv {
-  return value === "sandbox" || value === "live";
-}
-
-function readSavedCheckoutEnvironment(): StripeEnv | null {
-  if (typeof window === "undefined") return null;
-  const saved = window.localStorage.getItem(CHECKOUT_ENV_STORAGE_KEY);
-  return isStripeEnv(saved) ? saved : null;
-}
-
-function writeSavedCheckoutEnvironment(environment: StripeEnv) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(CHECKOUT_ENV_STORAGE_KEY, environment);
-}
-
-function checkoutEnvironmentFromPending(): StripeEnv | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem("sightline_pending_firm") ?? window.sessionStorage.getItem("sightline_pending_firm");
-  if (!raw) return null;
-  try {
-    const pending = JSON.parse(raw) as { checkoutEnvironment?: unknown };
-    return isStripeEnv(pending.checkoutEnvironment) ? pending.checkoutEnvironment : null;
-  } catch {
-    return null;
-  }
-}
-
-function resolveCheckoutEnvironment(searchEnv?: StripeEnv): StripeEnv {
-  const explicitEnv = searchEnv ?? readSavedCheckoutEnvironment() ?? checkoutEnvironmentFromPending();
-  return explicitEnv ? getStripeEnvironment(explicitEnv) : getPreferredCheckoutEnvironment();
-}
 
 function Wordmark() {
   return (
@@ -187,6 +154,7 @@ function RegisterPage() {
   const [busy, setBusy] = useState(false);
   const [checkoutEnvironment, setCheckoutEnvironment] = useState<StripeEnv | null>(null);
   const [checkoutConfigError, setCheckoutConfigError] = useState<string | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   const quoteFn = useServerFn(getFoundingQuote);
   const billingSummaryFn = useServerFn(getBillingSummary);
@@ -202,6 +170,22 @@ function RegisterPage() {
       setCheckoutConfigError(error instanceof Error ? error.message : "Payments are not configured for this build.");
     }
   }, [search.env]);
+
+  // Signed-in users should never re-do step 1 — route through post-auth.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      setSessionChecked(true);
+      if (data.session && step === "account") {
+        nav({ to: "/post-auth", search: search.env ? { env: search.env } : undefined } as any);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, nav, search.env]);
 
   // Live founding-slot / price quote for the currently-selected frequency.
   const quote = useQuery({
@@ -221,15 +205,14 @@ function RegisterPage() {
     enabled: step === "payment",
   });
 
-  // If step is payment but there's no session yet (e.g. hard refresh),
-  // send them back to step 1.
+  // If step is payment but firm context is missing, recover via post-auth (not step 1).
   useEffect(() => {
     if (step !== "payment") return;
     if (currentFirm.isLoading) return;
     if (!currentFirm.data) {
-      setStep("account");
+      nav({ to: "/post-auth", search: search.env ? { env: search.env } : undefined } as any);
     }
-  }, [step, currentFirm.data, currentFirm.isLoading]);
+  }, [step, currentFirm.data, currentFirm.isLoading, nav, search.env]);
 
   // Persist the frequency toggle to the URL so back-button behaves.
   useEffect(() => {
@@ -354,7 +337,11 @@ function RegisterPage() {
         <Wordmark />
         <Progress current={step} />
 
-        {step === "account" ? (
+        {step === "account" && !sessionChecked ? (
+          <p className="mt-10 text-center text-sm text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
+            Loading…
+          </p>
+        ) : step === "account" ? (
           <StepAccount
             ownerName={ownerName}
             setOwnerName={setOwnerName}

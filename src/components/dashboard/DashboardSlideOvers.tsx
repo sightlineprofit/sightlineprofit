@@ -267,12 +267,8 @@ export function RateBreakdownSlideOver({
       : `${marginPerWk >= 0 ? "+" : "-"}${fmtUsd(Math.abs(marginPerWk))}/wk`;
   const marginColorClass = marginPerHr >= 0 ? "text-gold" : "text-danger";
 
-  const budgetRevenue = c.annualRevenue;
-  const utilizationPct =
-    (c.targetBillableHrsWeek > 0 &&
-      Number.isFinite(c.targetBillableHrsWeek) &&
-      (c.targetBillableHrsWeek / Math.max(1, c.targetBillableHrsWeek + 0)) * 100) || 0;
-  // utilization target = target billable / available; but available isn't in c. We derive from config elsewhere; fall back to marginPct target display.
+  const budgetRevenue = c.revenueCapacityAtUtilization ?? c.annualRevenue;
+  const utilizationPct = c.targetUtilizationPct ?? null;
 
   const pill = (() => {
     if (c.rateHealth === "healthy")
@@ -427,20 +423,20 @@ export function RateBreakdownSlideOver({
           tip="Total annual cost of running this firm including your compensation and all operating expenses."
         />
         <DetailRow
-          label="Utilization target"
-          value={`${Math.round(utilizationPct) || "—"}${utilizationPct ? "%" : ""}`}
-          tip="Target billable hours as a percentage of available hours per week."
+          label="Planning utilization target"
+          value={utilizationPct != null ? `${Math.round(utilizationPct)}%` : "—"}
+          tip="Intentional billable % applied to revenue capacity scenarios (Settings → Rate). Distinct from logged hours this week."
         />
         <DetailRow
-          label="Budget revenue"
+          label="Revenue capacity (planning)"
           value={fmtUsd(budgetRevenue)}
-          tip="Annual revenue if every billable contributor hits target hours at their billed rates."
+          tip="Rate × configured hours × weeks, adjusted by your planning utilization %. Not YTD collections."
           last
         />
         <div className="mt-3 flex items-center gap-3 text-[11px] text-ch/50">
           <span className="flex items-center">Break-even<MetricBreakdown metric="breakeven" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
           <span className="flex items-center">Cost floor<MetricBreakdown metric="cost_floor" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
-          <span className="flex items-center">Budget revenue<MetricBreakdown metric="budget_revenue" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
+          <span className="flex items-center">Revenue capacity<MetricBreakdown metric="budget_revenue" c={c} targetMarginPct={targetMarginPct} side="bottom" iconSize={11} /></span>
         </div>
       </div>
 
