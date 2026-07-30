@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { completeGoogleCalendarOAuth } from "@/lib/calendar-sync.functions";
+import { getPublicAppUrl } from "@/lib/public-app-url.server";
 
 export const Route = createFileRoute("/api/calendar/google/callback")({
   server: {
@@ -9,7 +10,7 @@ export const Route = createFileRoute("/api/calendar/google/callback")({
         const code = url.searchParams.get("code");
         const state = url.searchParams.get("state");
         const oauthError = url.searchParams.get("error");
-        const appBase = (process.env.PUBLIC_APP_URL || "http://localhost:8080").replace(/\/$/, "");
+        const appBase = getPublicAppUrl();
         const failRedirect = `${appBase}/time-calendar?calendar=error`;
         const okRedirect = `${appBase}/time-calendar?calendar=connected`;
 

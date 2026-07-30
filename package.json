@@ -27,6 +27,7 @@
     "db:verify-calendar-migration": "node --env-file=.env.local scripts/verify-calendar-migration.mjs",
     "db:verify-sop-migration": "node --env-file=.env.local scripts/verify-sop-migration.mjs",
     "setup:google-calendar-secrets": "bash scripts/setup-google-calendar-secrets.sh",
+    "setup:supabase-secrets": "bash scripts/setup-supabase-secrets.sh",
     "setup:resend-secrets": "bash scripts/setup-resend-secrets.sh",
     "setup:resend-templates": "node scripts/setup-resend-templates.mjs",
     "setup:auth-leaked-passwords": "node scripts/enable-auth-leaked-passwords.mjs",

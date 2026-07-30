@@ -36,9 +36,20 @@ config.routes = [
 ];
 
 const publicAppUrl = readEnvProduction("PUBLIC_APP_URL") || "https://sightlineprofit.com";
+const supabaseUrl =
+  readEnvProduction("SUPABASE_URL") ||
+  readEnvProduction("VITE_SUPABASE_URL") ||
+  "https://nizjqvbxrmxkkmnnqzpy.supabase.co";
+const supabasePublishableKey =
+  readEnvProduction("SUPABASE_PUBLISHABLE_KEY") ||
+  readEnvProduction("VITE_SUPABASE_PUBLISHABLE_KEY");
+
 config.vars = {
   ...(config.vars ?? {}),
   PUBLIC_APP_URL: publicAppUrl,
+  SUPABASE_URL: supabaseUrl,
+  NODE_ENV: "production",
+  ...(supabasePublishableKey ? { SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey } : {}),
 };
 
 const flags = new Set(config.compatibility_flags ?? []);
@@ -60,6 +71,15 @@ const BINDING_KEYS = [
   "SUPABASE_PUBLISHABLE_KEY",
   "PUBLIC_APP_URL",
   "NODE_ENV",
+  "STRIPE_LIVE_API_KEY",
+  "STRIPE_SANDBOX_API_KEY",
+  "GOOGLE_CALENDAR_CLIENT_ID",
+  "GOOGLE_CALENDAR_CLIENT_SECRET",
+  "PINTEREST_CLIENT_ID",
+  "PINTEREST_CLIENT_SECRET",
+  "PAYMENTS_LIVE_WEBHOOK_SECRET",
+  "PAYMENTS_SANDBOX_WEBHOOK_SECRET",
+  "LOVABLE_API_KEY",
 ];
 
 const indexPath = join(root, ".output/server/index.mjs");
@@ -206,5 +226,5 @@ if (!ssrSrc.includes("viteEnv.fetch(toRequest(input, init), workerEnv)")) {
 }
 
 console.log(
-  `[patch-wrangler-production] Applied routes + PUBLIC_APP_URL=${publicAppUrl} + Worker env ALS/mirror/ssr-bridge`,
+  `[patch-wrangler-production] Applied routes + PUBLIC_APP_URL=${publicAppUrl} + SUPABASE_URL=${supabaseUrl} + publishableKey=${supabasePublishableKey ? "set" : "missing"} + Worker env ALS/mirror/ssr-bridge`,
 );

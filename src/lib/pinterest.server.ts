@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getPublicAppUrl, getWorkerStringEnv } from "@/lib/public-app-url.server";
 
 export type PinterestBoard = {
   id: string;
@@ -18,11 +19,11 @@ export type PinterestPin = {
 };
 
 function pinterestEnv() {
-  const clientId = process.env.PINTEREST_CLIENT_ID;
-  const clientSecret = process.env.PINTEREST_CLIENT_SECRET;
+  const clientId = getWorkerStringEnv("PINTEREST_CLIENT_ID");
+  const clientSecret = getWorkerStringEnv("PINTEREST_CLIENT_SECRET");
   const redirectUri =
-    process.env.PINTEREST_REDIRECT_URI ||
-    `${(process.env.PUBLIC_APP_URL || "http://localhost:8080").replace(/\/$/, "")}/auth/pinterest/callback`;
+    getWorkerStringEnv("PINTEREST_REDIRECT_URI") ||
+    `${getPublicAppUrl()}/auth/pinterest/callback`;
   return { clientId, clientSecret, redirectUri };
 }
 

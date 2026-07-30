@@ -17,6 +17,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as AuthenticatedWelcomeRouteImport } from './routes/_authenticated/welcome'
 import { Route as AuthenticatedTimeCalendarRouteImport } from './routes/_authenticated/time-calendar'
 import { Route as AuthenticatedSopLibraryRouteImport } from './routes/_authenticated/sop-library'
@@ -90,6 +91,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedWelcomeRoute = AuthenticatedWelcomeRouteImport.update({
@@ -313,6 +319,7 @@ export interface FileRoutesByFullPath {
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/welcome': typeof AuthenticatedWelcomeRoute
+  '/api/health': typeof ApiHealthRoute
   '/dashboard/annual-summary': typeof AuthenticatedDashboardAnnualSummaryRoute
   '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
@@ -357,6 +364,7 @@ export interface FileRoutesByTo {
   '/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/welcome': typeof AuthenticatedWelcomeRoute
+  '/api/health': typeof ApiHealthRoute
   '/dashboard/annual-summary': typeof AuthenticatedDashboardAnnualSummaryRoute
   '/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
@@ -403,6 +411,7 @@ export interface FileRoutesById {
   '/_authenticated/sop-library': typeof AuthenticatedSopLibraryRouteWithChildren
   '/_authenticated/time-calendar': typeof AuthenticatedTimeCalendarRoute
   '/_authenticated/welcome': typeof AuthenticatedWelcomeRoute
+  '/api/health': typeof ApiHealthRoute
   '/_authenticated/dashboard/annual-summary': typeof AuthenticatedDashboardAnnualSummaryRoute
   '/_authenticated/dashboard/bva': typeof AuthenticatedDashboardBvaRoute
   '/_authenticated/dashboard/growth': typeof AuthenticatedDashboardGrowthRoute
@@ -449,6 +458,7 @@ export interface FileRouteTypes {
     | '/sop-library'
     | '/time-calendar'
     | '/welcome'
+    | '/api/health'
     | '/dashboard/annual-summary'
     | '/dashboard/bva'
     | '/dashboard/growth'
@@ -493,6 +503,7 @@ export interface FileRouteTypes {
     | '/sop-library'
     | '/time-calendar'
     | '/welcome'
+    | '/api/health'
     | '/dashboard/annual-summary'
     | '/dashboard/bva'
     | '/dashboard/growth'
@@ -538,6 +549,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sop-library'
     | '/_authenticated/time-calendar'
     | '/_authenticated/welcome'
+    | '/api/health'
     | '/_authenticated/dashboard/annual-summary'
     | '/_authenticated/dashboard/bva'
     | '/_authenticated/dashboard/growth'
@@ -565,6 +577,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   RegisterRoute: typeof RegisterRoute
   TermsRoute: typeof TermsRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   AuthPinterestCallbackRoute: typeof AuthPinterestCallbackRoute
   ApiCalendarGoogleCallbackRoute: typeof ApiCalendarGoogleCallbackRoute
   ApiPublicPaymentsWebhookRoute: typeof ApiPublicPaymentsWebhookRoute
@@ -627,6 +640,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/welcome': {
@@ -1016,6 +1036,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   RegisterRoute: RegisterRoute,
   TermsRoute: TermsRoute,
+  ApiHealthRoute: ApiHealthRoute,
   AuthPinterestCallbackRoute: AuthPinterestCallbackRoute,
   ApiCalendarGoogleCallbackRoute: ApiCalendarGoogleCallbackRoute,
   ApiPublicPaymentsWebhookRoute: ApiPublicPaymentsWebhookRoute,

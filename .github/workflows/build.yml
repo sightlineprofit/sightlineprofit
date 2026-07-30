@@ -19,3 +19,4 @@ jobs:
         env:
           # Build bakes VITE_* from .env.production in repo
           NODE_ENV: production
+      - run: node scripts/patch-wrangler-production.mjs

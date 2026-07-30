@@ -26,6 +26,7 @@ In [Supabase → Authentication → URL Configuration](https://supabase.com/dash
 |--------|--------|
 | **Site URL** | `https://sightlineprofit.com` |
 | **Redirect URLs** | `https://sightlineprofit.com/**` |
+| | `https://www.sightlineprofit.com/**` |
 | | `http://localhost:8080/**` (dev) |
 
 ### 3. Google OAuth (if using “Sign in with Google”)
@@ -118,10 +119,18 @@ wrangler secret put RESEND_API_KEY --config .output/server/wrangler.json
 wrangler secret put TRANSACTIONAL_EMAIL_FROM --config .output/server/wrangler.json
 ```
 
-Set plain variables in Cloudflare dashboard → Workers → your worker → Settings → Variables:
+Set plain variables in Cloudflare dashboard → Workers → your worker → Settings → Variables (or rely on `patch-wrangler-production.mjs` during deploy):
 
 - `PUBLIC_APP_URL` = `https://sightlineprofit.com`
 - `SUPABASE_URL` = `https://nizjqvbxrmxkkmnnqzpy.supabase.co`
+- `SUPABASE_PUBLISHABLE_KEY` = anon key from `.env.production` (`VITE_SUPABASE_PUBLISHABLE_KEY`)
+
+Service role (secret — never commit):
+
+```bash
+npm run setup:supabase-secrets
+# or: SUPABASE_SERVICE_ROLE_KEY=eyJ... npm run setup:supabase-secrets
+```
 
 `VITE_*` values are baked in at **build** time from `.env.production` — rebuild after changing them.
 
@@ -179,7 +188,9 @@ npm run deploy    # wrangler deploy only (use after migrations applied)
 
 | Symptom | Fix |
 |--------|-----|
-| Server functions fail | Set `SUPABASE_SERVICE_ROLE_KEY` in Cloudflare secrets |
+| Server functions fail | Run `npm run setup:supabase-secrets`, redeploy with `npm run deploy` |
+| Dashboard loads but data empty / errors | Check `https://sightlineprofit.com/api/health` — all `supabase.*` should be true |
+| “Missing SUPABASE_PUBLISHABLE_KEY” | Redeploy — patch script now injects it from `.env.production` |
 | “Could not find column … schema cache” | Run pending SQL migrations in Supabase |
 | Google login redirects wrong | Fix Supabase Site URL + Google OAuth redirect URI |
 | Stripe checkout fails | Verify `STRIPE_LIVE_API_KEY` + live publishable key in `.env.production` |

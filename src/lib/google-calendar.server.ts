@@ -19,15 +19,16 @@ export type GoogleCalendarEvent = {
   end?: { dateTime?: string; date?: string; timeZone?: string };
 };
 
+import { getPublicAppUrl, getWorkerStringEnv } from "@/lib/public-app-url.server";
+
 function requireEnv(key: string): string {
-  const v = process.env[key];
+  const v = getWorkerStringEnv(key);
   if (!v) throw new Error(`${key} is not configured`);
   return v;
 }
 
 export function googleCalendarRedirectUri(): string {
-  const base = process.env.PUBLIC_APP_URL || "http://localhost:8080";
-  return `${base.replace(/\/$/, "")}/api/calendar/google/callback`;
+  return `${getPublicAppUrl()}/api/calendar/google/callback`;
 }
 
 export function buildGoogleCalendarAuthUrl(state: string): string {
