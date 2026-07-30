@@ -64,7 +64,7 @@ async function main() {
     patch.external_google_client_id = process.env.GOOGLE_AUTH_CLIENT_ID.trim();
   }
   if (process.env.GOOGLE_AUTH_CLIENT_SECRET?.trim()) {
-    patch.external_google_secret = process.env.GOOGLE_AUTH_CLIENT_SECRET.trim();
+    patch.external_google_secret = process.env.GOOGLE_AUTH_CLIENT_SECRET.trim().replace(/\s+/g, "");
   }
 
   const putRes = await fetch(url, {
@@ -106,6 +106,15 @@ async function main() {
     "  https://console.cloud.google.com/apis/credentials?project=833440392444",
   );
   console.log("\nThen test: https://sightlineprofit.com/login → Continue with Google");
+  console.log("\nVerify: npm run verify:google-signin");
+  console.log("Docs: deploy/google-signin-setup.md");
+
+  if (!after.external_google_secret) {
+    console.warn("\n⚠ No Google client secret in Supabase — paste it in Dashboard → Auth → Google → Save");
+  }
+  if (String(after.external_google_client_id ?? "").includes("vp0ski")) {
+    console.warn("\n⚠ Client ID looks like Google Calendar — use the Sign-in Web client (ke4…) instead");
+  }
 }
 
 main().catch((e) => {

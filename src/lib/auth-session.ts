@@ -72,7 +72,10 @@ export async function waitForAuthSession(): Promise<void> {
         const message = error instanceof Error ? error.message : "Sign-in failed";
         if (isOAuthCallbackError(message)) {
           throw new Error(
-            "Google sign-in could not be completed. Please return to the login page and try again.",
+            "Google sign-in failed: Supabase could not verify your Google account. " +
+              "In Google Cloud, open OAuth client 833440392444-ke4… and confirm the redirect URI is exactly " +
+              "https://nizjqvbxrmxkkmnnqzpy.supabase.co/auth/v1/callback, then regenerate the client secret " +
+              "and paste it into Supabase → Auth → Google (not the Calendar client).",
           );
         }
         throw error instanceof Error ? error : new Error(message);
