@@ -469,6 +469,12 @@ const expenseSchema = z.object({
   amort_months: z.number().int().min(1).max(360).optional().nullable(),
 });
 
+/** Map legacy UI/API values to DB check-constraint values (expenses_frequency_chk). */
+function normalizeExpenseFrequencyForDb(frequency: string): string {
+  if (frequency === "onetime") return "one_time";
+  return frequency;
+}
+
 export const addExpense = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d) => expenseSchema.parse(d))
@@ -480,10 +486,13 @@ export const addExpense = createServerFn({ method: "POST" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
+    const frequency = normalizeExpenseFrequencyForDb(data.frequency ?? "annual");
     const payload = {
       ...data,
       category: data.category ?? "other",
-      frequency: data.frequency ?? "annual",
+      frequency,
+      recurring: frequency === "one_time" ? false : data.recurring,
+      ...(frequency === "one_time" ? { expense_type: "one_time" as const } : {}),
     };
     const { data: row, error } = await supabase
       .from("expenses")
