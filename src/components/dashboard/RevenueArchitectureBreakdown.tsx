@@ -311,7 +311,7 @@ export function RevenueArchitectureBreakdown({
           >
             {onTrack
               ? `At your current pace you need ${fmtUsd(monthlyNeeded)}/month for the next ${monthsRemaining} month${monthsRemaining === 1 ? "" : "s"}. Your monthly average is ${fmtUsd(monthlyAvg)} — you're on track toward ${fmtUsd(annualTarget)}.`
-              : `To reach ${fmtUsd(annualTarget)} you need ${fmtUsd(Math.max(0, ytdTarget - ytdCollected))} more in collected fees by ${monthLabel}, about ${fmtUsd(monthlyNeeded)}/month for the remaining ${monthsRemaining} month${monthsRemaining === 1 ? "" : "s"}.`}
+              : `To reach ${fmtUsd(annualTarget)} by December you need ${fmtUsd(remaining)} more in revenue, about ${fmtUsd(monthlyNeeded)}/month for the remaining ${monthsRemaining} month${monthsRemaining === 1 ? "" : "s"}.`}
           </div>
 
           <p style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 12, lineHeight: 1.5 }}>
