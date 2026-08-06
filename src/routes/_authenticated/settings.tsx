@@ -2215,7 +2215,7 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
   const addExp = useServerFn(addExpense);
   const delExp = useServerFn(deleteExpense);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", amount: "", frequency: "monthly" as Expense["frequency"] });
+  const [form, setForm] = useState({ name: "", amount: "", frequency: "monthly" as Expense["frequency"], category: "other" as const });
 
   const annualTotal = expenses.reduce((sum, e) => {
     const amt = Number(e.amount) || 0;
@@ -2229,9 +2229,9 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
   async function save() {
     if (!form.name || !form.amount) return;
     try {
-      const result = await addExp({ data: { name: form.name, amount: Number(form.amount), frequency: form.frequency, recurring: form.frequency !== "onetime" } as any });
+      const result = await addExp({ data: { name: form.name, amount: Number(form.amount), frequency: form.frequency, category: form.category ?? "other", recurring: form.frequency !== "onetime" } as any });
       applyCostReviewFromResult(result);
-      setForm({ name: "", amount: "", frequency: "monthly" });
+      setForm({ name: "", amount: "", frequency: "monthly", category: "other" });
       setAdding(false);
       qc.invalidateQueries({ queryKey: ["expenses"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -2283,7 +2283,7 @@ function OpexPanel({ onClose }: { onClose: () => void }) {
                 </select>
               </div>
               <div className="flex justify-end gap-2">
-                <button type="button" className={ghostBtn} onClick={() => { setAdding(false); setForm({ name: "", amount: "", frequency: "monthly" }); }}>Cancel</button>
+                <button type="button" className={ghostBtn} onClick={() => { setAdding(false); setForm({ name: "", amount: "", frequency: "monthly", category: "other" }); }}>Cancel</button>
                 <button type="button" className={goldBtn} onClick={save}>Save</button>
               </div>
             </div>

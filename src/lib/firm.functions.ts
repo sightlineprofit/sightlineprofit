@@ -480,9 +480,14 @@ export const addExpense = createServerFn({ method: "POST" })
       .eq("id", userId)
       .single();
     if (!profile?.firm_id) throw new Error("No firm");
+    const payload = {
+      ...data,
+      category: data.category ?? "other",
+      frequency: data.frequency ?? "annual",
+    };
     const { data: row, error } = await supabase
       .from("expenses")
-      .insert({ firm_id: profile.firm_id, ...data })
+      .insert({ firm_id: profile.firm_id, ...payload })
       .select("*")
       .single();
     if (error) throw new Error(error.message);
