@@ -172,15 +172,15 @@ export function ProjectCard({
   const marginColor =
     fin.marginRemaining <= 0 ? TERRA : fin.isBelowTarget ? GOLD : SAGE;
 
-  const profitPool = fin.netProfit;
-  const hoursOver = fin.overHours > 0;
+  const profitPool = hoursLogged > 0 ? fin.marginRemaining : fin.netProfit;
+  const hoursOver = fin.costOverHours > 0;
   const inScopePct =
     fin.scopedHours > 0
       ? hoursOver
         ? (fin.scopedHours / hoursLogged) * 100
         : Math.min(100, fin.pctConsumed)
       : 0;
-  const overPct = hoursOver && hoursLogged > 0 ? (fin.overHours / hoursLogged) * 100 : 0;
+  const overPct = hoursOver && hoursLogged > 0 ? (fin.costOverHours / hoursLogged) * 100 : 0;
 
   const daysAgoLabel = (n: number) => (n === 1 ? "1 day ago" : `${n} days ago`);
 
@@ -448,7 +448,7 @@ export function ProjectCard({
                 fin.scopedHours === 0
                   ? "—"
                   : hoursOver
-                    ? `${formatHoursShort(fin.overHours)} over`
+                    ? `${formatHoursShort(fin.costOverHours)} over`
                     : formatHoursShort(fin.hoursRemaining)
               }
               sub={

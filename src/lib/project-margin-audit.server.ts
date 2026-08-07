@@ -141,7 +141,13 @@ export async function logProjectMarginImpact(params: {
     });
   }
 
-  if (before.overHours !== after.overHours) {
+  if (before.costOverHours !== after.costOverHours) {
+    audits.push({
+      field_changed: "hours_over_scope",
+      old_value: before.costOverHours > 0 ? fmtHrs(before.costOverHours) : "0",
+      new_value: after.costOverHours > 0 ? fmtHrs(after.costOverHours) : "0",
+    });
+  } else if (before.overHours !== after.overHours) {
     audits.push({
       field_changed: "hours_over_scope",
       old_value: before.overHours > 0 ? fmtHrs(before.overHours) : "0",

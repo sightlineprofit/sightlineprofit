@@ -509,8 +509,8 @@ export function ProjectDetailPanel({
             sub={
               hoursLogged === 0
                 ? "No hours logged yet"
-                : fin.overHours > 0
-                  ? `After ${fin.overHours} hrs over scope`
+                : fin.costOverHours > 0
+                  ? `After ${fin.costOverHours} hrs over scope`
                   : "On track"
             }
             subColor={hoursLogged === 0 ? MUTED : fin.overHours > 0 ? TERRA : SAGE}
@@ -571,7 +571,7 @@ export function ProjectDetailPanel({
               transition: "width 0.4s ease",
             }}
           />
-          {fin.overHours > 0 && fin.scopedHours > 0 && (
+          {fin.costOverHours > 0 && fin.scopedHours > 0 && (
             <div
               style={{
                 position: "absolute",
@@ -581,7 +581,7 @@ export function ProjectDetailPanel({
                 background: TERRA,
                 borderRadius: "0 5px 5px 0",
                 minWidth: 6,
-                width: `${Math.min(30, (fin.overHours / fin.scopedHours) * 100)}%`,
+                width: `${Math.min(30, (fin.costOverHours / fin.scopedHours) * 100)}%`,
               }}
             />
           )}
@@ -636,12 +636,12 @@ export function ProjectDetailPanel({
           />
           <StatCell
             label="Over scope"
-            value={fin.overHours > 0 ? `${Math.round(fin.overHours)} hrs` : "—"}
-            valueColor={fin.overHours > 0 ? TERRA : MUTED}
-            valueWeight={fin.overHours > 0 ? 600 : 400}
+            value={fin.costOverHours > 0 ? `${Math.round(fin.costOverHours)} hrs` : "—"}
+            valueColor={fin.costOverHours > 0 ? TERRA : MUTED}
+            valueWeight={fin.costOverHours > 0 ? 600 : 400}
           />
         </div>
-        {fin.overHours > 0 && (
+        {fin.costOverHours > 0 && (
           <div
             style={{
               marginTop: 14,
@@ -652,7 +652,7 @@ export function ProjectDetailPanel({
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 500, color: TERRA, marginBottom: 6 }}>
-              {Math.round(fin.overHours)} hours over scope
+              {Math.round(fin.costOverHours)} hours over scope
             </div>
             <div style={{ fontSize: 13, color: "#6B6259", lineHeight: 1.6 }}>
               At your break-even rate of ${(Number(snapshot.break_even_rate) || 0).toFixed(2)}/hr, this has cost {moneyExact(fin.marginErosion)} in profit margin.

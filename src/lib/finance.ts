@@ -438,10 +438,8 @@ export function marginBreakdown(grossProfitPerHr: number) {
 }
 
 // ─── Per-project margin (true margin, not revenue) ─────────────────────────
-// Uses the firm's break-even rate as the per-hour cost floor. Margin equals
-// project fee minus (breakEven × scoped hours). Margin only erodes once
-// hours logged exceed the scoped budget: each over-scope hour subtracts
-// breakEven from remaining margin.
+// Margin erodes when total hours exceed scoped budget OR when billable /
+// non-billable hours exceed their category budgets (fixed-fee scope mix).
 
 export type ProjectMarginCalc = {
   projectFee: number;
@@ -811,7 +809,45 @@ export type ProjectFinancialsInput = {
   breakEvenResult?: ProjectBreakEvenResult | null;
   /** When true, live assignees exist but snapshot still uses firm_average. */
   assigneesNewerThanSnapshot?: boolean;
+  /** Billable / non-billable logged — enables per-category over-scope profit erosion. */
+  billableHoursLogged?: number;
+  nonBillableHoursLogged?: number;
+  billableHoursScoped?: number;
+  nonBillableHoursScoped?: number;
 };
+
+export function projectHoursBreakdownFromEntries(
+  entries: Array<{ hrs?: number | null; billable?: boolean | null }>,
+): { billableLogged: number; nonBillableLogged: number; hoursLogged: number } {
+  let billableLogged = 0;
+  let nonBillableLogged = 0;
+  for (const e of entries) {
+    const hrs = Number(e.hrs) || 0;
+    if (e.billable) billableLogged += hrs;
+    else nonBillableLogged += hrs;
+  }
+  return { billableLogged, nonBillableLogged, hoursLogged: billableLogged + nonBillableLogged };
+}
+
+export function projectHoursBreakdownFromPhases(
+  phases: Array<{ billable?: boolean | null; expected_hrs?: number | null }>,
+  breakEvenResult?: ProjectBreakEvenResult | null,
+): { billableScoped: number; nonBillableScoped: number } {
+  if (breakEvenResult && breakEvenResult.totalScopedHrs > 0) {
+    return {
+      billableScoped: breakEvenResult.billableScopedHrs,
+      nonBillableScoped: breakEvenResult.nonBillableScopedHrs,
+    };
+  }
+  let billableScoped = 0;
+  let nonBillableScoped = 0;
+  for (const p of phases) {
+    const hrs = Number(p.expected_hrs) || 0;
+    if (p.billable) billableScoped += hrs;
+    else nonBillableScoped += hrs;
+  }
+  return { billableScoped, nonBillableScoped };
+}
 
 export type ProjectFinancials = {
   // Revenue
@@ -841,6 +877,11 @@ export type ProjectFinancials = {
   hoursLogged: number;
   hoursRemaining: number;
   overHours: number;
+  /** Hours beyond billable / non-billable scope (can exceed overHours when mix shifts). */
+  billableOverHours: number;
+  nonBillableOverHours: number;
+  /** Hours that drive live cost erosion (max of total over and category overs). */
+  costOverHours: number;
   pctConsumed: number;
   // Erosion
   marginErosion: number;
@@ -1000,43 +1041,99 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
   const overHours = Math.max(0, hoursLogged - scopedHours);
   const pctConsumed = scopedHours > 0 ? (hoursLogged / scopedHours) * 100 : 0;
 
+  const scopedBreakdown =
+    input.billableHoursScoped != null && input.nonBillableHoursScoped != null
+      ? {
+          billableScoped: Math.max(0, input.billableHoursScoped),
+          nonBillableScoped: Math.max(0, input.nonBillableHoursScoped),
+        }
+      : useTaskAssignee && liveBreakEven && liveBreakEven.totalScopedHrs > 0
+        ? {
+            billableScoped: liveBreakEven.billableScopedHrs,
+            nonBillableScoped: liveBreakEven.nonBillableScopedHrs,
+          }
+        : null;
+
+  const billableLogged =
+    input.billableHoursLogged != null
+      ? Math.max(0, input.billableHoursLogged)
+      : scopedBreakdown
+        ? Math.min(hoursLogged, scopedBreakdown.billableScoped)
+        : hoursLogged;
+  const nonBillableLogged =
+    input.nonBillableHoursLogged != null
+      ? Math.max(0, input.nonBillableHoursLogged)
+      : scopedBreakdown
+        ? Math.max(0, hoursLogged - billableLogged)
+        : 0;
+
+  const billableOverHours = scopedBreakdown
+    ? Math.max(0, billableLogged - scopedBreakdown.billableScoped)
+    : 0;
+  const nonBillableOverHours = scopedBreakdown
+    ? Math.max(0, nonBillableLogged - scopedBreakdown.nonBillableScoped)
+    : 0;
+  const costOverHours = Math.max(overHours, billableOverHours + nonBillableOverHours);
+
   let actualCompAllocation = compAllocation;
   let actualOpexAllocation = opexAllocation;
   let actualTeamAllocation = teamAllocation;
   let actualAssigneeAllocations = assigneeAllocations;
   let actualCostAllocation = totalCostAllocation;
 
-  if (hoursLogged > scopedHours) {
-    if (useTaskAssignee && liveBreakEven && scopedHours > 0) {
-      const scale = hoursLogged / scopedHours;
-      actualAssigneeAllocations = assigneeAllocations.map((a) => ({
-        ...a,
-        billableHrs: a.billableHrs * scale,
-        nonBillableHrs: a.nonBillableHrs * scale,
-        totalHrs: a.totalHrs * scale,
-        costContribution: a.costContribution * scale,
-      }));
-      actualOpexAllocation = opexAllocation * scale;
-      actualCompAllocation = actualAssigneeAllocations
-        .filter((a) => a.isPrincipal)
-        .reduce((s, a) => s + a.costContribution, 0);
-      actualTeamAllocation = actualAssigneeAllocations
-        .filter((a) => !a.isPrincipal)
-        .reduce((s, a) => s + a.costContribution, 0);
-      actualCostAllocation =
-        actualAssigneeAllocations.reduce((s, a) => s + a.costContribution, 0) +
-        actualOpexAllocation;
-    } else {
-      const compPerHour = Number(snapshot.comp_per_hour) || 0;
-      const opexPerHour = Number(snapshot.opex_per_hour) || 0;
-      const teamPerHour = Number(snapshot.team_per_hour) || 0;
-      actualCompAllocation = compPerHour * hoursLogged;
-      actualOpexAllocation = opexPerHour * hoursLogged;
-      actualTeamAllocation = teamPerHour * hoursLogged;
-      actualCostAllocation =
-        actualCompAllocation + actualOpexAllocation + actualTeamAllocation;
-      if (actualCostAllocation <= 0 && breakEven > 0) {
-        actualCostAllocation = breakEven * hoursLogged;
+  if (costOverHours > 0) {
+    if (hoursLogged > scopedHours) {
+      if (useTaskAssignee && liveBreakEven && scopedHours > 0) {
+        const scale = hoursLogged / scopedHours;
+        actualAssigneeAllocations = assigneeAllocations.map((a) => ({
+          ...a,
+          billableHrs: a.billableHrs * scale,
+          nonBillableHrs: a.nonBillableHrs * scale,
+          totalHrs: a.totalHrs * scale,
+          costContribution: a.costContribution * scale,
+        }));
+        actualOpexAllocation = opexAllocation * scale;
+        actualCompAllocation = actualAssigneeAllocations
+          .filter((a) => a.isPrincipal)
+          .reduce((s, a) => s + a.costContribution, 0);
+        actualTeamAllocation = actualAssigneeAllocations
+          .filter((a) => !a.isPrincipal)
+          .reduce((s, a) => s + a.costContribution, 0);
+        actualCostAllocation =
+          actualAssigneeAllocations.reduce((s, a) => s + a.costContribution, 0) +
+          actualOpexAllocation;
+      } else {
+        const compPerHour = Number(snapshot.comp_per_hour) || 0;
+        const opexPerHour = Number(snapshot.opex_per_hour) || 0;
+        const teamPerHour = Number(snapshot.team_per_hour) || 0;
+        actualCompAllocation = compPerHour * hoursLogged;
+        actualOpexAllocation = opexPerHour * hoursLogged;
+        actualTeamAllocation = teamPerHour * hoursLogged;
+        actualCostAllocation =
+          actualCompAllocation + actualOpexAllocation + actualTeamAllocation;
+        if (actualCostAllocation <= 0 && breakEven > 0) {
+          actualCostAllocation = breakEven * hoursLogged;
+        }
+      }
+    } else if (totalCostAllocation > 0 && breakEven > 0) {
+      const scale = (totalCostAllocation + costOverHours * breakEven) / totalCostAllocation;
+      actualCostAllocation = totalCostAllocation + costOverHours * breakEven;
+      if (useTaskAssignee && liveBreakEven) {
+        actualAssigneeAllocations = assigneeAllocations.map((a) => ({
+          ...a,
+          costContribution: a.costContribution * scale,
+        }));
+        actualOpexAllocation = opexAllocation * scale;
+        actualCompAllocation = actualAssigneeAllocations
+          .filter((a) => a.isPrincipal)
+          .reduce((s, a) => s + a.costContribution, 0);
+        actualTeamAllocation = actualAssigneeAllocations
+          .filter((a) => !a.isPrincipal)
+          .reduce((s, a) => s + a.costContribution, 0);
+      } else {
+        actualCompAllocation = compAllocation * scale;
+        actualOpexAllocation = opexAllocation * scale;
+        actualTeamAllocation = teamAllocation * scale;
       }
     }
   }
@@ -1100,6 +1197,9 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
     hoursLogged,
     hoursRemaining,
     overHours,
+    billableOverHours,
+    nonBillableOverHours,
+    costOverHours,
     pctConsumed,
     marginErosion,
     marginRemaining,

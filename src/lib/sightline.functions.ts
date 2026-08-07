@@ -6,6 +6,8 @@ import {
   getProjectMarginCalc,
   buildSnapshotFromCalc,
   getProjectFinancials,
+  projectHoursBreakdownFromEntries,
+  projectHoursBreakdownFromPhases,
   breakEvenResultFromSnapshot,
   type Expense,
   type FirmConfig,
@@ -461,11 +463,18 @@ export const getProjectDetail = createServerFn({ method: "GET" })
         liveResult.hasAssigneeData && !assigneesNewerThanSnapshot ? liveResult : snapshotResult;
     }
 
+    const loggedBreakdown = projectHoursBreakdownFromEntries(entries ?? []);
+    const scopedBreakdown = projectHoursBreakdownFromPhases(phases ?? [], breakEvenResult);
+
       financials = snapshot
         ? getProjectFinancials({
             project: project as any,
             snapshot: snapshot as any,
             hoursLogged,
+            billableHoursLogged: loggedBreakdown.billableLogged,
+            nonBillableHoursLogged: loggedBreakdown.nonBillableLogged,
+            billableHoursScoped: scopedBreakdown.billableScoped,
+            nonBillableHoursScoped: scopedBreakdown.nonBillableScoped,
             lastEntryDate,
             breakEvenResult,
             assigneesNewerThanSnapshot,

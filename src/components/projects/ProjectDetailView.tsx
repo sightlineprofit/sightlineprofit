@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import {
   getProjectFinancials,
+  projectHoursBreakdownFromEntries,
+  projectHoursBreakdownFromPhases,
   fmtUsd,
   type ProjectCostSnapshot,
   type ProjectFinancials,
@@ -1601,6 +1603,17 @@ export function ProjectDetailView({
           : project.flat_fee_amount,
   };
 
+  const loggedBreakdown = useMemo(
+    () => projectHoursBreakdownFromEntries(entries),
+    [entries],
+  );
+  const phaseScopedBreakdown = useMemo(
+    () => projectHoursBreakdownFromPhases(phases),
+    [phases],
+  );
+  const billableLogged = loggedBreakdown.billableLogged;
+  const nonbillableLogged = loggedBreakdown.nonBillableLogged;
+
   const fin: ProjectFinancials | null =
     financialsProp ??
     (snapshot
@@ -1610,6 +1623,10 @@ export function ProjectDetailView({
           hoursLogged,
           hoursLoggedThisMonth,
           lastEntryDate,
+          billableHoursLogged: billableLogged,
+          nonBillableHoursLogged: nonbillableLogged,
+          billableHoursScoped: phaseScopedBreakdown.billableScoped,
+          nonBillableHoursScoped: phaseScopedBreakdown.nonBillableScoped,
         })
       : null);
 
@@ -1646,20 +1663,17 @@ export function ProjectDetailView({
     return map;
   }, [stepResources, resourcesById]);
 
-  const phaseBillableScoped =
+  const billableScoped =
     fin?.billableScopedFromAssignees != null
       ? fin.billableScopedFromAssignees
-      : phases.filter((p) => p.billable).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-  const phaseNonbillableScoped =
+      : phaseScopedBreakdown.billableScoped;
+  const nonbillableScoped =
     fin?.nonBillableScopedFromAssignees != null
       ? fin.nonBillableScopedFromAssignees
-      : phases.filter((p) => !p.billable).reduce((s, p) => s + Number(p.expected_hrs || 0), 0);
-  const billableScoped = phaseBillableScoped;
-  const nonbillableScoped = phaseNonbillableScoped;
-  const billableLogged = entries.filter((e) => e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
-  const nonbillableLogged = entries.filter((e) => !e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
-  const billableOver = Math.max(0, billableLogged - billableScoped);
-  const nonbillableOver = Math.max(0, nonbillableLogged - nonbillableScoped);
+      : phaseScopedBreakdown.nonBillableScoped;
+  const billableOver = fin?.billableOverHours ?? Math.max(0, billableLogged - billableScoped);
+  const nonbillableOver =
+    fin?.nonBillableOverHours ?? Math.max(0, nonbillableLogged - nonbillableScoped);
 
   const phaseLogged = useMemo(() => {
     const m = new Map<string, number>();
@@ -1673,7 +1687,7 @@ export function ProjectDetailView({
   const rev = Math.max(fin?.totalRevenue ?? 1, 1);
   const segPct = (v: number) => (v / rev) * 100;
 
-  const showActualCosts = !!fin && fin.overHours > 0 && hoursLogged > 0;
+  const showActualCosts = !!fin && fin.costOverHours > 0 && hoursLogged > 0;
   const displayComp = showActualCosts ? fin!.actualCompAllocation : fin?.compAllocation ?? 0;
   const displayOpex = showActualCosts ? fin!.actualOpexAllocation : fin?.opexAllocation ?? 0;
   const displayTeam = showActualCosts ? fin!.actualTeamAllocation : fin?.teamAllocation ?? 0;
@@ -1839,8 +1853,14 @@ export function ProjectDetailView({
       ) : (
       <div className="flex flex-wrap items-center gap-6">
         <ProfitRing
-          profitPct={fin.netProfitPct}
-          obligationsPct={fin.totalRevenue > 0 ? (fin.totalCostAllocation / fin.totalRevenue) * 100 : 0}
+          profitPct={showActualCosts ? fin.marginRemainingPct : fin.netProfitPct}
+          obligationsPct={
+            fin.totalRevenue > 0
+              ? ((showActualCosts ? fin.actualCostAllocation + fin.actualTaxReserve : fin.totalCostAllocation + fin.taxReserve) /
+                  fin.totalRevenue) *
+                100
+              : 0
+          }
         />
         <div className="min-w-0 flex-1">
           <div className="font-display text-[34px] leading-none" style={{ color: SAGE }}>
@@ -1892,7 +1912,7 @@ export function ProjectDetailView({
         </p>
         {showActualCosts && (
           <p className="mb-2 text-[11px] leading-relaxed text-ch/55" style={{ fontFamily: "Jost, sans-serif" }}>
-            {formatHours(fin.overHours)} over scope — your pay, team labor, and running costs scale with every
+            {formatHours(fin.costOverHours)} over scope — your pay, team labor, and running costs scale with every
             hour worked. Tax reserve adjusts on the reduced margin.
           </p>
         )}
@@ -1994,7 +2014,7 @@ export function ProjectDetailView({
         <p className="mt-3 font-display text-[13px] italic text-ch/70">
           {showActualCosts ? (
             <>
-              At {formatHours(hoursLogged)} logged ({formatHours(fin.overHours)} over scope), labor and overhead
+              At {formatHours(hoursLogged)} logged ({formatHours(fin.costOverHours)} over scope), labor and overhead
               total {money(fin.actualCostAllocation)} — leaving {money(fin.marginRemaining)} in remaining profit
               from the {money(fin.totalRevenue)} fee.
             </>
