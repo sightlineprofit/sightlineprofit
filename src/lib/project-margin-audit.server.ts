@@ -155,6 +155,14 @@ export async function logProjectMarginImpact(params: {
     });
   }
 
+  if (Math.round(before.overageRevenueCollected) !== Math.round(after.overageRevenueCollected)) {
+    audits.push({
+      field_changed: "overage_revenue_collected",
+      old_value: before.overageRevenueCollected > 0 ? fmtUsd(before.overageRevenueCollected) : "0",
+      new_value: after.overageRevenueCollected > 0 ? fmtUsd(after.overageRevenueCollected) : "0",
+    });
+  }
+
   const reason =
     note ??
     (hoursAfter > hoursBefore

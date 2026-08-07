@@ -438,8 +438,9 @@ export function marginBreakdown(grossProfitPerHr: number) {
 }
 
 // ─── Per-project margin (true margin, not revenue) ─────────────────────────
-// Margin erodes when total hours exceed scoped budget OR when billable /
-// non-billable hours exceed their category budgets (fixed-fee scope mix).
+// Margin erodes when total logged hours exceed scoped hours — each uncollected
+// overage hour costs break-even. Payment collected above the contract fee counts
+// as overage revenue; net pool impact = overage collected − overage labor cost.
 
 export type ProjectMarginCalc = {
   projectFee: number;
@@ -799,6 +800,7 @@ export type ProjectFinancialsInput = {
     retainer_start_date?: string | null;
     start_date?: string | null;
     fixed_fee?: number | null;
+    payment_collected?: number | null;
   };
   snapshot: ProjectCostSnapshot;
   hoursLogged: number;
@@ -809,11 +811,13 @@ export type ProjectFinancialsInput = {
   breakEvenResult?: ProjectBreakEvenResult | null;
   /** When true, live assignees exist but snapshot still uses firm_average. */
   assigneesNewerThanSnapshot?: boolean;
-  /** Billable / non-billable logged — enables per-category over-scope profit erosion. */
+  /** Billable / non-billable breakdown — UI metrics only (effective rate); profit erosion uses total overage + collection. */
   billableHoursLogged?: number;
   nonBillableHoursLogged?: number;
   billableHoursScoped?: number;
   nonBillableHoursScoped?: number;
+  /** Override when not on project row (e.g. list cards). */
+  paymentCollected?: number | null;
 };
 
 export function projectHoursBreakdownFromEntries(
@@ -852,6 +856,10 @@ export function projectHoursBreakdownFromPhases(
 export type ProjectFinancials = {
   // Revenue
   totalRevenue: number;
+  /** Contract fee plus any collected amount above it (overage billing). */
+  actualTotalRevenue: number;
+  /** Payment received beyond the scoped contract fee. */
+  overageRevenueCollected: number;
   pricingMethod: ProjectPricingMethod;
   flatFeeAmount: number;
   hourlyRevenue: number;
@@ -877,11 +885,18 @@ export type ProjectFinancials = {
   hoursLogged: number;
   hoursRemaining: number;
   overHours: number;
-  /** Hours beyond billable / non-billable scope (can exceed overHours when mix shifts). */
+  /** Billable / non-billable mix beyond category scope — informational; does not drive profit math. */
   billableOverHours: number;
   nonBillableOverHours: number;
-  /** Hours that drive live cost erosion (max of total over and category overs). */
+  /** Same as overHours — total hours beyond scoped budget that incur cost. */
   costOverHours: number;
+  /** Overage hours covered by collected revenue above the contract fee. */
+  paidOverageHours: number;
+  /** Overage hours worked but not yet covered by collection — full cost erodes the pool. */
+  unbilledOverageHours: number;
+  unbilledOverageCost: number;
+  /** Net pool impact from overage: collected overage revenue minus cost of all overage hours. */
+  overageNetContribution: number;
   pctConsumed: number;
   // Erosion
   marginErosion: number;
@@ -1073,7 +1088,30 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
   const nonBillableOverHours = scopedBreakdown
     ? Math.max(0, nonBillableLogged - scopedBreakdown.nonBillableScoped)
     : 0;
-  const costOverHours = Math.max(overHours, billableOverHours + nonBillableOverHours);
+  const costOverHours = overHours;
+
+  const paymentCollected = Math.max(
+    0,
+    Number(input.paymentCollected ?? input.project.payment_collected) || 0,
+  );
+  const overageRevenueCollected = Math.max(0, paymentCollected - totalRevenue);
+  const actualTotalRevenue = totalRevenue + overageRevenueCollected;
+
+  const billedRate =
+    scopedRate > 0
+      ? scopedRate
+      : aligned > 0
+        ? aligned
+        : overHours > 0 && overageRevenueCollected > 0
+          ? overageRevenueCollected / overHours
+          : 0;
+  const paidOverageHours =
+    overHours > 0 && billedRate > 0
+      ? Math.min(overHours, overageRevenueCollected / billedRate)
+      : 0;
+  const unbilledOverageHours = Math.max(0, overHours - paidOverageHours);
+  const unbilledOverageCost = unbilledOverageHours * breakEven;
+  const overageNetContribution = overageRevenueCollected - overHours * breakEven;
 
   let actualCompAllocation = compAllocation;
   let actualOpexAllocation = opexAllocation;
@@ -1081,75 +1119,54 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
   let actualAssigneeAllocations = assigneeAllocations;
   let actualCostAllocation = totalCostAllocation;
 
-  if (costOverHours > 0) {
-    if (hoursLogged > scopedHours) {
-      if (useTaskAssignee && liveBreakEven && scopedHours > 0) {
-        const scale = hoursLogged / scopedHours;
-        actualAssigneeAllocations = assigneeAllocations.map((a) => ({
-          ...a,
-          billableHrs: a.billableHrs * scale,
-          nonBillableHrs: a.nonBillableHrs * scale,
-          totalHrs: a.totalHrs * scale,
-          costContribution: a.costContribution * scale,
-        }));
-        actualOpexAllocation = opexAllocation * scale;
-        actualCompAllocation = actualAssigneeAllocations
-          .filter((a) => a.isPrincipal)
-          .reduce((s, a) => s + a.costContribution, 0);
-        actualTeamAllocation = actualAssigneeAllocations
-          .filter((a) => !a.isPrincipal)
-          .reduce((s, a) => s + a.costContribution, 0);
-        actualCostAllocation =
-          actualAssigneeAllocations.reduce((s, a) => s + a.costContribution, 0) +
-          actualOpexAllocation;
-      } else {
-        const compPerHour = Number(snapshot.comp_per_hour) || 0;
-        const opexPerHour = Number(snapshot.opex_per_hour) || 0;
-        const teamPerHour = Number(snapshot.team_per_hour) || 0;
-        actualCompAllocation = compPerHour * hoursLogged;
-        actualOpexAllocation = opexPerHour * hoursLogged;
-        actualTeamAllocation = teamPerHour * hoursLogged;
-        actualCostAllocation =
-          actualCompAllocation + actualOpexAllocation + actualTeamAllocation;
-        if (actualCostAllocation <= 0 && breakEven > 0) {
-          actualCostAllocation = breakEven * hoursLogged;
-        }
-      }
-    } else if (totalCostAllocation > 0 && breakEven > 0) {
-      const scale = (totalCostAllocation + costOverHours * breakEven) / totalCostAllocation;
-      actualCostAllocation = totalCostAllocation + costOverHours * breakEven;
-      if (useTaskAssignee && liveBreakEven) {
-        actualAssigneeAllocations = assigneeAllocations.map((a) => ({
-          ...a,
-          costContribution: a.costContribution * scale,
-        }));
-        actualOpexAllocation = opexAllocation * scale;
-        actualCompAllocation = actualAssigneeAllocations
-          .filter((a) => a.isPrincipal)
-          .reduce((s, a) => s + a.costContribution, 0);
-        actualTeamAllocation = actualAssigneeAllocations
-          .filter((a) => !a.isPrincipal)
-          .reduce((s, a) => s + a.costContribution, 0);
-      } else {
-        actualCompAllocation = compAllocation * scale;
-        actualOpexAllocation = opexAllocation * scale;
-        actualTeamAllocation = teamAllocation * scale;
+  if (overHours > 0) {
+    if (useTaskAssignee && liveBreakEven && scopedHours > 0) {
+      const scale = hoursLogged / scopedHours;
+      actualAssigneeAllocations = assigneeAllocations.map((a) => ({
+        ...a,
+        billableHrs: a.billableHrs * scale,
+        nonBillableHrs: a.nonBillableHrs * scale,
+        totalHrs: a.totalHrs * scale,
+        costContribution: a.costContribution * scale,
+      }));
+      actualOpexAllocation = opexAllocation * scale;
+      actualCompAllocation = actualAssigneeAllocations
+        .filter((a) => a.isPrincipal)
+        .reduce((s, a) => s + a.costContribution, 0);
+      actualTeamAllocation = actualAssigneeAllocations
+        .filter((a) => !a.isPrincipal)
+        .reduce((s, a) => s + a.costContribution, 0);
+      actualCostAllocation =
+        actualAssigneeAllocations.reduce((s, a) => s + a.costContribution, 0) +
+        actualOpexAllocation;
+    } else {
+      const compPerHour = Number(snapshot.comp_per_hour) || 0;
+      const opexPerHour = Number(snapshot.opex_per_hour) || 0;
+      const teamPerHour = Number(snapshot.team_per_hour) || 0;
+      actualCompAllocation = compPerHour * hoursLogged;
+      actualOpexAllocation = opexPerHour * hoursLogged;
+      actualTeamAllocation = teamPerHour * hoursLogged;
+      actualCostAllocation =
+        actualCompAllocation + actualOpexAllocation + actualTeamAllocation;
+      if (actualCostAllocation <= 0 && breakEven > 0) {
+        actualCostAllocation = breakEven * hoursLogged;
       }
     }
   }
 
-  const actualLockedMargin = totalRevenue - actualCostAllocation;
+  const actualLockedMargin = actualTotalRevenue - actualCostAllocation;
   const actualTaxReserve = actualLockedMargin > 0 ? actualLockedMargin * taxReservePct : 0;
   const marginRemaining = actualLockedMargin - actualTaxReserve;
   const marginErosion = Math.max(0, netProfit - marginRemaining);
-  const marginRemainingPct = totalRevenue > 0 ? (marginRemaining / totalRevenue) * 100 : 0;
+  const marginRemainingPct =
+    actualTotalRevenue > 0 ? (marginRemaining / actualTotalRevenue) * 100 : 0;
 
   const targetMarginDollar = totalRevenue * (targetMarginPct / 100);
   const marginVariance = marginRemainingPct - targetMarginPct;
   const isAboveTarget = marginVariance > 0.5;
   const isBelowTarget = marginVariance < -0.5;
 
-  const effectiveRate = hoursLogged > 0 ? totalRevenue / hoursLogged : null;
+  const effectiveRate = hoursLogged > 0 ? actualTotalRevenue / hoursLogged : null;
   const effectiveVsAligned = effectiveRate == null ? 0 : effectiveRate - aligned;
   const effectiveVsBreakEven = effectiveRate == null ? 0 : effectiveRate - breakEven;
   const isBelowBreakEven = effectiveRate != null && effectiveRate < breakEven;
@@ -1175,6 +1192,8 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
 
   return {
     totalRevenue,
+    actualTotalRevenue,
+    overageRevenueCollected,
     pricingMethod,
     flatFeeAmount,
     hourlyRevenue,
@@ -1200,6 +1219,10 @@ export function getProjectFinancials(input: ProjectFinancialsInput): ProjectFina
     billableOverHours,
     nonBillableOverHours,
     costOverHours,
+    paidOverageHours,
+    unbilledOverageHours,
+    unbilledOverageCost,
+    overageNetContribution,
     pctConsumed,
     marginErosion,
     marginRemaining,

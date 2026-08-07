@@ -1059,6 +1059,18 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop, initialSubV
     ? teamCostRates.reduce((s, n) => s + n, 0) / teamCostRates.length
     : (Number(config?.rate_billed) || 0) * 0.6;
 
+  const flatFeeAmount =
+    Number((project as { flat_fee_amount?: number | null }).flat_fee_amount) ||
+    fixedFee ||
+    0;
+  const pricingMethod = (project as { pricing_method?: string | null }).pricing_method;
+  const isContractFee =
+    pricingMethod === "flat_fee" ||
+    pricingMethod === "hybrid" ||
+    pricingMethod === "retainer" ||
+    flatFeeAmount > 0 ||
+    isFixedFee;
+
   const phaseRows: PhaseRow[] = phases.map((p) => {
     const sc = Number(p.expected_hrs || 0);
     const ac = Number(p.actual_hrs || 0);
@@ -1079,29 +1091,61 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop, initialSubV
   const actualHrs = phaseRows.reduce((s, p) => s + p.ac, 0);
   const billableHrs = entries.filter((e) => e.billable).reduce((s, e) => s + Number(e.hrs || 0), 0);
   const nonBillableHrs = entries.reduce((s, e) => s + Number(e.hrs || 0), 0) - billableHrs;
-  const scopedRevenue = isFixedFee ? fixedFee : billableScopedHrs * projectRate;
-  const actualRevenue = isFixedFee ? fixedFee : billableHrs * projectRate;
-  const scopedCost = scopedHrs * avgCostRate;
-  const actualCost = actualHrs * avgCostRate;
-  const scopedMargin = scopedRevenue - scopedCost;
-  const actualMargin = actualRevenue - actualCost;
+  const totalLogged = billableHrs + nonBillableHrs;
+  const totalPct = scopedHrs > 0 ? (actualHrs / scopedHrs) * 100 : 0;
+  const hoursRemaining = Math.max(0, scopedHrs - actualHrs);
+  const hasActuals = actualHrs > 0;
+  const fin = detailFinancials;
+  const usesSnapshotEconomics = !!fin && !!detailSnapshot;
+
+  // Prefer snapshot-locked economics (same source as the profit pool). Legacy
+  // fallback only when no cost snapshot exists yet.
+  let scopedRevenue: number;
+  let actualRevenue: number;
+  let scopedCost: number;
+  let actualCost: number;
+  let scopedMargin: number;
+  let actualMargin: number;
+  let hoursOver: number;
+  let isOverBudget: boolean;
+  let isHeadsUp: boolean;
+
+  if (usesSnapshotEconomics && fin) {
+    scopedRevenue = fin.totalRevenue;
+    actualRevenue = fin.actualTotalRevenue;
+    scopedCost = fin.totalCostAllocation;
+    actualCost = fin.actualCostAllocation;
+    scopedMargin = fin.netProfit;
+    actualMargin = fin.marginRemaining;
+    hoursOver = fin.overHours;
+    isOverBudget =
+      hasActuals && (fin.marginRemaining < 0 || fin.unbilledOverageHours > 0);
+    isHeadsUp =
+      !isOverBudget &&
+      hasActuals &&
+      scopedHrs > 0 &&
+      (totalPct >= 80 || fin.isBelowTarget);
+  } else {
+    scopedRevenue = isContractFee ? flatFeeAmount : billableScopedHrs * projectRate;
+    actualRevenue = isContractFee ? flatFeeAmount : billableHrs * projectRate;
+    scopedCost = scopedHrs * avgCostRate;
+    actualCost = actualHrs * avgCostRate;
+    scopedMargin = scopedRevenue - scopedCost;
+    actualMargin = actualRevenue - actualCost;
+    hoursOver = Math.max(0, actualHrs - scopedHrs);
+    isOverBudget = hasActuals && (actualMargin < 0 || actualHrs > scopedHrs);
+    isHeadsUp =
+      !isOverBudget && hasActuals && scopedHrs > 0 && totalPct >= 80 && actualMargin >= 0;
+  }
+
   const marginVariance = actualMargin - scopedMargin;
   const marginVariancePct = scopedMargin !== 0 ? (marginVariance / Math.abs(scopedMargin)) * 100 : 0;
   const nonBillableCostAbsorbed = nonBillableHrs * avgCostRate;
 
   // Proportionate health + warnings
-  // Tier 3 (terracotta): actual margin negative OR actual hours exceed total scoped hours
-  // Tier 2 (gold): total used 80-99% of scope AND margin still positive
+  // Tier 3 (terracotta): negative remaining profit OR uncollected overage eroding the pool
+  // Tier 2 (gold): approaching scope or below target margin
   // Tier 1: handled inside phase cards (per-phase over-estimate notes)
-  const totalLogged = billableHrs + nonBillableHrs;
-  const totalPct = scopedHrs > 0 ? (actualHrs / scopedHrs) * 100 : 0;
-  const hoursRemaining = Math.max(0, scopedHrs - actualHrs);
-  const hoursOver = Math.max(0, actualHrs - scopedHrs);
-  const hasActuals = actualHrs > 0;
-
-  const isOverBudget = hasActuals && (actualMargin < 0 || actualHrs > scopedHrs);
-  const isHeadsUp = !isOverBudget && hasActuals && scopedHrs > 0 && totalPct >= 80 && actualMargin >= 0;
-
   const health: { tone: "track" | "watch" | "over"; pillLabel: string; detail: string } = isOverBudget
     ? {
         tone: "over",
@@ -1129,10 +1173,17 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop, initialSubV
     if (actualMargin < 0) {
       warnings.push({
         tone: "terra",
-        text: `This project is currently running at a loss. Actual costs (${fmtUsd(actualCost)}) exceed actual revenue (${fmtUsd(actualRevenue)}) by ${fmtUsd(Math.abs(actualMargin))}. Review unbilled time or adjust scope.`,
+        text: usesSnapshotEconomics
+          ? `This project is running at a loss. At ${formatHours(fin!.hoursLogged)} logged, labor and overhead (${fmtUsd(actualCost)}) against ${fmtUsd(actualRevenue)} in fee revenue leave ${fmtUsd(actualMargin)} in remaining profit. Record payment or overage billing to recover.`
+          : `This project is currently running at a loss. Actual costs (${fmtUsd(actualCost)}) exceed actual revenue (${fmtUsd(actualRevenue)}) by ${fmtUsd(Math.abs(actualMargin))}. Review unbilled time or adjust scope.`,
+      });
+    } else if (usesSnapshotEconomics && fin!.unbilledOverageHours > 0) {
+      warnings.push({
+        tone: "terra",
+        text: `${formatHours(fin!.unbilledOverageHours)} over scoped hours (${fmtUsd(fin!.unbilledOverageCost)} in labor) are not covered by collection — record overage billing or the profit pool will erode.`,
       });
     }
-    if (hoursOver > 0) {
+    if (hoursOver > 0 && (!usesSnapshotEconomics || fin!.unbilledOverageHours > 0)) {
       warnings.push({
         tone: "terra",
         text: `Total hours logged (${formatHours(actualHrs)}) exceed the scoped budget (${formatHours(scopedHrs)}) by ${formatHours(hoursOver)}.`,
@@ -1152,10 +1203,15 @@ function ProjectDetail({ id, onBack, showOnboardHint, autoAttachSop, initialSubV
       ? actualHrs * 1.1 // already over — assume modest further drift
       : actualHrs / Math.max(0.5, burnRatio); // extrapolate
     const projectedOverHrs = Math.max(0, projectedTotalHrs - scopedHrs);
-    if (isFixedFee && fixedFee > 0 && projectedTotalHrs > 0) {
+    if (usesSnapshotEconomics && fin && fin.totalRevenue > 0 && projectedTotalHrs > 0) {
       warnings.push({
         tone: "terra",
-        text: `At current pace this project will use ${projectedOverHrs.toFixed(1)} hrs beyond scope. These hours reduce your effective rate to ${fmtUsd(fixedFee / projectedTotalHrs)}/hr.`,
+        text: `At current pace this project will use ${projectedOverHrs.toFixed(1)} hrs beyond scope. These hours reduce your effective rate to ${fmtUsd(fin.totalRevenue / projectedTotalHrs)}/hr unless overage is collected.`,
+      });
+    } else if (isContractFee && flatFeeAmount > 0 && projectedTotalHrs > 0) {
+      warnings.push({
+        tone: "terra",
+        text: `At current pace this project will use ${projectedOverHrs.toFixed(1)} hrs beyond scope. These hours reduce your effective rate to ${fmtUsd(flatFeeAmount / projectedTotalHrs)}/hr.`,
       });
     } else if (projectedOverHrs > 0 && projectRate > 0) {
       warnings.push({

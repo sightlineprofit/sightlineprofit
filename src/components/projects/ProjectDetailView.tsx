@@ -595,6 +595,7 @@ function PaymentStatusSection({
   const status = project.payment_status ?? "unpaid";
   const collected = Number(project.payment_collected) || 0;
   const balance = Math.max(0, projectFee - collected);
+  const overageCollected = Math.max(0, collected - projectFee);
 
   const openModal = () => {
     setAmount(String(Math.round(projectFee || collected || 0)));
@@ -630,6 +631,11 @@ function PaymentStatusSection({
             <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "rgba(92,138,110,0.12)", color: SAGE }}>
               Paid in full
             </span>
+            {overageCollected > 0 ? (
+              <p className="mt-1 text-[11px]" style={{ color: SAGE }}>
+                Includes {money(overageCollected)} overage billing above the {money(projectFee)} contract
+              </p>
+            ) : null}
             {project.payment_collected_date ? (
               <p className="mt-1 text-[11px]" style={{ color: MUTED }}>{fmtDateLong(project.payment_collected_date)}</p>
             ) : null}
@@ -668,6 +674,10 @@ function PaymentStatusSection({
             </h3>
             <label className="mb-3 block text-[12px]" style={{ color: MUTED }}>Amount received</label>
             <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="mb-3" />
+            <p className="mb-3 text-[11px] leading-relaxed" style={{ color: MUTED }}>
+              Enter the contract fee ({money(projectFee)}) or a higher amount if overage hours were invoiced — anything
+              above the contract counts as overage revenue in your profit pool.
+            </p>
             <label className="mb-3 block text-[12px]" style={{ color: MUTED }}>Date received</label>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mb-3" />
             <label className="mb-3 block text-[12px]" style={{ color: MUTED }}>Notes (optional)</label>
@@ -1684,10 +1694,11 @@ export function ProjectDetailView({
     return m;
   }, [entries]);
 
-  const rev = Math.max(fin?.totalRevenue ?? 1, 1);
+  const rev = Math.max(fin?.actualTotalRevenue ?? fin?.totalRevenue ?? 1, 1);
   const segPct = (v: number) => (v / rev) * 100;
 
-  const showActualCosts = !!fin && fin.costOverHours > 0 && hoursLogged > 0;
+  const showActualCosts =
+    !!fin && hoursLogged > 0 && (fin.overHours > 0 || fin.overageRevenueCollected > 0);
   const displayComp = showActualCosts ? fin!.actualCompAllocation : fin?.compAllocation ?? 0;
   const displayOpex = showActualCosts ? fin!.actualOpexAllocation : fin?.opexAllocation ?? 0;
   const displayTeam = showActualCosts ? fin!.actualTeamAllocation : fin?.teamAllocation ?? 0;
@@ -1869,7 +1880,16 @@ export function ProjectDetailView({
           <p className="mt-2 text-[13px] leading-relaxed text-ch/60" style={{ fontFamily: "Jost, sans-serif" }}>
             remaining in your profit pool
             <br />
-            from a {money(fin.totalRevenue)} fee
+            from a {money(fin.actualTotalRevenue)} fee
+            {fin.overageRevenueCollected > 0 ? (
+              <>
+                <br />
+                <span className="text-[11px] text-ch/50">
+                  includes {money(fin.overageRevenueCollected)} overage billing above the{" "}
+                  {money(fin.totalRevenue)} contract
+                </span>
+              </>
+            ) : null}
           </p>
           {hoursLogged > 0 ? (
             <p className="mt-2 flex items-center gap-1.5 text-[13px]" style={{ fontFamily: "Jost, sans-serif" }}>
@@ -1910,10 +1930,19 @@ export function ProjectDetailView({
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ch/50" style={{ fontFamily: "Jost, sans-serif" }}>
           {showActualCosts ? "Where the fee goes at logged hours" : "Where the fee goes"}
         </p>
-        {showActualCosts && (
+        {showActualCosts && fin.overHours > 0 && (
           <p className="mb-2 text-[11px] leading-relaxed text-ch/55" style={{ fontFamily: "Jost, sans-serif" }}>
-            {formatHours(fin.costOverHours)} over scope — your pay, team labor, and running costs scale with every
-            hour worked. Tax reserve adjusts on the reduced margin.
+            {formatHours(fin.overHours)} over scoped hours — labor and overhead scale with every hour worked.
+            {fin.unbilledOverageHours > 0
+              ? ` ${formatHours(fin.unbilledOverageHours)} not yet covered by collection erode the pool by ${money(fin.unbilledOverageCost)}.`
+              : fin.overageRevenueCollected > 0
+                ? " Overage billing you collected offsets the cost of those hours."
+                : " Record overage billing when you invoice extra hours."}
+          </p>
+        )}
+        {showActualCosts && fin.overHours <= 0 && fin.overageRevenueCollected > 0 && (
+          <p className="mb-2 text-[11px] leading-relaxed text-ch/55" style={{ fontFamily: "Jost, sans-serif" }}>
+            {money(fin.overageRevenueCollected)} collected above the contract fee adds to your profit pool.
           </p>
         )}
         <div className="relative h-2 overflow-hidden rounded-full">
@@ -2014,9 +2043,13 @@ export function ProjectDetailView({
         <p className="mt-3 font-display text-[13px] italic text-ch/70">
           {showActualCosts ? (
             <>
-              At {formatHours(hoursLogged)} logged ({formatHours(fin.costOverHours)} over scope), labor and overhead
-              total {money(fin.actualCostAllocation)} — leaving {money(fin.marginRemaining)} in remaining profit
-              from the {money(fin.totalRevenue)} fee.
+              At {formatHours(hoursLogged)} logged
+              {fin.overHours > 0 ? ` (${formatHours(fin.overHours)} over scoped hours)` : ""}, labor and overhead
+              total {money(fin.actualCostAllocation)}
+              {fin.overageRevenueCollected > 0
+                ? ` against ${money(fin.actualTotalRevenue)} collected`
+                : ""}{" "}
+              — leaving {money(fin.marginRemaining)} in remaining profit.
             </>
           ) : fin.costBasisMethod === "task_assignee" && fin.assigneeAllocations.length > 0 ? (
             <>
@@ -2059,22 +2092,48 @@ export function ProjectDetailView({
         {nonbillableScoped > 0 && (
           <HoursScopeBar label="Non-billable" logged={nonbillableLogged} scoped={nonbillableScoped} fillColor={AMBER} />
         )}
-        {nonbillableOver > 0 && (
+        {nonbillableOver > 0 && fin.overHours > 0 && fin.unbilledOverageHours > 0 && (
           <div
             className="mt-2 rounded-lg border px-3.5 py-2.5 text-[12px]"
             style={{ background: "#fdf7ee", borderColor: "#f0d9a8", color: "#7a5c1e", fontFamily: "Jost, sans-serif" }}
           >
-            Non-billable hours are {formatHours(nonbillableOver)} over scope. This is where your profit is eroding — the
-            fee covers it, but less remains.
+            Non-billable hours are {formatHours(nonbillableOver)} over their category scope. Uncollected overage erodes
+            profit — invoice and record payment for extra hours to protect your pool.
           </div>
         )}
-        {billableOver > 0 && fin.effectiveRate != null && (
+        {billableOver > 0 && fin.overHours <= 0 && (
           <div
             className="mt-2 rounded-lg border px-3.5 py-2.5 text-[12px]"
             style={{ background: "rgba(196,113,74,0.08)", borderColor: "rgba(196,113,74,0.25)", color: "#7A3A22", fontFamily: "Jost, sans-serif" }}
           >
-            Billable hours are {formatHours(billableOver)} over scope. Your effective rate has dropped to $
-            {Math.round(fin.effectiveRate).toLocaleString()}/hr.
+            Billable hours are {formatHours(billableOver)} above the billable scope mix, but total hours are still within
+            budget — your profit pool is unchanged until you exceed scoped hours or fail to collect overage.
+          </div>
+        )}
+        {billableOver > 0 && fin.overHours > 0 && fin.effectiveRate != null && (
+          <div
+            className="mt-2 rounded-lg border px-3.5 py-2.5 text-[12px]"
+            style={{
+              background: fin.overageNetContribution > 0 ? "rgba(92,138,110,0.08)" : "rgba(196,113,74,0.08)",
+              borderColor: fin.overageNetContribution > 0 ? "rgba(92,138,110,0.25)" : "rgba(196,113,74,0.25)",
+              color: fin.overageNetContribution > 0 ? "#3D5C4A" : "#7A3A22",
+              fontFamily: "Jost, sans-serif",
+            }}
+          >
+            {fin.unbilledOverageHours > 0
+              ? `${formatHours(fin.unbilledOverageHours)} of ${formatHours(fin.overHours)} overage hours are uncollected — record overage billing to offset ${money(fin.unbilledOverageCost)} in labor cost.`
+              : fin.overageNetContribution > 0
+                ? `Overage billing captured ${money(fin.overageNetContribution)} net above labor cost — your pool can exceed the original plan when overage is invoiced at margin.`
+                : `Total hours exceed scope. Effective rate on collected revenue is $${Math.round(fin.effectiveRate).toLocaleString()}/hr.`}
+          </div>
+        )}
+        {fin.overHours > 0 && fin.overageNetContribution > 0 && billableOver <= 0 && (
+          <div
+            className="mt-2 rounded-lg border px-3.5 py-2.5 text-[12px]"
+            style={{ background: "rgba(92,138,110,0.08)", borderColor: "rgba(92,138,110,0.25)", color: "#3D5C4A", fontFamily: "Jost, sans-serif" }}
+          >
+            This project ran {formatHours(fin.overHours)} over scoped hours but overage was collected — net{" "}
+            {money(fin.overageNetContribution)} after labor cost, so your pool is above the original plan.
           </div>
         )}
       </div>
